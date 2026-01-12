@@ -435,16 +435,6 @@ const OrgAdminDashboard = () => {
                                 <Settings className="w-4 h-4" />
                                 Settings
                             </button>
-                            <button
-                                onClick={() => setActiveTab('profile')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-semibold text-sm ${activeTab === 'profile'
-                                    ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/25'
-                                    : 'text-slate-600 hover:bg-slate-50'
-                                    }`}
-                            >
-                                <UserCircle className="w-4 h-4" />
-                                Profile
-                            </button>
                         </div>
                     </div>
                 </nav>
@@ -570,18 +560,7 @@ const OrgAdminDashboard = () => {
                             </div>
                         )}
                         {activeTab === 'settings' && (
-                            <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center shadow-sm">
-                                <Settings className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                                <h3 className="text-xl font-bold text-slate-900 mb-2">Settings</h3>
-                                <p className="text-slate-500">System settings coming soon.</p>
-                            </div>
-                        )}
-                        {activeTab === 'profile' && (
-                            <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center shadow-sm">
-                                <UserCircle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-                                <h3 className="text-xl font-bold text-slate-900 mb-2">Profile</h3>
-                                <p className="text-slate-500">Profile management coming soon.</p>
-                            </div>
+                            <ProfileSettingsTab user={user} supabase={supabase} />
                         )}
                     </motion.div>
                 </AnimatePresence>
@@ -1468,6 +1447,335 @@ const VisitorsTab = ({ properties }: { properties: any[] }) => {
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    );
+};
+
+// Profile Settings Tab Component
+type SettingsTabKey = 'basic' | 'notifications' | 'emergency' | 'advanced';
+
+const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) => {
+    const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabKey>('basic');
+    const [saving, setSaving] = useState(false);
+    const [userProfile, setUserProfile] = useState<any>(null);
+
+    const [formData, setFormData] = useState({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        officeNumber: '',
+        department: 'administration',
+        floor: '',
+        zone: '',
+        staffRoleReason: '',
+    });
+
+    const DEPARTMENT_OPTIONS = [
+        { value: 'administration', label: 'Administration' },
+        { value: 'operations', label: 'Operations' },
+        { value: 'maintenance', label: 'Maintenance' },
+        { value: 'security', label: 'Security' },
+        { value: 'finance', label: 'Finance' },
+        { value: 'hr', label: 'Human Resources' },
+        { value: 'it', label: 'IT' },
+    ];
+
+    const SETTINGS_TABS = [
+        { key: 'basic' as const, label: 'Basic', icon: UserCircle },
+        { key: 'notifications' as const, label: 'Notifications', icon: Bell },
+        { key: 'emergency' as const, label: 'Emergency', icon: X },
+        { key: 'advanced' as const, label: 'Advanced', icon: Settings },
+    ];
+
+    useEffect(() => {
+        const loadProfile = async () => {
+            if (!user) return;
+
+            try {
+                const { data: profile, error } = await supabase
+                    .from('users')
+                    .select('id, full_name, email, created_at')
+                    .eq('id', user.id)
+                    .single();
+
+                if (error) {
+                    console.log('Profile not found, using auth user data');
+                    setFormData(prev => ({
+                        ...prev,
+                        email: user.email || '',
+                        firstName: user.user_metadata?.full_name?.split(' ')[0] || '',
+                        lastName: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+                    }));
+                    return;
+                }
+
+                if (profile) {
+                    setUserProfile(profile);
+                    const nameParts = (profile.full_name || '').split(' ');
+                    setFormData(prev => ({
+                        ...prev,
+                        firstName: nameParts[0] || '',
+                        lastName: nameParts.slice(1).join(' ') || '',
+                        email: profile.email || user.email || '',
+                    }));
+                }
+            } catch (err) {
+                console.error('Error loading profile:', err);
+                // Fallback to auth user data
+                setFormData(prev => ({
+                    ...prev,
+                    email: user.email || '',
+                    firstName: user.user_metadata?.full_name?.split(' ')[0] || '',
+                    lastName: user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '',
+                }));
+            }
+        };
+
+        loadProfile();
+    }, [user, supabase]);
+
+    const handleSaveChanges = async () => {
+        if (!user) return;
+        setSaving(true);
+
+        try {
+            // Only update fields that exist in the users table
+            const { error } = await supabase
+                .from('users')
+                .update({
+                    full_name: `${formData.firstName} ${formData.lastName}`.trim(),
+                })
+                .eq('id', user.id);
+
+            if (error) {
+                console.error('Error updating profile:', error);
+                alert('Failed to save changes: ' + error.message);
+            } else {
+                alert('Profile saved successfully!');
+            }
+        } catch (err) {
+            console.error('Error saving changes:', err);
+            alert('An error occurred while saving.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const SettingsInput = ({
+        label,
+        value,
+        onChange,
+        placeholder,
+        disabled = false,
+        helperText,
+    }: {
+        label: string;
+        value: string;
+        onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+        placeholder?: string;
+        disabled?: boolean;
+        helperText?: string;
+    }) => (
+        <div className="flex flex-col gap-2">
+            <label className="text-sm text-slate-700 font-bold">{label}</label>
+            <input
+                type="text"
+                value={value}
+                onChange={onChange}
+                placeholder={placeholder}
+                disabled={disabled}
+                className={`
+                    w-full px-4 py-3 rounded-xl 
+                    bg-slate-50 border border-slate-200
+                    text-slate-900 placeholder:text-slate-400
+                    focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20
+                    transition-all duration-200
+                    ${disabled ? 'opacity-60 cursor-not-allowed bg-slate-100' : ''}
+                `}
+            />
+            {helperText && (
+                <p className="text-xs text-slate-500">{helperText}</p>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+            <div className="p-8">
+                {/* Tabs */}
+                <div className="flex gap-2 mb-8 bg-slate-100 p-1.5 rounded-xl w-fit">
+                    {SETTINGS_TABS.map(tab => {
+                        const Icon = tab.icon;
+                        const isActive = activeSettingsTab === tab.key;
+                        return (
+                            <button
+                                key={tab.key}
+                                onClick={() => setActiveSettingsTab(tab.key)}
+                                className={`
+                                    flex items-center gap-2 px-5 py-2.5 rounded-lg font-bold text-sm
+                                    transition-all duration-200
+                                    ${isActive
+                                        ? 'bg-yellow-400 text-slate-900 shadow-lg shadow-yellow-400/25'
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-white'
+                                    }
+                                `}
+                            >
+                                <Icon className="w-4 h-4" />
+                                {tab.label}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Tab Content */}
+                {activeSettingsTab === 'basic' && (
+                    <div className="space-y-6 max-w-3xl">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <SettingsInput
+                                label="First Name"
+                                value={formData.firstName}
+                                onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
+                                placeholder="Enter first name"
+                            />
+                            <SettingsInput
+                                label="Last Name"
+                                value={formData.lastName}
+                                onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
+                                placeholder="Enter last name"
+                            />
+                        </div>
+
+                        <SettingsInput
+                            label="Email"
+                            value={formData.email}
+                            disabled
+                            helperText="Email cannot be changed. Contact support for assistance."
+                        />
+
+                        {/* Save Button */}
+                        <button
+                            onClick={handleSaveChanges}
+                            disabled={saving}
+                            className="
+                                w-full py-4 rounded-xl font-black text-slate-900 uppercase tracking-widest text-sm
+                                bg-yellow-400
+                                hover:bg-yellow-300
+                                shadow-lg shadow-yellow-400/25
+                                transition-all duration-200
+                                disabled:opacity-50 disabled:cursor-not-allowed
+                            "
+                        >
+                            {saving ? 'Saving...' : 'Save Changes'}
+                        </button>
+
+                        {/* Request Staff Role Section */}
+                        <div className="mt-10 pt-8 border-t border-slate-200">
+                            <h2 className="text-lg font-black text-slate-900 mb-2">
+                                Request Staff Role
+                            </h2>
+                            <p className="text-sm text-slate-500 mb-6">
+                                Submit a request to become a staff member. Your request will be reviewed by an administrator.
+                            </p>
+
+                            <div className="flex flex-col gap-2 mb-4">
+                                <label className="text-sm text-slate-700 font-bold">Reason for Request</label>
+                                <textarea
+                                    value={formData.staffRoleReason}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, staffRoleReason: e.target.value }))}
+                                    placeholder="Explain why you would like to become a staff member..."
+                                    rows={4}
+                                    className="
+                                        w-full px-4 py-3 rounded-xl 
+                                        bg-slate-50 border border-slate-200
+                                        text-slate-900 placeholder:text-slate-400
+                                        focus:outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/20
+                                        transition-all duration-200 resize-none
+                                    "
+                                />
+                            </div>
+
+                            <button
+                                disabled={!formData.staffRoleReason.trim()}
+                                className="
+                                    px-6 py-3 rounded-xl font-bold text-sm
+                                    bg-slate-900 text-white
+                                    hover:bg-slate-800
+                                    transition-all duration-200
+                                    disabled:opacity-50 disabled:cursor-not-allowed
+                                "
+                            >
+                                Submit Request
+                            </button>
+                        </div>
+
+                        {/* Role Info Card */}
+                        {userProfile && (
+                            <div className="mt-8 p-6 rounded-2xl bg-yellow-50 border border-yellow-200">
+                                <h3 className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-4">
+                                    Your Role Information
+                                </h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <p className="text-xs text-slate-500 mb-1">Role</p>
+                                        <p className="text-sm font-bold text-slate-900 capitalize">
+                                            {userProfile.role_key?.replace(/_/g, ' ') || 'User'}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500 mb-1">Status</p>
+                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold ${userProfile.status === 'active'
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-yellow-100 text-yellow-700'
+                                            }`}>
+                                            {userProfile.status || 'Pending'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500 mb-1">Role Level</p>
+                                        <p className="text-sm font-bold text-slate-900">
+                                            Level {userProfile.role_level ?? 0}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-slate-500 mb-1">Member Since</p>
+                                        <p className="text-sm font-bold text-slate-900">
+                                            {userProfile.created_at
+                                                ? new Date(userProfile.created_at).toLocaleDateString()
+                                                : 'N/A'
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeSettingsTab === 'notifications' && (
+                    <div className="text-center py-16">
+                        <Bell className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-slate-900 mb-2">Notification Preferences</h3>
+                        <p className="text-slate-500">Configure your notification settings here.</p>
+                    </div>
+                )}
+
+                {activeSettingsTab === 'emergency' && (
+                    <div className="text-center py-16">
+                        <X className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-slate-900 mb-2">Emergency Contacts</h3>
+                        <p className="text-slate-500">Add and manage your emergency contact information.</p>
+                    </div>
+                )}
+
+                {activeSettingsTab === 'advanced' && (
+                    <div className="text-center py-16">
+                        <Settings className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-bold text-slate-900 mb-2">Advanced Settings</h3>
+                        <p className="text-slate-500">Configure advanced account settings.</p>
+                    </div>
+                )}
             </div>
         </div>
     );
