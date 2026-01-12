@@ -1460,6 +1460,22 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
     const [saving, setSaving] = useState(false);
     const [userProfile, setUserProfile] = useState<any>(null);
 
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    const showToast = (
+        arg: string | { title: string; description?: string; status?: 'success' | 'error' },
+        type: 'success' | 'error' = 'success'
+    ) => {
+        if (typeof arg === 'string') {
+            setToast({ message: arg, type });
+        } else {
+            const message = arg.description ? `${arg.title}: ${arg.description}` : arg.title;
+            setToast({ message, type: arg.status || type });
+        }
+        setTimeout(() => setToast(null), 3000);
+    };
+
     const [formData, setFormData] = useState({
         firstName: '',
         lastName: '',
@@ -1496,7 +1512,7 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
             try {
                 const { data: profile, error } = await supabase
                     .from('users')
-                    .select('id, full_name, email, created_at')
+                    .select('id, full_name, email, created_at, role_key, status, role_level')
                     .eq('id', user.id)
                     .single();
 
@@ -1536,6 +1552,34 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
         loadProfile();
     }, [user, supabase]);
 
+    const handleRequestStaffRole = async () => {
+        if (!user || !formData.staffRoleReason.trim()) return;
+        setIsSubmitting(true);
+        try {
+            const now = new Date().toISOString();
+            const payload = {
+                user_id: user.id,
+                reason: formData.staffRoleReason.trim(),
+                status: 'pending',
+                created_at: now,
+            };
+
+            const { data, error } = await supabase.from('staff_requests').insert([payload]);
+            if (error) {
+                console.error('Failed to submit staff role request', { userId: user.id, error });
+                showToast('Failed to submit request. Please try again.', 'error');
+            } else {
+                showToast('Staff role request submitted.', 'success');
+                setFormData(prev => ({ ...prev, staffRoleReason: '' }));
+            }
+        } catch (err) {
+            console.error('Error submitting staff role request', err);
+            showToast({ title: 'Error submitting staff role request', description: (err as any)?.message || 'An error occurred while submitting your request.', status: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const handleSaveChanges = async () => {
         if (!user) return;
         setSaving(true);
@@ -1551,13 +1595,13 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
 
             if (error) {
                 console.error('Error updating profile:', error);
-                alert('Failed to save changes: ' + error.message);
+                showToast('Failed to save changes: ' + error.message, 'error');
             } else {
-                alert('Profile saved successfully!');
+                showToast('Profile saved successfully!', 'success');
             }
         } catch (err) {
             console.error('Error saving changes:', err);
-            alert('An error occurred while saving.');
+            showToast('An error occurred while saving.', 'error');
         } finally {
             setSaving(false);
         }
@@ -1603,6 +1647,11 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
 
     return (
         <div className="bg-white border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
+            {toast && (
+                <div className={`fixed top-6 right-6 z-50 px-4 py-2 rounded-lg font-medium ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
+                    {toast.message}
+                </div>
+            )}
             <div className="p-8">
                 {/* Tabs */}
                 <div className="flex gap-2 mb-8 bg-slate-100 p-1.5 rounded-xl w-fit">
@@ -1697,7 +1746,8 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
                             </div>
 
                             <button
-                                disabled={!formData.staffRoleReason.trim()}
+                                onClick={handleRequestStaffRole}
+                                disabled={!formData.staffRoleReason.trim() || isSubmitting}
                                 className="
                                     px-6 py-3 rounded-xl font-bold text-sm
                                     bg-slate-900 text-white
@@ -1706,7 +1756,7 @@ const ProfileSettingsTab = ({ user, supabase }: { user: any; supabase: any }) =>
                                     disabled:opacity-50 disabled:cursor-not-allowed
                                 "
                             >
-                                Submit Request
+                                {isSubmitting ? 'Submitting...' : 'Submit Request'}
                             </button>
                         </div>
 

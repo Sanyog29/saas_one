@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useId } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { User, Bell, AlertTriangle, Settings, ArrowLeft } from 'lucide-react';
@@ -9,6 +9,7 @@ import Link from 'next/link';
 
 // Settings Input Component
 const SettingsInput = ({
+    id,
     label,
     value,
     onChange,
@@ -17,6 +18,7 @@ const SettingsInput = ({
     helperText,
     type = 'text'
 }: {
+    id?: string;
     label: string;
     value: string;
     onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -24,68 +26,78 @@ const SettingsInput = ({
     disabled?: boolean;
     helperText?: string;
     type?: string;
-}) => (
-    <div className="flex flex-col gap-2">
-        <label className="text-sm text-slate-300 font-medium">{label}</label>
-        <input
-            type={type}
-            value={value}
-            onChange={onChange}
-            placeholder={placeholder}
-            disabled={disabled}
-            className={`
-                w-full px-4 py-3 rounded-lg 
-                bg-[#0d1321] border border-slate-700/50
-                text-slate-200 placeholder:text-slate-500
-                focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30
-                transition-all duration-200
-                ${disabled ? 'opacity-60 cursor-not-allowed' : ''}
-            `}
-        />
-        {helperText && (
-            <p className="text-xs text-slate-500">{helperText}</p>
-        )}
-    </div>
-);
+}) => {
+    const genId = id || useId();
+    return (
+        <div className="flex flex-col gap-2">
+            <label htmlFor={genId} className="text-sm text-slate-300 font-medium">{label}</label>
+            <input
+                id={genId}
+                type={type}
+                value={value}
+                onChange={onChange}
+                placeholder={placeholder}
+                disabled={disabled}
+                className={`
+                    w-full px-4 py-3 rounded-lg 
+                    bg-[#0d1321] border border-slate-700/50
+                    text-slate-200 placeholder:text-slate-500
+                    focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30
+                    transition-all duration-200
+                    ${disabled ? 'opacity-60 cursor-not-allowed' : ''}
+                `}
+            />
+            {helperText && (
+                <p className="text-xs text-slate-500">{helperText}</p>
+            )}
+        </div>
+    );
+};
 
 // Settings Select Component
 const SettingsSelect = ({
+    id,
     label,
     value,
     onChange,
     options,
 }: {
+    id?: string;
     label: string;
     value: string;
     onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
     options: { value: string; label: string }[];
-}) => (
-    <div className="flex flex-col gap-2">
-        <label className="text-sm text-slate-300 font-medium">{label}</label>
-        <select
-            value={value}
-            onChange={onChange}
-            className="
-                w-full px-4 py-3 rounded-lg 
-                bg-[#0d1321] border border-slate-700/50
-                text-slate-200
-                focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30
-                transition-all duration-200
-                appearance-none cursor-pointer
-            "
-            style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 0.75rem center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '1.5em 1.5em'
-            }}
-        >
-            {options.map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-        </select>
-    </div>
-);
+}) => {
+    const genId = id || useId();
+    return (
+        <div className="flex flex-col gap-2">
+            <label htmlFor={genId} className="text-sm text-slate-300 font-medium">{label}</label>
+            <select
+                id={genId}
+                value={value}
+                onChange={onChange}
+                className="
+                    w-full px-4 py-3 rounded-lg 
+                    bg-[#0d1321] border border-slate-700/50
+                    text-slate-200
+                    focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30
+                    transition-all duration-200
+                    appearance-none cursor-pointer
+                "
+                style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 0.75rem center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '1.5em 1.5em'
+                }}
+            >
+                {options.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+            </select>
+        </div>
+    );
+};
 
 // Tab type
 type TabKey = 'basic' | 'notifications' | 'emergency' | 'advanced';
@@ -115,6 +127,13 @@ export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<TabKey>('basic');
     const [saving, setSaving] = useState(false);
     const [userProfile, setUserProfile] = useState<any>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+    const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3000);
+    };
 
     // Form state
     const [formData, setFormData] = useState({
@@ -133,12 +152,22 @@ export default function SettingsPage() {
     useEffect(() => {
         const loadProfile = async () => {
             if (!user) return;
-
-            const { data: profile } = await supabase
+            const { data: profile, error } = await supabase
                 .from('users')
                 .select('*')
                 .eq('external_auth_id', user.id)
                 .single();
+
+            if (error) {
+                console.error('Error loading profile for user', { userId: user.id, error });
+                showToast('Failed to load profile. Redirecting.', 'error');
+                try {
+                    router.push('/');
+                } catch (e) {
+                    // ignore router push errors in client fallback
+                }
+                return;
+            }
 
             if (profile) {
                 setUserProfile(profile);
@@ -173,6 +202,16 @@ export default function SettingsPage() {
         }
     }, [user, isLoading, router]);
 
+    const stars = useMemo(() => {
+        return Array.from({ length: 50 }).map(() => ({
+            left: `${Math.random() * 100}%`,
+            top: `${Math.random() * 100}%`,
+            opacity: Math.random() * 0.5 + 0.2,
+            animationDelay: `${Math.random() * 3}s`,
+            animationDuration: `${2 + Math.random() * 3}s`,
+        }));
+    }, []);
+
     const handleSaveChanges = async () => {
         if (!user) return;
         setSaving(true);
@@ -202,8 +241,33 @@ export default function SettingsPage() {
 
     const handleRequestStaffRole = async () => {
         if (!user || !formData.staffRoleReason.trim()) return;
-        // Placeholder for staff role request logic
-        console.log('Requesting staff role:', formData.staffRoleReason);
+        setIsSubmitting(true);
+        try {
+            const now = new Date().toISOString();
+            const payload = {
+                user_id: user.id,
+                reason: formData.staffRoleReason.trim(),
+                status: 'pending',
+                created_at: now,
+            };
+
+            const { data, error } = await supabase
+                .from('staff_requests')
+                .insert([payload]);
+
+            if (error) {
+                console.error('Failed to submit staff role request', { userId: user.id, error });
+                showToast('Failed to submit request. Please try again.', 'error');
+            } else {
+                showToast('Staff role request submitted.', 'success');
+                setFormData(prev => ({ ...prev, staffRoleReason: '' }));
+            }
+        } catch (err) {
+            console.error('Error submitting staff role request', err);
+            showToast('An error occurred while submitting your request.', 'error');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     if (isLoading) {
@@ -220,16 +284,16 @@ export default function SettingsPage() {
         <div className="min-h-screen bg-[#080b14] relative overflow-hidden">
             {/* Animated stars background */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                {[...Array(50)].map((_, i) => (
+                {stars.map((s, i) => (
                     <div
                         key={i}
                         className="absolute w-1 h-1 bg-white rounded-full animate-pulse"
                         style={{
-                            left: `${Math.random() * 100}%`,
-                            top: `${Math.random() * 100}%`,
-                            opacity: Math.random() * 0.5 + 0.2,
-                            animationDelay: `${Math.random() * 3}s`,
-                            animationDuration: `${2 + Math.random() * 3}s`,
+                            left: s.left,
+                            top: s.top,
+                            opacity: s.opacity,
+                            animationDelay: s.animationDelay,
+                            animationDuration: s.animationDuration,
                         }}
                     />
                 ))}
@@ -237,6 +301,11 @@ export default function SettingsPage() {
 
             {/* Content */}
             <div className="relative z-10 max-w-4xl mx-auto px-6 py-8">
+                {toast && (
+                    <div className={`fixed top-6 right-6 z-50 px-4 py-2 rounded-lg font-medium ${toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}>
+                        {toast.message}
+                    </div>
+                )}
                 {/* Header */}
                 <div className="flex items-center gap-4 mb-8">
                     <Link
@@ -380,7 +449,7 @@ export default function SettingsPage() {
 
                             <button
                                 onClick={handleRequestStaffRole}
-                                disabled={!formData.staffRoleReason.trim()}
+                                disabled={!formData.staffRoleReason.trim() || isSubmitting}
                                 className="
                                     px-6 py-3 rounded-lg font-medium text-sm
                                     bg-slate-700/50 text-slate-300
@@ -389,7 +458,7 @@ export default function SettingsPage() {
                                     disabled:opacity-50 disabled:cursor-not-allowed
                                 "
                             >
-                                Submit Request
+                                {isSubmitting ? 'Submitting...' : 'Submit Request'}
                             </button>
                         </div>
                     </div>
