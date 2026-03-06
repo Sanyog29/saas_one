@@ -62,41 +62,29 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
 
             {/* Sidebar */}
             <aside className={`
-                bg-[var(--sidebar-bg)] border-r border-slate-300 h-screen flex flex-col transition-all duration-300 ease-out
-                
-                /* Mobile: Fixed position, slide in/out */
-                fixed lg:sticky top-0 z-50
-                w-72 lg:w-72
-                ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+                fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+                ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
+                flex flex-col inset-y-0 overflow-hidden
             `}>
                 {/* Mobile Close Button */}
                 <button
                     onClick={onMobileClose}
-                    className="absolute top-4 right-4 lg:hidden p-2 rounded-lg hover:bg-surface-elevated transition-colors"
+                    className="lg:hidden absolute top-4 right-4 p-2 rounded-xl bg-slate-50 text-slate-500 hover:bg-slate-100 transition-colors z-50 border border-slate-200"
                 >
-                    <X className="w-5 h-5 text-text-secondary" />
+                    <X className="w-5 h-5" />
                 </button>
 
-                <div className="sidebar-header">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-primary rounded-[var(--radius-md)] flex items-center justify-center shadow-sm shrink-0">
-                            <svg viewBox="0 0 32 40" fill="currentColor" className="h-5 text-white">
-                                <path d="M0 40 L16 0 L32 40 L24 40 L16 16 L8 40 Z" />
-                            </svg>
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                            <span className="font-display font-semibold text-lg tracking-tight text-text-primary leading-none truncate">
-                                Autopilot
-                            </span>
-                            <span className="font-body font-medium text-[10px] text-text-tertiary mt-1">
-                                Tenant Portal
-                            </span>
+                <div className="p-6 pb-2">
+                    <div className="flex flex-col items-center gap-2 mb-2">
+                        <img src="/autopilot-logo-new.png" alt="Logo" className="h-10 w-auto object-contain" />
+                        <div className="px-3 py-1 bg-primary/5 rounded-full border border-primary/10">
+                            <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em]">Staff Dashboard</p>
                         </div>
                     </div>
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 px-3 space-y-1 overflow-y-auto touch-scroll">
+                <nav className="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar touch-scroll min-h-0">
                     <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
                         Management
                     </p>
@@ -121,7 +109,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                 </nav>
 
                 {/* Bottom Section */}
-                <div className="p-4 mt-auto space-y-3">
+                <div className="p-4 pb-12 mt-auto space-y-3 border-t border-border flex-shrink-0 bg-white">
                     {/* User Profile */}
                     <div className="px-3 py-3 rounded-[var(--radius-lg)] border border-border/5">
                         <div className="flex items-center gap-3">
@@ -176,7 +164,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                         onConfirm={signOut}
                     />
                 </div>
-            </aside>
+            </aside >
         </>
     );
 }

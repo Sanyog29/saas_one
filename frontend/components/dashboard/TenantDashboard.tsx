@@ -155,7 +155,7 @@ const TenantDashboard = () => {
             .from('tickets')
             .select('*, assignee:users!assigned_to(full_name)')
             .eq('property_id', propertyId)
-            .eq('raised_by', user.id)
+            .eq('internal', false)
             .order('created_at', { ascending: false });
 
         if (!error && data) {
@@ -168,10 +168,21 @@ const TenantDashboard = () => {
     };
 
     useEffect(() => {
-        if (propertyId && user && !hasFetchedTickets.current) {
-            hasFetchedTickets.current = true;
-            fetchTickets();
-        }
+        if (!propertyId || !user) return;
+
+        fetchTickets();
+
+        // Real-time: re-fetch whenever any ticket in this property is inserted/updated/deleted
+        const channel = supabase
+            .channel(`tickets-property-${propertyId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'tickets', filter: `property_id=eq.${propertyId}` },
+                () => { fetchTickets(); }
+            )
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, [propertyId, user?.id]);
 
     // Removed navItems array as we'll use a hardcoded grouped sidebar
@@ -226,6 +237,21 @@ const TenantDashboard = () => {
         setEditingTicket(ticket);
         setEditTitle(ticket.title);
         setEditDescription(ticket.description);
+    };
+
+    const handleValidate = async (ticketId: string, approved: boolean, note?: string) => {
+        try {
+            const res = await fetch(`/api/tickets/${ticketId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'validate', validation_approved: approved, validation_note: note }),
+            });
+            if (res.ok) {
+                fetchTickets();
+            }
+        } catch (error) {
+            console.error('Validation error:', error);
+        }
     };
 
     if (isLoading && !property) return (
@@ -287,7 +313,7 @@ const TenantDashboard = () => {
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: '-100%', opacity: 0 }}
                         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                        className="fixed left-0 top-0 h-screen w-72 bg-white border-r border-border flex flex-col z-[70] shadow-2xl"
+                        className="fixed left-0 inset-y-0 w-72 bg-white border-r border-border flex flex-col z-[70] shadow-2xl overflow-hidden"
                     >
                         {/* Close Button */}
                         <button
@@ -297,14 +323,14 @@ const TenantDashboard = () => {
                             <X className="w-5 h-5" />
                         </button>
 
-                        <div className="p-5 lg:p-6 pb-2">
+                        <div className="p-5 lg:p-6 pb-2 flex-shrink-0">
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-10 h-10 bg-primary rounded-[var(--radius-md)] flex items-center justify-center text-text-inverse font-display font-semibold text-lg shadow-sm">
                                     {property?.name?.substring(0, 1) || 'T'}
                                 </div>
                                 <div>
                                     <h2 className="font-display font-semibold text-sm leading-tight text-text-primary truncate max-w-[140px]">{property?.name}</h2>
-                                    <p className="text-[10px] text-text-tertiary font-body font-medium mt-0.5">Tenant Portal</p>
+                                    <p className="text-[10px] text-text-tertiary font-body font-medium mt-0.5">Client Portal</p>
                                 </div>
                             </div>
 
@@ -322,7 +348,7 @@ const TenantDashboard = () => {
                             </div>
                         </div>
 
-                        <nav className="flex-1 px-4 overflow-y-auto">
+                        <nav className="flex-1 px-4 overflow-y-auto min-h-0 custom-scrollbar">
                             {/* Core Operations */}
                             <div className="mb-6">
                                 <p className="text-[10px] font-medium text-text-tertiary tracking-widest px-4 mb-3 flex items-center gap-2 font-body">
@@ -414,7 +440,7 @@ const TenantDashboard = () => {
                             </div>
                         </nav>
 
-                        <div className="pt-3 border-t border-border px-4 pb-3">
+                        <div className="pt-3 border-t border-border px-4 pb-12 flex-shrink-0 bg-white">
                             {/* User Profile Section */}
                             <div className="flex items-center gap-2 px-1 mb-3">
                                 <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs">
@@ -422,7 +448,7 @@ const TenantDashboard = () => {
                                 </div>
                                 <div className="flex flex-col overflow-hidden">
                                     <span className="font-bold text-xs text-foreground truncate">
-                                        {user?.user_metadata?.full_name || 'Tenant'}
+                                        {user?.user_metadata?.full_name || 'Client'}
                                     </span>
                                     <span className="text-[9px] text-muted-foreground truncate font-medium">
                                         {user?.email}
@@ -466,7 +492,7 @@ const TenantDashboard = () => {
                     </div>
                 </header>
 
-                <div className="max-w-7xl mx-auto w-full min-w-0 px-4 md:px-12 lg:px-20 pt-8 pb-12">
+                <div className="max-w-7xl mx-auto w-full min-w-0 px-4 md:px-12 lg:px-20 pt-8 pb-28 md:pb-12">
                     <AnimatePresence mode="wait">
                         <motion.div
                             key={activeTab}
@@ -482,13 +508,14 @@ const TenantDashboard = () => {
                                     isLoading={isFetchingTickets}
                                     onEditClick={handleEditClick}
                                     onDeleteClick={handleDelete}
+                                    onValidateClick={handleValidate}
                                 />
                             )}
                             {activeTab === 'create_request' && property && user && (
                                 <TenantTicketingDashboard
                                     propertyId={property.id}
                                     organizationId={property.organization_id}
-                                    user={{ id: user.id, full_name: user.user_metadata?.full_name || 'Tenant' }}
+                                    user={{ id: user.id, full_name: user.user_metadata?.full_name || 'Client' }}
                                     propertyName={property.name}
                                     onSuccess={fetchTickets}
                                 />
@@ -541,7 +568,7 @@ const TenantDashboard = () => {
 
                                             {/* Role Badge */}
                                             <span className="px-4 py-1.5 bg-primary text-white rounded-full text-xs font-black uppercase tracking-wider shadow-lg">
-                                                Registered Tenant
+                                                Registered Client
                                             </span>
                                         </div>
 
@@ -592,6 +619,47 @@ const TenantDashboard = () => {
                         </motion.div>
                     </AnimatePresence>
                 </div>
+
+                {/* Mobile Bottom Navigation */}
+                <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border safe-area-inset-bottom">
+                    <div className="flex items-stretch h-16 px-1">
+                        {[
+                            { id: 'overview' as Tab, icon: LayoutDashboard, label: 'Home' },
+                            { id: 'requests' as Tab, icon: TicketIcon, label: 'Requests' },
+                            { id: 'create_request' as Tab, icon: Plus, label: 'New', accent: true },
+                            { id: 'room_booking' as Tab, icon: Calendar, label: 'Rooms' },
+                            { id: 'settings' as Tab, icon: Settings, label: 'Settings' },
+                        ].map(item => {
+                            const active = activeTab === item.id;
+                            const Icon = item.icon;
+                            if (item.accent) {
+                                return (
+                                    <button key={item.id}
+                                        onClick={() => handleTabChange(item.id)}
+                                        className="flex-1 flex flex-col items-center justify-center gap-0.5"
+                                    >
+                                        <div className="w-10 h-10 bg-primary rounded-2xl flex items-center justify-center shadow-md -mt-4">
+                                            <Icon className="w-5 h-5 text-white" />
+                                        </div>
+                                        <span className="text-[9px] font-bold text-text-tertiary mt-0.5">{item.label}</span>
+                                    </button>
+                                );
+                            }
+                            return (
+                                <button key={item.id}
+                                    onClick={() => handleTabChange(item.id)}
+                                    className="flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors relative"
+                                >
+                                    <Icon className={`w-5 h-5 transition-colors ${active ? 'text-primary' : 'text-text-tertiary'}`} />
+                                    <span className={`text-[9px] font-bold transition-colors ${active ? 'text-primary' : 'text-text-tertiary'}`}>
+                                        {item.label}
+                                    </span>
+                                    {active && <div className="absolute bottom-0 w-6 h-0.5 bg-primary rounded-full" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </nav>
             </motion.main>
 
             <SignOutModal
@@ -716,7 +784,7 @@ const OverviewTab = ({ onNavigate, property, onMenuToggle }: { onNavigate: (tab:
                 .from('tickets')
                 .select('status')
                 .eq('property_id', propertyId)
-                .eq('raised_by', user.id);
+                .eq('internal', false);
 
             if (tickets) {
                 const active = tickets.filter(t => !['resolved', 'closed'].includes(t.status)).length;
@@ -822,15 +890,27 @@ const OverviewTab = ({ onNavigate, property, onMenuToggle }: { onNavigate: (tab:
 // Helper Sub-component for Ticket Row - DEPRECATED - Use shared/TicketCard
 
 // RequestsTab for Tenant
-const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, onEditClick, onDeleteClick }: { activeTickets: Ticket[], completedTickets: Ticket[], onNavigate: (tab: Tab) => void, isLoading: boolean, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onDeleteClick?: (e: React.MouseEvent, id: string) => void }) => {
+const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, onEditClick, onDeleteClick, onValidateClick }: { activeTickets: Ticket[], completedTickets: Ticket[], onNavigate: (tab: Tab) => void, isLoading: boolean, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onDeleteClick?: (e: React.MouseEvent, id: string) => void, onValidateClick?: (ticketId: string, approved: boolean, note?: string) => void }) => {
     const { user } = useAuth();
     const router = useRouter();
     const [filter, setFilter] = useState('all');
+    const [viewMode, setViewMode] = useState<'all' | 'mine'>('all');
+    const [rejectingTicketId, setRejectingTicketId] = useState<string | null>(null);
+    const [rejectNote, setRejectNote] = useState('');
+
+    // Apply mine/all scoping before status filtering
+    const scopedActive = viewMode === 'mine'
+        ? activeTickets.filter(t => t.raised_by === user?.id)
+        : activeTickets;
+    const scopedCompleted = viewMode === 'mine'
+        ? completedTickets.filter(t => t.raised_by === user?.id)
+        : completedTickets;
 
     const getFilteredTickets = () => {
-        if (filter === 'completed') return completedTickets;
-        if (filter === 'waitlist') return activeTickets.filter(t => t.status === 'waitlist');
-        if (filter === 'in_progress') return activeTickets.filter(t => t.status !== 'waitlist');
+        if (filter === 'completed') return scopedCompleted;
+        if (filter === 'waitlist') return scopedActive.filter(t => t.status === 'waitlist');
+        if (filter === 'in_progress') return scopedActive.filter(t => t.status !== 'waitlist');
+        if (filter === 'pending_validation') return scopedActive.filter(t => t.status === 'pending_validation');
         return []; // for 'all', we handle separately
     };
 
@@ -843,7 +923,24 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                     <h2 className="text-2xl md:text-3xl font-display font-semibold text-slate-900 tracking-tight">Support Requests</h2>
                     <p className="text-sm md:text-base text-slate-500 font-medium mt-1">Track and manage your facility assistance tickets.</p>
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+                    {/* Mine / All toggle */}
+                    <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
+                        <button
+                            onClick={() => setViewMode('all')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'all' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            All
+                        </button>
+                        <button
+                            onClick={() => setViewMode('mine')}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${viewMode === 'mine' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            Mine
+                        </button>
+                    </div>
+
+                    {/* Status filter */}
                     <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm flex-1 md:flex-none justify-between md:justify-start">
                         <div className="flex items-center gap-2">
                             <Filter className="w-4 h-4 text-slate-400" />
@@ -855,6 +952,7 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                                 <option value="all">All Requests</option>
                                 <option value="in_progress">In Progress</option>
                                 <option value="waitlist">Waitlist</option>
+                                <option value="pending_validation">Needs Approval</option>
                                 <option value="completed">Completed</option>
                             </select>
                         </div>
@@ -872,80 +970,48 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
 
             {filter === 'all' ? (
                 <>
-                    {/* Active Requests */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3 px-2">
-                            <div className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-                            <h3 className="text-xs md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Active Requests ({activeTickets.length})</h3>
+                    {isLoading ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="h-40 bg-slate-50 rounded-3xl animate-pulse border border-slate-100" />
+                            ))}
                         </div>
-
-                        {isLoading ? (
-                            <div className="space-y-4">
-                                {[1, 2].map(i => (
-                                    <div key={i} className="h-40 bg-slate-50 rounded-3xl animate-pulse border border-slate-100" />
-                                ))}
+                    ) : [...scopedActive, ...scopedCompleted].length === 0 ? (
+                        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] p-20 text-center">
+                            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
+                                <TicketIcon className="w-8 h-8 text-slate-200" />
                             </div>
-                        ) : activeTickets.length === 0 ? (
-                            <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] p-20 text-center">
-                                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm">
-                                    <TicketIcon className="w-8 h-8 text-slate-200" />
-                                </div>
-                                <h4 className="text-lg font-bold text-slate-900 mb-2">No active requests</h4>
-                                <p className="text-slate-500 max-w-xs mx-auto">You don't have any requests in progress at the moment.</p>
-                                <button
-                                    onClick={() => onNavigate('create_request')}
-                                    className="mt-8 text-primary font-black text-[10px] uppercase tracking-widest hover:underline"
-                                >
-                                    Create your first request
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                                {activeTickets.map(ticket => (
-                                    <TicketCard
-                                        key={ticket.id}
-                                        id={ticket.id}
-                                        title={ticket.title}
-                                        priority={ticket.priority?.toUpperCase() as any || 'MEDIUM'}
-                                        status={ticket.status.toUpperCase() as any || 'OPEN'}
-                                        ticketNumber={ticket.ticket_number}
-                                        createdAt={ticket.created_at}
-                                        photoUrl={ticket.photo_before_url}
-                                        isSlaPaused={ticket.sla_paused}
-                                        assignedTo={ticket.assignee?.full_name}
-                                        onClick={() => router.push(`/tickets/${ticket.id}?from=requests`)}
-                                        onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
-                                        onDelete={onDeleteClick ? (e) => onDeleteClick(e, ticket.id) : undefined}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Completed Requests */}
-                    {completedTickets.length > 0 && (
-                        <div className="space-y-4 pt-8">
-                            <div className="flex items-center gap-3 px-2">
-                                <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                                <h3 className="text-xs md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Recently Resolved ({completedTickets.length})</h3>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                                {completedTickets.map(ticket => (
-                                    <TicketCard
-                                        key={ticket.id}
-                                        id={ticket.id}
-                                        title={ticket.title}
-                                        priority={ticket.priority?.toUpperCase() as any || 'MEDIUM'}
-                                        status="COMPLETED"
-                                        ticketNumber={ticket.ticket_number}
-                                        createdAt={ticket.created_at}
-                                        photoUrl={ticket.photo_before_url}
-                                        isSlaPaused={ticket.sla_paused}
-                                        onClick={() => router.push(`/tickets/${ticket.id}?from=requests`)}
-                                        onDelete={onDeleteClick ? (e) => onDeleteClick(e, ticket.id) : undefined}
-                                    />
-                                ))}
-                            </div>
+                            <h4 className="text-lg font-bold text-slate-900 mb-2">No requests yet</h4>
+                            <p className="text-slate-500 max-w-xs mx-auto">No support requests have been raised yet.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                            {[...scopedActive, ...scopedCompleted]
+                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                                .map(ticket => {
+                                    const isCompleted = ['resolved', 'closed'].includes(ticket.status);
+                                    const isPendingValidation = ticket.status === 'pending_validation';
+                                    return (
+                                        <TicketCard
+                                            key={ticket.id}
+                                            id={ticket.id}
+                                            title={ticket.title}
+                                            priority={ticket.priority?.toUpperCase() as any || 'MEDIUM'}
+                                            status={isCompleted ? 'COMPLETED' : isPendingValidation ? 'PENDING_VALIDATION' : ticket.status.toUpperCase() as any || 'OPEN'}
+                                            ticketNumber={ticket.ticket_number}
+                                            createdAt={ticket.created_at}
+                                            photoUrl={ticket.photo_before_url}
+                                            isSlaPaused={ticket.sla_paused}
+                                            assignedTo={ticket.assignee?.full_name}
+                                            raisedByTenant={true}
+                                            onClick={() => router.push(`/tickets/${ticket.id}?from=requests`)}
+                                            onEdit={!isCompleted && !isPendingValidation && onEditClick ? (e) => onEditClick(e, ticket) : undefined}
+                                            onDelete={onDeleteClick ? (e) => onDeleteClick(e, ticket.id) : undefined}
+                                            onValidate={isPendingValidation && onValidateClick ? (e) => { e.stopPropagation(); onValidateClick(ticket.id, true); } : undefined}
+                                            onReject={isPendingValidation && onValidateClick ? (e) => { e.stopPropagation(); setRejectingTicketId(ticket.id); setRejectNote(''); } : undefined}
+                                        />
+                                    );
+                                })}
                         </div>
                     )}
                 </>
@@ -985,6 +1051,7 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                                     photoUrl={ticket.photo_before_url}
                                     isSlaPaused={ticket.sla_paused}
                                     assignedTo={ticket.assignee?.full_name}
+                                    raisedByTenant={true}
                                     onClick={() => router.push(`/tickets/${ticket.id}?from=requests`)}
                                     // Allow edit only if not completed
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
@@ -993,6 +1060,47 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Rejection Note Modal */}
+            {rejectingTicketId && (
+                <div
+                    className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                    onClick={() => setRejectingTicketId(null)}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 p-6 space-y-4"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 className="text-lg font-bold text-slate-900">Why wasn't this resolved?</h2>
+                        <p className="text-sm text-slate-500">Optional — let the team know what still needs to be done.</p>
+                        <textarea
+                            value={rejectNote}
+                            onChange={(e) => setRejectNote(e.target.value)}
+                            placeholder="Describe what's still missing or incorrect..."
+                            className="w-full h-28 px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-red-400 transition-all text-sm"
+                        />
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={() => setRejectingTicketId(null)}
+                                className="px-4 py-2 text-slate-600 font-semibold rounded-xl hover:bg-slate-100 transition-colors text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => {
+                                    if (rejectingTicketId && onValidateClick) {
+                                        onValidateClick(rejectingTicketId, false, rejectNote || undefined);
+                                    }
+                                    setRejectingTicketId(null);
+                                }}
+                                className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors text-sm"
+                            >
+                                Reopen Request
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

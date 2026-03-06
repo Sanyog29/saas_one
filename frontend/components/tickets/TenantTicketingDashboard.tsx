@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Plus, Send, Star, User, ChevronRight, X, MessageSquare, Loader2, CheckCircle, Camera, Filter, Video, Play, Pause } from 'lucide-react';
+import { Plus, Send, Star, User, ChevronRight, X, MessageSquare, Loader2, CheckCircle, Camera, Filter, Video, Play, Pause, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from '@/frontend/context/ThemeContext';
 import { playTickleSound } from '@/frontend/utils/sounds';
 import MediaCaptureModal, { MediaFile } from '@/frontend/components/shared/MediaCaptureModal';
+import { createClient } from '@/frontend/utils/supabase/client';
 
 interface Ticket {
     id: string;
@@ -39,6 +40,7 @@ interface TenantTicketingDashboardProps {
     user: { id: string; full_name: string };
     propertyName?: string;
     isStaff?: boolean;
+    showInternalToggle?: boolean;
     onSuccess?: () => void;
 }
 
@@ -48,11 +50,13 @@ export default function TenantTicketingDashboard({
     user,
     propertyName,
     isStaff = false,
+    showInternalToggle = false,
     onSuccess
 }: TenantTicketingDashboardProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { theme } = useTheme();
+    const supabase = createClient();
     const [description, setDescription] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [classification, setClassification] = useState<Classification | null>(null);
@@ -64,6 +68,8 @@ export default function TenantTicketingDashboard({
     const [showCameraModal, setShowCameraModal] = useState(false);
     const [isVideoPlaying, setIsVideoPlaying] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
+    const [isInternal, setIsInternal] = useState(false);
+    const [isCritical, setIsCritical] = useState(false);
     const [ratingTicket, setRatingTicket] = useState<Ticket | null>(null);
     const [selectedRating, setSelectedRating] = useState(0);
     const [filter, setFilter] = useState<'all' | 'in_progress' | 'completed'>(
@@ -72,12 +78,25 @@ export default function TenantTicketingDashboard({
 
     useEffect(() => {
         fetchTickets();
+
+        // Real-time subscription: refresh ticket list when any ticket in this property changes
+        const channel = supabase
+            .channel(`tenant_tickets_${propertyId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'tickets',
+                filter: `property_id=eq.${propertyId}`,
+            }, () => fetchTickets())
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
     }, [propertyId, user.id]);
 
     const fetchTickets = async () => {
         try {
-            // If staff/MST, view assigned tickets. If tenant, view raised tickets.
-            const queryParam = isStaff ? `assignedTo=${user.id}` : `raisedBy=${user.id}`;
+            // Staff/MST see their assigned tickets. Tenants see all non-internal tickets for the property.
+            const queryParam = isStaff ? `assignedTo=${user.id}` : `isInternal=false`;
             const response = await fetch(`/api/tickets?propertyId=${propertyId}&${queryParam}`);
             const data = await response.json();
 
@@ -112,7 +131,8 @@ export default function TenantTicketingDashboard({
                     description,
                     propertyId,
                     organizationId,
-                    isInternal: false,
+                    isInternal,
+                    priority: isCritical ? 'critical' : 'low',
                 }),
             });
 
@@ -131,6 +151,7 @@ export default function TenantTicketingDashboard({
                     const formData = new FormData();
                     formData.append('file', mediaFile.file);
                     formData.append('type', 'before');
+                    formData.append('takenAt', mediaFile.takenAt || new Date().toISOString());
                     const endpoint = mediaFile.type === 'video'
                         ? `/api/tickets/${data.ticket.id}/videos`
                         : `/api/tickets/${data.ticket.id}/photos`;
@@ -138,6 +159,7 @@ export default function TenantTicketingDashboard({
                 }
 
                 setDescription('');
+                setIsCritical(false);
                 if (mediaFile?.preview.startsWith('blob:')) URL.revokeObjectURL(mediaFile.preview);
                 setMediaFile(null);
                 setIsVideoPlaying(false);
@@ -224,7 +246,7 @@ export default function TenantTicketingDashboard({
                             </div>
                             <div className="overflow-hidden">
                                 <p className={`font-semibold text-sm ${isDark ? 'text-white' : 'text-text-primary'} truncate`}>{user.full_name}</p>
-                                <p className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-text-tertiary'} font-bold uppercase tracking-widest`}>{isStaff ? 'MST Account' : 'Tenant Account'}</p>
+                                <p className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-text-tertiary'} font-bold uppercase tracking-widest`}>{isStaff ? 'MST Account' : ''}</p>
                             </div>
                         </div>
                     </div>
@@ -243,7 +265,7 @@ export default function TenantTicketingDashboard({
                                 <textarea
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
-                                    placeholder="Describe the issue in your words.&#10;Example: Leaking tap in kitchenette"
+                                    placeholder="Describe the issue in your own words...&#10;Example: Leaking tap in kitchenette, 2nd floor"
                                     className="w-full h-32 md:h-40 bg-surface-elevated text-text-primary border-border border rounded-2xl p-4 md:p-6 placeholder-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all font-medium"
                                 />
                                 {!isDark && <div className="absolute inset-0 rounded-2xl border border-primary/5 pointer-events-none group-focus-within:border-primary/20 transition-smooth"></div>}
@@ -294,6 +316,23 @@ export default function TenantTicketingDashboard({
                                 </div>
                             )}
 
+                            {/* Internal toggle — only for staff/admin roles */}
+                            {showInternalToggle && (
+                                <div className={`flex items-center justify-between mt-4 px-4 py-3 rounded-xl border ${isDark ? 'bg-[#0d1117] border-[#21262d]' : 'bg-slate-50 border-slate-200'}`}>
+                                    <div>
+                                        <p className={`text-sm font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Internal ticket</p>
+                                        <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Not visible to tenants</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsInternal(v => !v)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isInternal ? 'bg-amber-500' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isInternal ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            )}
+
                             <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mt-6 md:mt-10 gap-4">
                                 <div className="flex flex-wrap items-center gap-2">
                                     <button
@@ -302,6 +341,18 @@ export default function TenantTicketingDashboard({
                                     >
                                         <Camera className="w-4 h-4" />
                                         <span>Camera</span>
+                                    </button>
+
+                                    {/* Critical Priority Toggle */}
+                                    <button
+                                        onClick={() => setIsCritical(!isCritical)}
+                                        className={`flex items-center justify-center gap-2 transition-all text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-xl border ${isCritical
+                                            ? 'bg-rose-500 text-white border-rose-600 animate-pulse shadow-lg shadow-rose-500/20'
+                                            : isDark ? 'text-slate-400 hover:text-rose-400 hover:bg-rose-400/5 border-border/10 bg-surface-elevated' : 'text-text-secondary hover:text-rose-600 hover:bg-rose-50 shadow-sm border-slate-200 bg-white'
+                                            }`}
+                                    >
+                                        <Activity className={`w-4 h-4 ${isCritical ? 'text-white' : 'text-rose-500'}`} />
+                                        <span>{isCritical ? 'Critical Request' : 'Mark Critical'}</span>
                                     </button>
                                 </div>
                                 <button

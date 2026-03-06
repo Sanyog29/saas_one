@@ -151,7 +151,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
     const retakePhoto = () => {
         setCapturedImage(null);
         setCapturedBlob(null);
-        startCamera();
+        // Don't auto-start camera, let user choose between Camera and Upload
     };
 
     const confirmPhoto = () => {
@@ -160,6 +160,57 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
         }
     };
 
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setIsLoading(true);
+        try {
+            const imageUrl = URL.createObjectURL(file);
+
+            // For file uploads, we still want to process it through our compressor
+            // to ensure it's a webp and under size limits if possible.
+            const img = new Image();
+            img.onload = async () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+
+                // Simple square crop for uploaded images
+                const size = Math.min(img.width, img.height);
+                canvas.width = 400;
+                canvas.height = 400;
+
+                ctx.drawImage(
+                    img,
+                    (img.width - size) / 2,
+                    (img.height - size) / 2,
+                    size,
+                    size,
+                    0,
+                    0,
+                    400,
+                    400
+                );
+
+                const blob = await compressImage(canvas);
+                const dataUrl = canvas.toDataURL('image/webp', 0.8);
+
+                setCapturedImage(dataUrl);
+                setCapturedBlob(blob);
+                stopCamera();
+                setIsLoading(false);
+            };
+            img.src = imageUrl;
+        } catch (err) {
+            console.error('File upload error:', err);
+            setError('Failed to process image');
+            setIsLoading(false);
+        }
+    };
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
     // Cleanup only
     React.useEffect(() => {
         return () => stopCamera();
@@ -167,11 +218,18 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
 
     return (
         <div className="w-full flex flex-col items-center">
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept="image/*"
+                className="hidden"
+            />
             <div className="relative w-48 h-64 bg-slate-900 rounded-2xl overflow-hidden mb-4 shadow-xl border border-white/10">
                 {isLoading && !error && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10 bg-slate-900/50 backdrop-blur-sm">
                         <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                        <span className="text-[10px] text-white/40 uppercase tracking-widest font-black">Initializing...</span>
+                        <span className="text-[10px] text-white/40 uppercase tracking-widest font-black">Processing...</span>
                     </div>
                 )}
 
@@ -182,6 +240,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
                         </div>
                         <p className="text-[10px] uppercase font-bold text-white/70 leading-relaxed mb-4">{error}</p>
                         <button
+                            type="button"
                             onClick={() => startCamera()}
                             className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-colors"
                         >
@@ -197,12 +256,22 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
                                 <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-white/20">
                                     <Camera className="w-6 h-6" />
                                 </div>
-                                <button
-                                    onClick={() => startCamera()}
-                                    className="px-4 py-2 bg-white text-black text-[10px] font-black uppercase tracking-widest rounded-lg hover:scale-105 transition-transform"
-                                >
-                                    Start Camera
-                                </button>
+                                <div className="flex flex-col gap-2 w-full px-8">
+                                    <button
+                                        type="button"
+                                        onClick={() => startCamera()}
+                                        className="w-full px-4 py-2 bg-white text-black text-[10px] font-black uppercase tracking-widest rounded-lg hover:scale-105 transition-transform"
+                                    >
+                                        Start Camera
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="w-full px-4 py-2 bg-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-white/20 transition-colors"
+                                    >
+                                        Upload Photo
+                                    </button>
+                                </div>
                             </div>
                         )}
                         <video
@@ -229,6 +298,7 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
             <div className="flex gap-3">
                 {!capturedImage ? (
                     <button
+                        type="button"
                         onClick={capturePhoto}
                         disabled={!isCameraActive || isLoading}
                         className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:bg-emerald-700 transition-all disabled:opacity-20 disabled:grayscale"
@@ -239,13 +309,15 @@ const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) =>
                 ) : (
                     <>
                         <button
+                            type="button"
                             onClick={retakePhoto}
                             className="flex items-center gap-2 px-4 py-3 bg-white/10 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:bg-white/20 transition-all"
                         >
                             <RotateCcw className="w-4 h-4" />
-                            Retake
+                            Change Photo
                         </button>
                         <button
+                            type="button"
                             onClick={confirmPhoto}
                             className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-900/40"
                         >

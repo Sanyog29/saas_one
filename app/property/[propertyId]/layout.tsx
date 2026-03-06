@@ -3,14 +3,8 @@
 import { useAuth } from "@/frontend/context/AuthContext";
 import { useRouter, useParams, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { createClient } from "@/frontend/utils/supabase/client";
 import Loader from "@/frontend/components/ui/Loader";
 
-interface PropertyMembership {
-    property_id: string;
-    organization_id: string;
-    role: string;
-}
 
 export default function PropertyLayout({
     children,
@@ -38,106 +32,40 @@ export default function PropertyLayout({
             // UUID Validation helper
             const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-            // Handle invalid propertyId early
-            if (!propertyId || !isUuid(propertyId)) {
-                console.warn('Invalid propertyId detected in layout:', propertyId);
-                // If the user is a Master Admin, they might be on a special path, but /property/[id] 
-                // expects a UUID. If not a UUID, redirect to home or show error.
-                if (propertyId === 'all') {
-                    // Internal routing for "all" properties might be handled elsewhere, 
-                    // but if it hits this layout, we should at least check master admin.
-                } else {
-                    setIsAuthorized(false);
-                    setIsCheckingAccess(false);
-                    return;
-                }
+            if (!propertyId || (!isUuid(propertyId) && propertyId !== 'all')) {
+                setIsAuthorized(false);
+                setIsCheckingAccess(false);
+                return;
             }
 
             try {
-                const supabase = createClient();
+                // Delegate access check to a server-side API that uses the admin client.
+                // This avoids RLS blocking org-level admins who have no property_memberships row.
+                const res = await fetch(`/api/auth/property-access?propertyId=${propertyId}`);
+                const data = await res.json() as { authorized: boolean; role?: string };
 
-                // 1. Check for Master Admin first (Ultimate Bypass)
-                const { data: userProfile, error: profileError } = await supabase
-                    .from('users')
-                    .select('is_master_admin')
-                    .eq('id', user.id)
-                    .maybeSingle();
-
-                if (userProfile?.is_master_admin) {
-                    setIsAuthorized(true);
-                    setUserRole('master_admin');
+                if (!data.authorized) {
+                    setIsAuthorized(false);
                     setIsCheckingAccess(false);
                     return;
                 }
 
-                // 2. Fetch Property to get its Organization
-                const { data: property, error: propError } = await supabase
-                    .from('properties')
-                    .select('organization_id')
-                    .eq('id', propertyId)
-                    .maybeSingle();
+                const role = data.role || '';
+                setIsAuthorized(true);
+                setUserRole(role);
 
-                if (propError) {
-                    console.error('Error fetching property info:', propError);
-                }
+                // For property-level restricted roles, validate the current path
+                const allowedPaths = getRoleAllowedPaths(role, propertyId);
+                const currentPath = pathname || '';
+                const isPathAllowed = allowedPaths.some(allowed =>
+                    currentPath.startsWith(allowed) || currentPath === allowed
+                );
 
-                // 3. Check Organization-level access (Super Admin / Owner)
-                if (property?.organization_id) {
-                    const { data: orgMembership, error: orgError } = await supabase
-                        .from('organization_memberships')
-                        .select('role')
-                        .eq('user_id', user.id)
-                        .eq('organization_id', property.organization_id)
-                        .eq('is_active', true)
-                        .maybeSingle();
-
-                    if (orgError) {
-                        console.error('Error checking org membership:', orgError);
-                    }
-
-                    if (orgMembership && ['org_admin', 'org_super_admin', 'owner'].includes(orgMembership.role)) {
-                        setIsAuthorized(true);
-                        setUserRole(orgMembership.role);
-                        setIsCheckingAccess(false);
-                        return;
-                    }
-                }
-
-                // 4. Check Property-level access (for Staff / Local Admins)
-                const { data: membership, error: memError } = await supabase
-                    .from('property_memberships')
-                    .select('property_id, organization_id, role')
-                    .eq('user_id', user.id)
-                    .eq('property_id', propertyId)
-                    .eq('is_active', true)
-                    .maybeSingle();
-
-                if (memError) {
-                    console.error('Property membership check error:', memError);
-                }
-
-                if (membership) {
-                    setIsAuthorized(true);
-                    setUserRole(membership.role);
-
-                    // Validate role-based route access
-                    const allowedPaths = getRoleAllowedPaths(membership.role, propertyId);
-                    const currentPath = pathname || '';
-                    const isPathAllowed = allowedPaths.some(allowed =>
-                        currentPath.startsWith(allowed) || currentPath === allowed
-                    );
-
-                    if (!isPathAllowed) {
-                        const redirectPath = getRoleDefaultPath(membership.role, propertyId);
-                        router.replace(redirectPath);
-                        return;
-                    }
-                } else {
-                    // No access found at any level
-                    setIsAuthorized(false);
+                if (!isPathAllowed) {
+                    router.replace(getRoleDefaultPath(role, propertyId));
                 }
             } catch (err) {
-                console.error('Access check failed with exception:', err);
+                console.error('Access check failed:', err);
                 setIsAuthorized(false);
             } finally {
                 setIsCheckingAccess(false);

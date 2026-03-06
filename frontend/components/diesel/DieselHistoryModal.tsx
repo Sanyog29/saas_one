@@ -31,6 +31,9 @@ interface Reading {
         make?: string;
         tank_capacity_litres?: number;
     };
+    creator?: {
+        full_name: string;
+    };
 }
 
 interface Generator {
@@ -112,7 +115,8 @@ const DieselHistoryModal: React.FC<DieselHistoryModalProps> = ({
                 .from('diesel_readings')
                 .select(`
                     *,
-                    generator:generators(name, make, tank_capacity_litres)
+                    generator:generators(name, make, tank_capacity_litres),
+                    creator:users!created_by(full_name)
                 `)
                 .in('generator_id', genIds)
                 .gte('reading_date', startOfMonth)
@@ -485,6 +489,11 @@ const DieselHistoryModal: React.FC<DieselHistoryModalProps> = ({
                                                             <span className="text-[10px] font-medium text-slate-500">
                                                                 {new Date(r.created_at || r.reading_date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                                                             </span>
+                                                            {r.creator && (
+                                                                <span className="text-[9px] font-medium text-slate-400 mt-0.5 max-w-[120px] truncate" title={r.creator.full_name}>
+                                                                    By: {r.creator.full_name}
+                                                                </span>
+                                                            )}
                                                         </div>
 
                                                         {/* Metrics Summary - Inline */}

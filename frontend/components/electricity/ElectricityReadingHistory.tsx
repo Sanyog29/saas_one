@@ -26,6 +26,9 @@ interface ReadingLog {
     notes?: string;
     computed_cost?: number;
     created_at: string;
+    creator?: {
+        full_name: string;
+    };
 }
 
 interface Meter {
@@ -87,7 +90,8 @@ const ElectricityReadingHistory: React.FC<ElectricityReadingHistoryProps> = ({
                     .from('electricity_readings')
                     .select(`
                         id, reading_date, opening_reading, closing_reading, computed_units, final_units, notes, computed_cost, created_at,
-                        meter:electricity_meters(id, name, meter_number)
+                        meter:electricity_meters(id, name, meter_number),
+                        creator:users!created_by(full_name)
                     `)
                     .in('meter_id', meterIds)
                     .gte('reading_date', startDate)
@@ -254,9 +258,21 @@ const ElectricityReadingHistory: React.FC<ElectricityReadingHistoryProps> = ({
                                     {readings.map((log) => (
                                         <tr key={log.id} className={`transition-colors ${isDark ? 'hover:bg-[#0d1117]' : 'hover:bg-slate-50'}`}>
                                             <td className="px-6 py-4 font-medium whitespace-nowrap">
-                                                {new Date(log.reading_date).toLocaleDateString('en-US', {
-                                                    day: '2-digit', month: 'short', year: 'numeric'
-                                                })}
+                                                <div className="flex flex-col">
+                                                    <span>
+                                                        {new Date(log.reading_date).toLocaleDateString('en-US', {
+                                                            day: '2-digit', month: 'short', year: 'numeric'
+                                                        })}
+                                                    </span>
+                                                    <span className="text-[10px] text-slate-400 font-normal">
+                                                        {new Date(log.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                    {log.creator && (
+                                                        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-sm inline-block mt-1 w-max">
+                                                            {log.creator.full_name}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-6 py-4 font-bold">
                                                 {log.meter.name}

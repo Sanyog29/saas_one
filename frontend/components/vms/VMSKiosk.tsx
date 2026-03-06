@@ -366,10 +366,11 @@ const VMSKioskContent: React.FC<VMSKioskProps> = ({ propertyId, propertyName }) 
                                         className="w-24 h-32 sm:w-32 sm:h-40 object-cover rounded-xl border-2 border-emerald-500 mb-2"
                                     />
                                     <button
+                                        type="button"
                                         onClick={() => setFormData(prev => ({ ...prev, photo_url: '' }))}
                                         className="text-[10px] sm:text-sm text-slate-500 hover:text-slate-700 font-bold uppercase tracking-tighter"
                                     >
-                                        Retake
+                                        Change Photo
                                     </button>
                                 </div>
                             ) : (

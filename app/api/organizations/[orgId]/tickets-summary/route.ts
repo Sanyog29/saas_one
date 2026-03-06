@@ -28,6 +28,17 @@ export async function GET(
 
         const propertyIds = properties?.map((p) => p.id) || [];
 
+        // Fetch which properties have ticket_validation enabled
+        const { data: validationFeatures } = await supabase
+            .from('property_features')
+            .select('property_id, is_enabled')
+            .eq('feature_key', 'ticket_validation')
+            .in('property_id', propertyIds);
+
+        const validationMap = new Map((validationFeatures || []).map((f: any) => [f.property_id, f.is_enabled]));
+        // Default to enabled if not explicitly set
+        const propertiesWithValidation = propertyIds.filter(id => validationMap.get(id) !== false).length;
+
         if (propertyIds.length === 0) {
             return NextResponse.json({
                 organization_id: orgId,
@@ -36,14 +47,16 @@ export async function GET(
                 open_tickets: 0,
                 in_progress: 0,
                 resolved: 0,
+                pending_validation: 0,
+                validated_closed: 0,
                 sla_breached: 0,
                 avg_resolution_hours: 0,
+                properties_with_validation: 0,
                 properties: [],
             });
         }
 
         // Calculate date range
-        const now = new Date();
         let startDate = new Date();
 
         if (period === 'today') {
@@ -51,15 +64,21 @@ export async function GET(
         } else if (period === 'week') {
             startDate.setDate(startDate.getDate() - 7);
         } else if (period === 'month') {
-            startDate.setMonth(startDate.getMonth() - 1);
+            startDate = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+            startDate.setHours(0, 0, 0, 0);
         }
 
         // Fetch all tickets for these properties
-        const { data: tickets } = await supabase
+        let query = supabase
             .from('tickets')
-            .select('id, property_id, status, sla_breached, created_at, resolved_at')
-            .in('property_id', propertyIds)
-            .gte('created_at', startDate.toISOString());
+            .select('id, property_id, status, priority, sla_breached, created_at, resolved_at')
+            .in('property_id', propertyIds);
+
+        if (period !== 'all') {
+            query = query.gte('created_at', startDate.toISOString());
+        }
+
+        const { data: tickets } = await query;
 
         // Calculate overall stats
         const totalTickets = tickets?.length || 0;
@@ -70,6 +89,9 @@ export async function GET(
         const waitlist = tickets?.filter(t => t.status === 'waitlist').length || 0;
         const inProgress = tickets?.filter(t => t.status === 'assigned' || t.status === 'in_progress' || t.status === 'paused' || t.status === 'work_started').length || 0;
         const resolved = tickets?.filter(t => resolvedStatuses.includes(t.status || '')).length || 0;
+        const pendingValidation = tickets?.filter(t => t.status === 'pending_validation').length || 0;
+        const validatedClosed = tickets?.filter(t => t.status === 'closed').length || 0;
+        const urgentOpen = tickets?.filter(t => (t.priority === 'urgent' || t.priority === 'high' || t.priority === 'critical') && !resolvedStatuses.includes(t.status || '') && t.status !== 'pending_validation').length || 0;
         const slaBreached = tickets?.filter(t => t.sla_breached).length || 0;
 
         // Calculate average resolution time
@@ -87,15 +109,20 @@ export async function GET(
         // Build property breakdown
         const propertyBreakdown = properties?.map(prop => {
             const propTickets = tickets?.filter(t => t.property_id === prop.id) || [];
+            const validationOn = validationMap.get(prop.id) !== false;
             return {
                 property_id: prop.id,
                 property_name: prop.name,
                 property_code: prop.code,
+                validation_enabled: validationOn,
                 total: propTickets.length,
                 open: propTickets.filter(t => t.status === 'open' || t.status === 'waitlist' || t.status === 'blocked').length,
                 waitlist: propTickets.filter(t => t.status === 'waitlist').length,
                 in_progress: propTickets.filter(t => t.status === 'assigned' || t.status === 'in_progress' || t.status === 'paused' || t.status === 'work_started').length,
                 resolved: propTickets.filter(t => resolvedStatuses.includes(t.status || '')).length,
+                pending_validation: propTickets.filter(t => t.status === 'pending_validation').length,
+                validated_closed: propTickets.filter(t => t.status === 'closed').length,
+                urgent_open: propTickets.filter(t => (t.priority === 'urgent' || t.priority === 'high' || t.priority === 'critical') && !resolvedStatuses.includes(t.status || '') && t.status !== 'pending_validation').length,
                 sla_breached: propTickets.filter(t => t.sla_breached).length,
             };
         }) || [];
@@ -111,8 +138,12 @@ export async function GET(
             waitlist,
             in_progress: inProgress,
             resolved,
+            pending_validation: pendingValidation,
+            validated_closed: validatedClosed,
+            urgent_open: urgentOpen,
             sla_breached: slaBreached,
             avg_resolution_hours: avgResolutionHours,
+            properties_with_validation: propertiesWithValidation,
             properties: propertyBreakdown,
         });
     } catch (error) {

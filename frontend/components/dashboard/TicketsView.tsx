@@ -28,12 +28,15 @@ interface Ticket {
     assigned_to?: string;
     organization: { id: string; name: string; code: string };
     property: { id: string; name: string; code: string } | null;
-    creator: { id: string; full_name: string; email: string };
+    property_id?: string;
+    creator: { id: string; full_name: string; email: string; property_memberships?: { role: string; property_id: string }[] };
     assignee: { id: string; full_name: string; email: string } | null;
     ticket_comments: { count: number }[];
     photo_before_url?: string;
     photo_after_url?: string;
     sla_paused?: boolean;
+    sla_deadline?: string | null;
+    internal?: boolean;
 }
 
 interface Comment {
@@ -97,7 +100,9 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, canDelete, onNewR
             if (statusFilter === 'tenant_raised') {
                 // Tenant filter: use raisedByRole param instead of status
                 url = '/api/tickets?raisedByRole=tenant';
-            } else if (statusFilter === 'all' || statusFilter === 'sla_paused') {
+            } else if (statusFilter === 'internal') {
+                url = '/api/tickets?isInternal=true';
+            } else if (statusFilter === 'all' || statusFilter === 'sla_paused' || statusFilter === 'sla_breached' || statusFilter === 'pending_validation') {
                 url = '/api/tickets';
             } else {
                 url = `/api/tickets?status=${statusFilter}`;
@@ -116,6 +121,21 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, canDelete, onNewR
                 // Filter by SLA Paused if selected
                 if (statusFilter === 'sla_paused') {
                     fetchedTickets = fetchedTickets.filter((t: Ticket) => t.sla_paused);
+                }
+
+                // Filter by Pending Validation
+                if (statusFilter === 'pending_validation') {
+                    fetchedTickets = fetchedTickets.filter((t: Ticket) => t.status === 'pending_validation');
+                }
+
+                // Filter by SLA Breached: deadline has passed and ticket is not resolved/closed
+                if (statusFilter === 'sla_breached') {
+                    const now = new Date();
+                    fetchedTickets = fetchedTickets.filter((t: Ticket) =>
+                        t.sla_deadline &&
+                        new Date(t.sla_deadline) < now &&
+                        !['resolved', 'closed'].includes(t.status)
+                    );
                 }
 
                 // Sort tickets: strictly by created_at descending (latest first)
@@ -262,9 +282,17 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, canDelete, onNewR
                             <option value="open,assigned,in_progress,blocked">Open</option>
                             <option value="waitlist">Waitlist</option>
                             <option value="sla_paused">SLA Paused</option>
-                            <option value="tenant_raised">Tenant Raised</option>
+                            <option value="sla_breached">SLA Breached</option>
+                            <option value="pending_validation">Pending Validation</option>
+                            <option value="tenant_raised">Client Raised</option>
+                            <option value="internal">Internal</option>
                         </select>
                     </div>
+                    {!isLoading && (
+                        <span className="px-2.5 py-1 bg-primary/10 text-primary text-xs font-bold rounded-full whitespace-nowrap">
+                            {tickets.length} Result{tickets.length !== 1 ? 's' : ''}
+                        </span>
+                    )}
                 </div>
                 <div className="flex items-center gap-2 sm:gap-3">
                     {propertyId && !['org_super_admin', 'master_admin', 'owner'].includes(membership?.org_role || '') && (
@@ -341,6 +369,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, canDelete, onNewR
                                 photoUrl={ticket.photo_before_url}
                                 isSlaPaused={ticket.sla_paused}
                                 propertyName={ticket.property?.name}
+                                raisedByTenant={(ticket.creator?.property_memberships || []).some((m) => m.property_id === (ticket.property_id || ticket.property?.id) && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}
                                 onClick={() => router.push(`/tickets/${ticket.id}?from=requests`)}
                                 onEdit={canEditTicket(ticket) ? (e) => handleEditClick(e, ticket) : undefined}
                                 onDelete={canDelete ? (e) => handleDelete(e, ticket.id) : undefined}
@@ -396,7 +425,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, canDelete, onNewR
                                         value={editDescription}
                                         onChange={(e) => setEditDescription(e.target.value)}
                                         className="w-full h-32 px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
-                                        placeholder="Describe the issue..."
+                                        placeholder="Describe the issue in your own words...&#10;Example: Leaking tap in kitchenette, 2nd floor"
                                     />
                                 </div>
                             </div>

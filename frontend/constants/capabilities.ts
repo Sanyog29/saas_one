@@ -95,5 +95,11 @@ export const CAPABILITY_MATRIX: Record<RoleKey, CapabilityMatrix> = {
         tickets: ['view', 'approve', 'assign', 'delete'],
         dashboards: ['view'],
         reports: ['view']
+    },
+    super_tenant: {
+        tickets: ['view'],
+        properties: ['view'],
+        dashboards: ['view'],
+        reports: ['view']
     }
 };

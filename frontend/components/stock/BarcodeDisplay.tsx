@@ -105,7 +105,7 @@ export default function BarcodeDisplay({
             printWindow.document.write(`
                 <html>
                     <head>
-                        <title>Barcode - ${itemName}</title>
+                        <title>QR Code - ${itemName}</title>
                         <style>
                             body {
                                 font-family: Arial, sans-serif;
@@ -157,7 +157,7 @@ export default function BarcodeDisplay({
                         <div class="item-info">
                             <h2>${itemName}</h2>
                             <p>Code: ${itemCode}</p>
-                            <p>Barcode: ${value}</p>
+                            <p>QR Code: ${value}</p>
                         </div>
 
                         ${format === 'CODE128' || format === 'both' ? `
@@ -198,7 +198,7 @@ export default function BarcodeDisplay({
                     <span className="font-semibold">Item Code:</span> {itemCode}
                 </p>
                 <p className="text-sm text-text-secondary">
-                    <span className="font-semibold">Barcode:</span>
+                    <span className="font-semibold">QR Code:</span>
                     <span className="font-mono text-xs ml-2 break-all">{value}</span>
                 </p>
             </div>

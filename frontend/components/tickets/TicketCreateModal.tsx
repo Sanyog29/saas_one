@@ -16,6 +16,7 @@ interface TicketCreateModalProps {
     isAdminMode?: boolean;
     organizations?: any[];
     properties?: any[];
+    showInternalToggle?: boolean; // shown for all roles except tenant
 }
 
 interface Classification {
@@ -33,7 +34,8 @@ export default function TicketCreateModal({
     onSuccess,
     isAdminMode = false,
     organizations = [],
-    properties = []
+    properties = [],
+    showInternalToggle = false,
 }: TicketCreateModalProps) {
     const [description, setDescription] = useState('');
     const [isInternal, setIsInternal] = useState(false);
@@ -116,6 +118,7 @@ export default function TicketCreateModal({
                 const formData = new FormData();
                 formData.append('file', mediaFile.file);
                 formData.append('type', 'before');
+                formData.append('takenAt', mediaFile.takenAt || new Date().toISOString());
 
                 const endpoint = mediaFile.type === 'video'
                     ? `/api/tickets/${data.ticket.id}/videos`
@@ -228,6 +231,23 @@ export default function TicketCreateModal({
                                         className="w-full h-32 px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-all"
                                     />
                                 </div>
+
+                                {/* Internal toggle — hidden for tenant role */}
+                                {showInternalToggle && (
+                                    <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                        <div>
+                                            <p className="text-sm font-bold text-slate-700">Internal ticket</p>
+                                            <p className="text-xs text-slate-400 mt-0.5">Not visible to tenants</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsInternal(v => !v)}
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isInternal ? 'bg-amber-500' : 'bg-slate-300'}`}
+                                        >
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isInternal ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                )}
 
                                 {/* Media Preview */}
                                 {mediaFile && (

@@ -309,6 +309,7 @@ function TicketSection({
                             createdAt={ticket.created_at}
                             assignedTo={ticket.assignee?.full_name}
                             photoUrl={ticket.photo_before_url}
+                            raisedByTenant={!ticket.internal}
                             onClick={() => onTicketClick(ticket.id)}
                         />
                     ))}

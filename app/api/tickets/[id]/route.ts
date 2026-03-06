@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/frontend/utils/supabase/server';
 import { createAdminClient } from '@/frontend/utils/supabase/admin';
+import { logAudit } from '@/backend/lib/audit';
 
 /**
  * GET /api/tickets/[id]
@@ -39,24 +40,36 @@ export async function GET(
             .eq('ticket_id', ticketId)
             .order('created_at', { ascending: true });
 
-        // Get activity log
-        const { data: activities } = await supabase
+        const adminSupabase = createAdminClient();
+
+        // Get activity log (use admin client to bypass RLS so all users' upload activities are visible)
+        const { data: activities } = await adminSupabase
             .from('ticket_activity_log')
             .select(`*, user:users(id, full_name)`)
             .eq('ticket_id', ticketId)
             .order('created_at', { ascending: false })
-            .limit(20);
+            .limit(50);
 
-        // Build timeline
+        // Check if validation is enabled for this property
+        const { data: feature } = await adminSupabase
+            .from('property_features')
+            .select('is_enabled')
+            .eq('property_id', ticket.property_id)
+            .eq('feature_key', 'ticket_validation')
+            .maybeSingle();
+        const validationEnabled = feature ? feature.is_enabled : true;
+
+        // Build timeline — conditionally include validation step
         const timeline = [
             { step: 'Requested', completed: true, time: ticket.created_at },
             { step: 'Assigned', completed: !!ticket.assigned_at, time: ticket.assigned_at },
             { step: 'In Progress', completed: !!ticket.work_started_at, time: ticket.work_started_at },
             { step: 'Photos Uploaded', completed: !!ticket.photo_after_url, time: null },
+            ...(validationEnabled ? [{ step: 'Pending Approval', completed: ['pending_validation', 'resolved', 'closed'].includes(ticket.status), time: ticket.status === 'pending_validation' ? ticket.resolved_at : null }] : []),
             { step: 'Completed', completed: ticket.status === 'resolved' || ticket.status === 'closed', time: ticket.resolved_at },
         ];
 
-        return NextResponse.json({ ticket, comments: comments || [], activities: activities || [], timeline });
+        return NextResponse.json({ ticket, comments: comments || [], activities: activities || [], timeline, validationEnabled });
     } catch (error) {
         console.error('Ticket detail error:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -97,8 +110,11 @@ export async function PATCH(
             title,
             description,
             // MST workflow actions
-            action, // 'self_assign' | 'start_work' | 'pause_work' | 'resume_work' | 'complete'
+            action, // 'self_assign' | 'start_work' | 'pause_work' | 'resume_work' | 'complete' | 'validate'
             work_pause_reason,
+            // Validation fields (for 'validate' action)
+            validation_approved,
+            validation_note,
         } = body;
 
         // Get current ticket
@@ -207,24 +223,130 @@ export async function PATCH(
                     break;
 
                 case 'complete':
-                    // MST completes ticket
+                    // MST marks ticket as done
                     if (currentTicket.assigned_to !== user.id) {
                         return NextResponse.json({
                             error: 'You must be assigned to this ticket to complete it'
                         }, { status: 400 });
                     }
-                    updates.status = 'closed';
                     updates.resolved_at = new Date().toISOString();
                     updates.work_paused = false;
+
+                    {
+                        // Check if this property has validation enabled via feature flags
+                        // Use admin client to bypass RLS — MST users don't have SELECT on property_features
+                        const adminSupabase = createAdminClient();
+                        const { data: feature } = await adminSupabase
+                            .from('property_features')
+                            .select('is_enabled')
+                            .eq('property_id', currentTicket.property_id)
+                            .eq('feature_key', 'ticket_validation')
+                            .maybeSingle();
+
+                        // Default to true if not specifically configured, to maintain existing behavior
+                        const validationEnabled = feature ? feature.is_enabled : true;
+
+                        if (currentTicket.internal || !validationEnabled) {
+                            // Internal tickets OR properties without validation → close directly
+                            updates.status = 'closed';
+                            await supabase.from('ticket_activity_log').insert({
+                                ticket_id: ticketId,
+                                user_id: user.id,
+                                action: 'completed',
+                                old_value: currentTicket.status,
+                                new_value: 'closed',
+                            });
+                            logAudit({
+                                eventBy: user.id,
+                                objectType: 'ticket',
+                                objectId: ticketId,
+                                action: 'ticket_completed',
+                                payload: {
+                                    ticket_title: currentTicket.title,
+                                    property_id: currentTicket.property_id,
+                                    closed_directly: true,
+                                },
+                            });
+                        } else {
+                            // Non-internal tickets with validation enabled → pending_validation
+                            updates.status = 'pending_validation';
+                            updates.validation_status = 'pending';
+                            await supabase.from('ticket_activity_log').insert({
+                                ticket_id: ticketId,
+                                user_id: user.id,
+                                action: 'pending_validation',
+                                old_value: currentTicket.status,
+                                new_value: 'pending_validation',
+                            });
+                            logAudit({
+                                eventBy: user.id,
+                                objectType: 'ticket',
+                                objectId: ticketId,
+                                action: 'ticket_completed',
+                                payload: {
+                                    ticket_title: currentTicket.title,
+                                    property_id: currentTicket.property_id,
+                                    closed_directly: false,
+                                    awaiting_validation: true,
+                                },
+                            });
+                        }
+                    }
+                    break;
+
+                case 'validate': {
+                    // Any tenant in the property can validate
+                    const { data: validatorMembership } = await supabase
+                        .from('property_memberships')
+                        .select('role')
+                        .eq('property_id', currentTicket.property_id)
+                        .eq('user_id', user.id)
+                        .eq('is_active', true)
+                        .maybeSingle();
+
+                    if (!validatorMembership || validatorMembership.role?.toUpperCase() !== 'TENANT') {
+                        return NextResponse.json({
+                            error: 'Only tenants can validate tickets'
+                        }, { status: 403 });
+                    }
+                    if (currentTicket.status !== 'pending_validation') {
+                        return NextResponse.json({
+                            error: 'Ticket is not pending validation'
+                        }, { status: 400 });
+                    }
+                    const isApproved = validation_approved === true;
+                    updates.validated_by = user.id;
+                    updates.validated_at = new Date().toISOString();
+                    updates.validation_status = isApproved ? 'approved' : 'rejected';
+
+                    if (isApproved) {
+                        updates.status = 'resolved';
+                    } else {
+                        updates.status = 'open';
+                        updates.resolved_at = null;
+                        if (validation_note) updates.validation_note = validation_note;
+                    }
 
                     await supabase.from('ticket_activity_log').insert({
                         ticket_id: ticketId,
                         user_id: user.id,
-                        action: 'completed',
-                        old_value: currentTicket.status,
-                        new_value: 'closed',
+                        action: isApproved ? 'validated_approved' : 'validated_rejected',
+                        old_value: 'pending_validation',
+                        new_value: isApproved ? 'resolved' : (validation_note || 'rejected by client'),
+                    });
+                    logAudit({
+                        eventBy: user.id,
+                        objectType: 'ticket',
+                        objectId: ticketId,
+                        action: isApproved ? 'ticket_validated_approved' : 'ticket_validated_rejected',
+                        payload: {
+                            ticket_title: currentTicket.title,
+                            property_id: currentTicket.property_id,
+                            validation_note: validation_note || null,
+                        },
                     });
                     break;
+                }
 
                 default:
                     return NextResponse.json({
@@ -245,6 +367,11 @@ export async function PATCH(
                     updates.resolved_at = new Date().toISOString();
                 }
             }
+            // If admin reopens from pending_validation, clear validation state
+            if (status === 'open' && currentTicket.status === 'pending_validation') {
+                updates.validation_status = null;
+                updates.validated_at = null;
+            }
 
             await supabase.from('ticket_activity_log').insert({
                 ticket_id: ticketId,
@@ -252,6 +379,18 @@ export async function PATCH(
                 action: 'status_change',
                 old_value: currentTicket.status,
                 new_value: status,
+            });
+            logAudit({
+                eventBy: user.id,
+                objectType: 'ticket',
+                objectId: ticketId,
+                action: 'ticket_status_changed',
+                payload: {
+                    ticket_title: currentTicket.title,
+                    property_id: currentTicket.property_id,
+                    old_status: currentTicket.status,
+                    new_status: status,
+                },
             });
         }
 
@@ -270,6 +409,18 @@ export async function PATCH(
                 user_id: user.id,
                 action: 'assigned',
                 new_value: assigned_to,
+            });
+            logAudit({
+                eventBy: user.id,
+                objectType: 'ticket',
+                objectId: ticketId,
+                action: 'ticket_assigned',
+                payload: {
+                    ticket_title: currentTicket.title,
+                    property_id: currentTicket.property_id,
+                    assigned_from: currentTicket.assigned_to || null,
+                    assigned_to: assigned_to,
+                },
             });
         }
 
@@ -394,11 +545,27 @@ export async function PATCH(
                 });
             }
 
-            // Check for completion
+            // Check for pending validation (non-internal MST complete, awaiting tenant approval)
+            if (updates.status === 'pending_validation') {
+                console.log('[Ticket Update API] Triggering afterTicketPendingValidation...');
+                NotificationService.afterTicketPendingValidation(ticketId).catch(err => {
+                    console.error('[Ticket Update API] Notification trigger error (PendingValidation):', err);
+                });
+            }
+
+            // Check for completion (admin-forced or tenant-validated)
             if (updates.status === 'closed' || updates.status === 'resolved') {
                 console.log('[Ticket Update API] Triggering afterTicketCompleted...');
                 NotificationService.afterTicketCompleted(ticketId).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (Completed):', err);
+                });
+            }
+
+            // Check for validation outcome (approved or rejected)
+            if (action === 'validate') {
+                console.log('[Ticket Update API] Triggering afterTicketValidated...');
+                NotificationService.afterTicketValidated(ticketId, validation_approved === true).catch(err => {
+                    console.error('[Ticket Update API] Notification trigger error (Validated):', err);
                 });
             }
         } catch (err) {
@@ -469,7 +636,7 @@ export async function DELETE(
             canDelete = true;
         }
 
-        const adminRoles = ['PROPERTY_ADMIN', 'property_admin', 'ORG_ADMIN', 'org_admin', 'admin', 'ADMIN', 'manager', 'MANAGER', 'manager_executive', 'super_admin', 'SUPER_ADMIN', 'staff', 'STAFF', 'mst', 'MST'];
+        const adminRoles = ['PROPERTY_ADMIN', 'property_admin', 'ORG_ADMIN', 'org_admin', 'org_super_admin', 'ORG_SUPER_ADMIN', 'admin', 'ADMIN', 'manager', 'MANAGER', 'manager_executive', 'super_admin', 'SUPER_ADMIN', 'staff', 'STAFF', 'mst', 'MST'];
 
         // Check Property Admin/Manager Roles
         if (!canDelete && ticket.property_id) {
@@ -523,6 +690,19 @@ export async function DELETE(
             console.log(`[DELETE TICKET] Final Decision: Permission Denied for user ${user.id} on ticket ${ticketId}`);
             return NextResponse.json({ error: 'You do not have permission to delete this ticket' }, { status: 403 });
         }
+
+        // Log deletion before it happens so we preserve ticket details
+        logAudit({
+            eventBy: user.id,
+            objectType: 'ticket',
+            objectId: ticketId,
+            action: 'ticket_deleted',
+            payload: {
+                property_id: ticket.property_id,
+                organization_id: ticket.organization_id,
+                raised_by: ticket.raised_by,
+            },
+        });
 
         // Perform deletion using Admin Client to bypass RLS on cascaded tables
         // 1. Manually delete notifications (and rely on their cascade to delivery, or do strictly manual)

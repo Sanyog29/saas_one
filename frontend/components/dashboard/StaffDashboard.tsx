@@ -57,6 +57,9 @@ interface Ticket {
     photo_before_url?: string;
     raised_by?: string;
     sla_paused?: boolean;
+    internal?: boolean;
+    property_id?: string;
+    creator?: { property_memberships?: { role: string; property_id: string }[] };
 }
 
 
@@ -218,7 +221,8 @@ const StaffDashboard = () => {
             .single();
 
         if (member) {
-            setUserRole(member.role.replace('_', ' '));
+            const formattedRole = member.role === 'tenant' ? 'Client' : member.role.replace('_', ' ');
+            setUserRole(formattedRole);
         } else {
             // Check org membership if property not found
             const { data: orgMember } = await supabase
@@ -226,7 +230,10 @@ const StaffDashboard = () => {
                 .select('role')
                 .eq('user_id', user.id)
                 .single();
-            if (orgMember) setUserRole(orgMember.role.replace('_', ' '));
+            if (orgMember) {
+                const formattedRole = orgMember.role === 'tenant' ? 'Client' : orgMember.role.replace('_', ' ');
+                setUserRole(formattedRole);
+            }
         }
     };
 
@@ -238,7 +245,8 @@ const StaffDashboard = () => {
             .from('tickets')
             .select(`
                 *,
-                assignee:users!assigned_to(id, full_name, email)
+                assignee:users!assigned_to(id, full_name, email),
+                creator:users!raised_by(property_memberships(role, property_id))
             `)
             .eq('property_id', propertyId)
             .order('created_at', { ascending: false });
@@ -708,6 +716,7 @@ const StaffDashboard = () => {
                                     user={{ id: user.id, full_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Staff' }}
                                     propertyName={property.name}
                                     isStaff={true}
+                                    showInternalToggle={true}
                                 />
                             )}
                             {activeTab === 'flow-map' && (
@@ -1032,6 +1041,7 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
                                     assignedTo={ticket.assignee?.full_name}
                                     photoUrl={ticket.photo_before_url}
                                     isSlaPaused={ticket.sla_paused}
+                                    raisedByTenant={((ticket.creator as any)?.property_memberships || []).some((m: any) => m.property_id === ticket.property_id && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}
                                     onClick={() => onTicketClick?.(ticket.id)}
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
                                     onDelete={onDeleteClick ? (e) => onDeleteClick(e, ticket.id) : undefined}
@@ -1162,6 +1172,7 @@ const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick,
                                     assignedTo={ticket.assignee?.full_name}
                                     photoUrl={ticket.photo_before_url}
                                     isSlaPaused={ticket.sla_paused}
+                                    raisedByTenant={((ticket.creator as any)?.property_memberships || []).some((m: any) => m.property_id === ticket.property_id && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}
                                     onClick={() => onTicketClick?.(ticket.id)}
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
                                     onDelete={onDeleteClick ? (e) => onDeleteClick(e, ticket.id) : undefined}
@@ -1218,6 +1229,7 @@ const TasksTab = ({ tickets = [], onTicketClick, onEditClick }: { tickets: any[]
                                     assignedTo="You"
                                     photoUrl={ticket.photo_before_url}
                                     isSlaPaused={ticket.sla_paused}
+                                    raisedByTenant={((ticket.creator as any)?.property_memberships || []).some((m: any) => m.property_id === ticket.property_id && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}
                                     onClick={() => onTicketClick?.(ticket.id)}
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
                                 />

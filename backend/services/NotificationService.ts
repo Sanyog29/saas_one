@@ -301,6 +301,148 @@ export class NotificationService {
         }
     }
 
+    /**
+     * Triggered when MST completes a ticket — notifies the tenant to validate.
+     */
+    static async afterTicketPendingValidation(ticketId: string) {
+        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketPendingValidation for:', ticketId);
+        try {
+            const { data: ticket, error: ticketError } = await supabaseAdmin
+                .from('tickets')
+                .select('id, title, property_id, organization_id, raised_by')
+                .eq('id', ticketId)
+                .single();
+
+            if (ticketError || !ticket) return;
+
+            // Only notify the tenant who raised the ticket
+            if (!ticket.raised_by) return;
+
+            const { data: creatorMembership } = await supabaseAdmin
+                .from('property_memberships')
+                .select('role')
+                .eq('property_id', ticket.property_id)
+                .eq('user_id', ticket.raised_by)
+                .single();
+
+            if (creatorMembership?.role?.toUpperCase() === 'TENANT') {
+                await this.send({
+                    userId: String(ticket.raised_by),
+                    ticketId: ticket.id,
+                    propertyId: ticket.property_id,
+                    organizationId: ticket.organization_id,
+                    type: 'TICKET_PENDING_VALIDATION',
+                    title: 'Request Completed — Your Approval Needed',
+                    message: `Your request "${ticket.title}" has been resolved. Please review and confirm.`,
+                    deepLink: `/tickets/${ticket.id}?via=notification`
+                });
+            }
+        } catch (error) {
+            console.error('[NotificationService] afterTicketPendingValidation error:', error);
+        }
+    }
+
+    /**
+     * Triggered when tenant validates (approves or rejects) a ticket.
+     */
+    static async afterTicketValidated(ticketId: string, approved: boolean) {
+        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketValidated for:', ticketId, 'approved:', approved);
+        try {
+            const { data: ticket, error: ticketError } = await supabaseAdmin
+                .from('tickets')
+                .select('id, title, property_id, organization_id, assigned_to')
+                .eq('id', ticketId)
+                .single();
+
+            if (ticketError || !ticket) return;
+
+            const recipientIds = new Set<string>();
+
+            // Notify property admins
+            const { data: team } = await supabaseAdmin
+                .from('property_memberships')
+                .select('user_id, role')
+                .eq('property_id', ticket.property_id);
+
+            if (team) {
+                team.filter(t => t.role?.toLowerCase() === 'property_admin')
+                    .forEach(t => recipientIds.add(String(t.user_id)));
+            }
+
+            // Notify assignee (MST)
+            if (ticket.assigned_to) {
+                recipientIds.add(String(ticket.assigned_to));
+            }
+
+            const message = approved
+                ? `Ticket "${ticket.title}" has been approved and marked as resolved by the client.`
+                : `Ticket "${ticket.title}" was rejected by the client and has been reopened.`;
+
+            for (const userId of Array.from(recipientIds)) {
+                await this.send({
+                    userId,
+                    ticketId: ticket.id,
+                    propertyId: ticket.property_id,
+                    organizationId: ticket.organization_id,
+                    type: approved ? 'TICKET_VALIDATED' : 'TICKET_REJECTED',
+                    title: approved ? 'Ticket Validated by Client' : 'Ticket Rejected by Client',
+                    message,
+                    deepLink: `/tickets/${ticket.id}?via=notification`
+                });
+            }
+        } catch (error) {
+            console.error('[NotificationService] afterTicketValidated error:', error);
+        }
+    }
+
+    /**
+     * Triggered when a tenant raises a CRITICAL priority ticket.
+     * Sends an urgent alert to all property staff/admins/MST — not to tenants.
+     */
+    static async afterCriticalTicketCreated(ticketId: string) {
+        console.log('>>>>>>>>>> [NOTIFICATION] afterCriticalTicketCreated for:', ticketId);
+        try {
+            const { data: ticket, error: ticketError } = await supabaseAdmin
+                .from('tickets')
+                .select('*, properties(name), creator:users!raised_by(full_name)')
+                .eq('id', ticketId)
+                .single();
+
+            if (ticketError || !ticket) {
+                console.error('[NotificationService] afterCriticalTicketCreated: ticket not found', ticketError);
+                return;
+            }
+
+            const creatorName = (ticket.creator as any)?.full_name || 'A client';
+            const propertyName = (ticket.properties as any)?.name || 'the property';
+
+            // Notify all staff, admins, MST, security — exclude tenants
+            const { data: members } = await supabaseAdmin
+                .from('property_memberships')
+                .select('user_id, role')
+                .eq('property_id', ticket.property_id)
+                .in('role', ['property_admin', 'staff', 'mst', 'security']);
+
+            const recipientIds = (members || []).map(m => String(m.user_id));
+            console.log(`>>>>>>>>>> [NOTIFICATION] Sending CRITICAL alert to ${recipientIds.length} staff/admin recipients`);
+
+            for (const userId of recipientIds) {
+                await this.send({
+                    userId,
+                    ticketId: ticket.id,
+                    propertyId: ticket.property_id,
+                    organizationId: ticket.organization_id,
+                    type: 'TICKET_CRITICAL',
+                    title: 'Critical Request — Immediate Action Required',
+                    message: `${creatorName} raised a CRITICAL request at ${propertyName}: "${ticket.title}". Please resolve this urgently.`,
+                    deepLink: `/tickets/${ticket.id}?via=notification`,
+                });
+            }
+        } catch (error) {
+            console.error('[NotificationService] afterCriticalTicketCreated error:', error);
+        }
+    }
+
     static async afterRoomBooked(bookingId: string) {
         console.log('>>>>>>>>>> [NOTIFICATION TEST] afterRoomBooked starting for:', bookingId);
         try {

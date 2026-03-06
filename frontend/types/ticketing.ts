@@ -7,15 +7,16 @@ export type TicketDepartment = 'technical' | 'soft_services' | 'vendor';
 export type SkillGroup = 'technical' | 'plumbing' | 'vendor' | 'soft_services';
 
 // Updated ticket status flow for MST-driven workflow
-// REQUESTED (open) -> WAITLIST -> ASSIGNED -> WORK_STARTED (in_progress) -> [PAUSED] -> COMPLETED (closed)
+// REQUESTED (open) -> WAITLIST -> ASSIGNED -> WORK_STARTED (in_progress) -> [PAUSED] -> PENDING_VALIDATION -> RESOLVED (approved) or OPEN (rejected)
 export type TicketStatus =
-    | 'open'        // REQUESTED - Initial tenant submission
-    | 'waitlist'    // WAITLIST - In department queue
-    | 'assigned'    // ASSIGNED - MST self-assigned
-    | 'in_progress' // WORK_STARTED - MST actively working
-    | 'paused'      // PAUSED - Explicitly paused with reason
-    | 'resolved'    // Soft complete
-    | 'closed';     // COMPLETED
+    | 'open'                 // REQUESTED - Initial tenant submission
+    | 'waitlist'             // WAITLIST - In department queue
+    | 'assigned'             // ASSIGNED - MST self-assigned
+    | 'in_progress'          // WORK_STARTED - MST actively working
+    | 'paused'               // PAUSED - Explicitly paused with reason
+    | 'pending_validation'   // AWAITING CLIENT APPROVAL - MST marked done, waiting tenant to validate
+    | 'resolved'             // Tenant-approved completion
+    | 'closed';              // Admin-closed
 
 export type TicketPriority = 'low' | 'medium' | 'high' | 'critical';
 
@@ -92,6 +93,7 @@ export interface MstTicketView {
     photo_after_url?: string;
     property_id: string;
     organization_id: string;
+    internal?: boolean;
 }
 
 // MST workload tracking

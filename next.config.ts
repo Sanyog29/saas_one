@@ -20,8 +20,6 @@ const nextConfig: NextConfig = {
   // React strict mode for catching potential problems
   reactStrictMode: true,
 
-  turbopack: {},
-
   images: {
     remotePatterns: [
       {

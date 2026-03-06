@@ -5,7 +5,7 @@ import {
     Users, Search, Filter, UserPlus, Trash2, RefreshCw,
     Plus, Mail, Phone, Shield, Building2,
     Calendar, MoreVertical, Edit2, X, Check,
-    Wrench, Hammer, Briefcase, Sparkles, Star, UserCircle, ChevronDown
+    Wrench, Hammer, Briefcase, Sparkles, Star, UserCircle, ChevronDown, Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -71,6 +71,21 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [selectedUserForProfile, setSelectedUserForProfile] = useState<UserWithMembership | null>(null);
 
+    // Super Tenant property management
+    const [superTenantUser, setSuperTenantUser] = useState<UserWithMembership | null>(null);
+    const [superTenantSelectedProps, setSuperTenantSelectedProps] = useState<string[]>([]);
+    const [isAssigningST, setIsAssigningST] = useState(false);
+    const [superTenantPropsMap, setSuperTenantPropsMap] = useState<Record<string, Array<{ property_id: string; name: string }>>>({});
+    const [expandedPropsUserId, setExpandedPropsUserId] = useState<string | null>(null);
+
+    // Property-admin multi-property management
+    const [propAssignUser, setPropAssignUser] = useState<UserWithMembership | null>(null);
+    const [propAssignPropsMap, setPropAssignPropsMap] = useState<Record<string, Array<{ property_id: string; name: string; role: string }>>>({});
+    const [expandedPropAdminUserId, setExpandedPropAdminUserId] = useState<string | null>(null);
+    const [propAssignSelectedPropId, setPropAssignSelectedPropId] = useState<string>('');
+    const [propAssignRole, setPropAssignRole] = useState<string>('property_admin');
+    const [isAssigningProp, setIsAssigningProp] = useState(false);
+
     const supabase = createClient();
 
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -107,6 +122,136 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
         }
 
         setIsLoading(false);
+    };
+
+    const fetchSuperTenantProperties = async (userId: string) => {
+        if (superTenantPropsMap[userId]) return; // already loaded
+        try {
+            const res = await fetch(`/api/super-tenant?user_id=${userId}`);
+            const data = await res.json();
+            const props = (data.properties || []).map((r: any) => ({
+                property_id: r.property_id,
+                name: r.properties?.name || r.property_id,
+            }));
+            setSuperTenantPropsMap(prev => ({ ...prev, [userId]: props }));
+        } catch { /* silent */ }
+    };
+
+    const fetchUserPropertyAssignments = async (userId: string) => {
+        if (propAssignPropsMap[userId]) return; // already loaded
+        try {
+            const { data } = await supabase
+                .from('property_memberships')
+                .select('property_id, role, properties(name)')
+                .eq('user_id', userId)
+                .eq('is_active', true);
+            const props = (data || []).map((r: any) => ({
+                property_id: r.property_id,
+                name: r.properties?.name || r.property_id,
+                role: r.role,
+            }));
+            setPropAssignPropsMap(prev => ({ ...prev, [userId]: props }));
+        } catch { /* silent */ }
+    };
+
+    const handleRemovePropAssignment = async (userId: string, propId: string) => {
+        if (!orgId) return;
+        try {
+            const res = await fetch('/api/users/assign-property', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, propertyId: propId, organizationId: orgId, action: 'remove' }),
+            });
+            if (!res.ok) { showToast('Failed to remove property', 'error'); return; }
+            setPropAssignPropsMap(prev => ({
+                ...prev,
+                [userId]: (prev[userId] || []).filter(p => p.property_id !== propId),
+            }));
+            showToast('Property removed');
+        } catch { showToast('Failed to remove property', 'error'); }
+    };
+
+    const handleAddPropAssignment = async () => {
+        if (!propAssignUser || !propAssignSelectedPropId || !orgId) return;
+        setIsAssigningProp(true);
+        try {
+            const res = await fetch('/api/users/assign-property', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: propAssignUser.id,
+                    propertyId: propAssignSelectedPropId,
+                    role: propAssignRole,
+                    organizationId: orgId,
+                    action: 'add',
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to assign');
+            const propName = properties.find(p => p.id === propAssignSelectedPropId)?.name || propAssignSelectedPropId;
+            setPropAssignPropsMap(prev => {
+                const existing = prev[propAssignUser.id] || [];
+                const idx = existing.findIndex(p => p.property_id === propAssignSelectedPropId);
+                if (idx >= 0) {
+                    const updated = [...existing];
+                    updated[idx] = { ...updated[idx], role: propAssignRole };
+                    return { ...prev, [propAssignUser.id]: updated };
+                }
+                return { ...prev, [propAssignUser.id]: [...existing, { property_id: propAssignSelectedPropId, name: propName, role: propAssignRole }] };
+            });
+            showToast('Property assigned successfully');
+            setPropAssignUser(null);
+            setPropAssignSelectedPropId('');
+        } catch (err) {
+            showToast((err as Error).message, 'error');
+        } finally {
+            setIsAssigningProp(false);
+        }
+    };
+
+    const handleRemoveSuperTenantProp = async (userId: string, propId: string) => {
+        try {
+            const res = await fetch('/api/super-tenant', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: userId, property_id: propId }),
+            });
+            if (!res.ok) { showToast('Failed to remove property', 'error'); return; }
+            setSuperTenantPropsMap(prev => ({
+                ...prev,
+                [userId]: (prev[userId] || []).filter(p => p.property_id !== propId),
+            }));
+            showToast('Property removed');
+        } catch { showToast('Failed to remove property', 'error'); }
+    };
+
+    const handleAssignSuperTenant = async () => {
+        if (!superTenantUser || superTenantSelectedProps.length === 0 || !orgId) return;
+        setIsAssigningST(true);
+        try {
+            const res = await fetch('/api/super-tenant', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: superTenantUser.id, property_ids: superTenantSelectedProps, organization_id: orgId }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to assign');
+            // Refresh cached props for this user
+            setSuperTenantPropsMap(prev => {
+                const existing = prev[superTenantUser.id] || [];
+                const newProps = superTenantSelectedProps
+                    .filter(pid => !existing.find(p => p.property_id === pid))
+                    .map(pid => ({ property_id: pid, name: properties.find(p => p.id === pid)?.name || pid }));
+                return { ...prev, [superTenantUser.id]: [...existing, ...newProps] };
+            });
+            showToast('Properties updated successfully');
+            setSuperTenantUser(null);
+            setSuperTenantSelectedProps([]);
+        } catch (err) {
+            showToast((err as Error).message, 'error');
+        } finally {
+            setIsAssigningST(false);
+        }
     };
 
     const handleResetPassword = async (userId: string, email: string) => {
@@ -258,9 +403,11 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
 
     const roleOptions = propertyId
         ? ['property_admin', 'staff', 'mst', 'security', 'soft_service_manager', 'tenant']
-        : ['org_super_admin', 'property_admin', 'staff', 'mst', 'security', 'soft_service_manager', 'tenant'];
+        : ['org_super_admin', 'property_admin', 'staff', 'mst', 'security', 'soft_service_manager', 'super_tenant', 'tenant'];
 
     const formatRole = (role: string) => {
+        if (role === 'tenant') return 'Client';
+        if (role === 'super_tenant') return 'Super Client';
         return role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     };
 
@@ -397,13 +544,103 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
                                                 {formatRole(user.orgRole || user.propertyRole || 'member')}
                                             </span>
 
-                                            {/* Property Badge */}
-                                            {user.propertyName && (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-[10px] font-black uppercase tracking-wider rounded-lg border border-blue-100">
+                                            {/* Property Badge / Super Tenant Properties */}
+                                            {(user.orgRole === 'super_tenant' || user.propertyRole === 'super_tenant') ? (
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            if (expandedPropsUserId === user.id) {
+                                                                setExpandedPropsUserId(null);
+                                                            } else {
+                                                                setExpandedPropsUserId(user.id);
+                                                                fetchSuperTenantProperties(user.id);
+                                                            }
+                                                        }}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-secondary/10 text-secondary text-[10px] font-black uppercase tracking-wider rounded-lg border border-secondary/20 hover:bg-secondary/25 transition-smooth"
+                                                    >
+                                                        <Key className="w-3 h-3" />
+                                                        {expandedPropsUserId === user.id ? 'Hide Properties' : `Properties (${(superTenantPropsMap[user.id] || []).length || '...'})`}
+                                                    </button>
+                                                    {expandedPropsUserId === user.id && (
+                                                        <>
+                                                            {(superTenantPropsMap[user.id] || []).map(p => (
+                                                                <span key={p.property_id} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-primary/20">
+                                                                    <Building2 className="w-3 h-3" />
+                                                                    {p.name}
+                                                                    <button
+                                                                        onClick={() => handleRemoveSuperTenantProp(user.id, p.property_id)}
+                                                                        className="ml-0.5 w-4 h-4 flex items-center justify-center rounded hover:bg-primary/20 transition-smooth text-primary hover:text-error"
+                                                                    >
+                                                                        <X className="w-2.5 h-2.5" />
+                                                                    </button>
+                                                                </span>
+                                                            ))}
+                                                            {superTenantPropsMap[user.id]?.length === 0 && (
+                                                                <span className="text-[10px] text-text-tertiary font-medium">No properties assigned</span>
+                                                            )}
+                                                            <button
+                                                                onClick={() => { setSuperTenantUser(user); setSuperTenantSelectedProps([]); }}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 bg-surface-elevated text-text-secondary text-[10px] font-black uppercase tracking-wider rounded-lg border border-border hover:bg-muted transition-smooth"
+                                                            >
+                                                                <Plus className="w-3 h-3" />
+                                                                Add
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            ) : orgId && user.propertyRole && !['tenant', 'super_tenant'].includes(user.propertyRole) ? (
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            if (expandedPropAdminUserId === user.id) {
+                                                                setExpandedPropAdminUserId(null);
+                                                            } else {
+                                                                setExpandedPropAdminUserId(user.id);
+                                                                fetchUserPropertyAssignments(user.id);
+                                                            }
+                                                        }}
+                                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-primary/20 hover:bg-primary/25 transition-smooth"
+                                                    >
+                                                        <Building2 className="w-3 h-3" />
+                                                        {expandedPropAdminUserId === user.id
+                                                            ? 'Hide Properties'
+                                                            : propAssignPropsMap[user.id]
+                                                                ? `Properties (${propAssignPropsMap[user.id].length})`
+                                                                : 'Properties'}
+                                                    </button>
+                                                    {expandedPropAdminUserId === user.id && (
+                                                        <>
+                                                            {(propAssignPropsMap[user.id] || []).map(p => (
+                                                                <span key={p.property_id} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-primary/20">
+                                                                    <Building2 className="w-3 h-3" />
+                                                                    {p.name}
+                                                                    <button
+                                                                        onClick={() => handleRemovePropAssignment(user.id, p.property_id)}
+                                                                        className="ml-0.5 w-4 h-4 flex items-center justify-center rounded hover:bg-primary/20 transition-smooth text-primary hover:text-error"
+                                                                    >
+                                                                        <X className="w-2.5 h-2.5" />
+                                                                    </button>
+                                                                </span>
+                                                            ))}
+                                                            {propAssignPropsMap[user.id]?.length === 0 && (
+                                                                <span className="text-[10px] text-text-tertiary font-medium">No active properties</span>
+                                                            )}
+                                                            <button
+                                                                onClick={() => { setPropAssignUser(user); setPropAssignSelectedPropId(''); setPropAssignRole('property_admin'); }}
+                                                                className="inline-flex items-center gap-1 px-2 py-1 bg-surface-elevated text-text-secondary text-[10px] font-black uppercase tracking-wider rounded-lg border border-border hover:bg-muted transition-smooth"
+                                                            >
+                                                                <Plus className="w-3 h-3" />
+                                                                Add
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            ) : user.propertyName ? (
+                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-primary/10 text-primary text-[10px] font-black uppercase tracking-wider rounded-lg border border-primary/20">
                                                     <Building2 className="w-3 h-3" />
                                                     {user.propertyName}
                                                 </span>
-                                            )}
+                                            ) : null}
 
                                             {/* Status Badge */}
                                             <span className={`inline-flex items-center px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-lg border ${user.is_active
@@ -528,6 +765,159 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
                     }}
                 />
             )}
+
+            {/* Super Tenant — Add/Change Properties Modal */}
+            <AnimatePresence>
+                {superTenantUser && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4"
+                        onClick={() => setSuperTenantUser(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+                            className="bg-surface rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-border"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="bg-secondary p-6 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                                        <Key className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-black text-lg">Manage Properties</h3>
+                                        <p className="text-white/70 text-sm font-medium">{superTenantUser.full_name}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setSuperTenantUser(null)} className="text-white/70 hover:text-white transition-smooth">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <p className="text-sm text-text-secondary font-medium">Select additional properties to assign to this Super Client.</p>
+                                <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                                    {properties.map(prop => {
+                                        const alreadyAssigned = (superTenantPropsMap[superTenantUser.id] || []).some(p => p.property_id === prop.id);
+                                        const isSelected = superTenantSelectedProps.includes(prop.id);
+                                        return (
+                                            <button
+                                                key={prop.id}
+                                                type="button"
+                                                disabled={alreadyAssigned}
+                                                onClick={() => setSuperTenantSelectedProps(prev =>
+                                                    isSelected ? prev.filter(id => id !== prop.id) : [...prev, prop.id]
+                                                )}
+                                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-bold transition-smooth ${alreadyAssigned
+                                                    ? 'bg-surface-elevated border-border text-text-tertiary cursor-not-allowed'
+                                                    : isSelected
+                                                        ? 'bg-primary/10 border-primary text-primary'
+                                                        : 'bg-surface-elevated border-border text-text-secondary hover:border-primary hover:bg-primary/10'
+                                                }`}
+                                            >
+                                                <span className="flex items-center gap-2">
+                                                    <Building2 className="w-4 h-4" />
+                                                    {prop.name}
+                                                </span>
+                                                {alreadyAssigned
+                                                    ? <span className="text-[10px] text-text-tertiary font-black uppercase">Assigned</span>
+                                                    : isSelected && <Check className="w-4 h-4 text-primary" />
+                                                }
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setSuperTenantUser(null)} className="flex-1 px-4 py-3 border border-border text-text-secondary font-bold text-sm rounded-xl hover:bg-surface-elevated transition-smooth">Cancel</button>
+                                    <button
+                                        onClick={handleAssignSuperTenant}
+                                        disabled={superTenantSelectedProps.length === 0 || isAssigningST}
+                                        className="flex-1 px-4 py-3 bg-secondary text-white font-black text-sm rounded-xl hover:bg-secondary-dark transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isAssigningST ? 'Saving...' : `Add ${superTenantSelectedProps.length || ''} Propert${superTenantSelectedProps.length === 1 ? 'y' : 'ies'}`}
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Property Admin — Assign Property Modal */}
+            <AnimatePresence>
+                {propAssignUser && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4"
+                        onClick={() => setPropAssignUser(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+                            className="bg-surface rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-border"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="bg-primary p-6 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                                        <Building2 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-white font-black text-lg">Assign Property</h3>
+                                        <p className="text-white/70 text-sm font-medium">{propAssignUser.full_name}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setPropAssignUser(null)} className="text-white/70 hover:text-white transition-smooth">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <p className="text-sm text-text-secondary font-medium">Select a property and role to assign to this user.</p>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-[10px] font-black text-text-tertiary uppercase tracking-widest mb-1 block">Property</label>
+                                        <select
+                                            value={propAssignSelectedPropId}
+                                            onChange={(e) => setPropAssignSelectedPropId(e.target.value)}
+                                            className="w-full px-4 py-3 bg-surface-elevated border border-border rounded-xl text-sm font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        >
+                                            <option value="">Select a property...</option>
+                                            {properties
+                                                .filter(p => !(propAssignPropsMap[propAssignUser.id] || []).some(ap => ap.property_id === p.id))
+                                                .map(p => (
+                                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                                ))
+                                            }
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-text-tertiary uppercase tracking-widest mb-1 block">Role</label>
+                                        <select
+                                            value={propAssignRole}
+                                            onChange={(e) => setPropAssignRole(e.target.value)}
+                                            className="w-full px-4 py-3 bg-surface-elevated border border-border rounded-xl text-sm font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        >
+                                            <option value="property_admin">Property Admin</option>
+                                            <option value="staff">Staff</option>
+                                            <option value="mst">MST</option>
+                                            <option value="security">Security</option>
+                                            <option value="soft_service_manager">Soft Service Manager</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3 pt-2">
+                                    <button onClick={() => setPropAssignUser(null)} className="flex-1 px-4 py-3 border border-border text-text-secondary font-bold text-sm rounded-xl hover:bg-surface-elevated transition-smooth">Cancel</button>
+                                    <button
+                                        onClick={handleAddPropAssignment}
+                                        disabled={!propAssignSelectedPropId || isAssigningProp}
+                                        className="flex-1 px-4 py-3 bg-primary text-white font-black text-sm rounded-xl hover:opacity-90 transition-smooth disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isAssigningProp ? 'Assigning...' : 'Assign Property'}
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Toast */}
             <AnimatePresence>

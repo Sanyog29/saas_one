@@ -197,7 +197,7 @@ const InviteLinkGenerator: React.FC<Props> = ({ organizations }) => {
                             onChange={(e) => setRole(e.target.value)}
                             className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-100 bg-white text-sm font-medium"
                         >
-                            <option value="tenant">Tenant</option>
+                            <option value="tenant">Client</option>
                             <option value="staff">Staff</option>
                             <option value="property_admin">Property Admin</option>
                         </select>
@@ -339,7 +339,7 @@ const InviteLinkGenerator: React.FC<Props> = ({ organizations }) => {
                                                 <span className="text-xs text-slate-400">→</span>
                                                 <span className="text-xs font-bold text-slate-600">{link.property.name}</span>
                                                 <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-blue-50 text-blue-600 rounded border border-blue-200">
-                                                    {link.role}
+                                                    {link.role === 'tenant' ? 'client' : link.role}
                                                 </span>
                                             </div>
                                             <code className="text-xs font-mono text-slate-500 block mb-2">{link.invitation_code}</code>

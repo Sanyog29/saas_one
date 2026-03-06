@@ -173,7 +173,7 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
                                 <Plus className="w-8 h-8 md:w-10 md:h-10 text-slate-200" />
                             </div>
                             <h3 className="text-lg md:text-xl font-bold text-slate-900 mb-2">No meeting rooms found</h3>
-                            <p className="text-slate-500 max-w-sm mx-auto font-medium text-sm">Start by adding your first meeting room to allow tenants to make bookings.</p>
+                            <p className="text-slate-500 max-w-sm mx-auto font-medium text-sm">Start by adding your first meeting room to allow clients to make bookings.</p>
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">

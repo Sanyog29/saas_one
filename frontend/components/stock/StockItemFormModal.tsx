@@ -214,7 +214,7 @@ const StockItemFormModal: React.FC<StockItemFormModalProps> = ({ isOpen, onClose
                                         type="button"
                                         onClick={() => setShowScanModal(true)}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-primary hover:opacity-70 transition-all"
-                                        title="Scan barcode"
+                                        title="Scan QR code"
                                     >
                                         <Scan size={20} />
                                     </button>

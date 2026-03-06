@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Ticket, Settings, UserCircle, UsersRound,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Building2,
     Calendar, CheckCircle2, AlertCircle, Clock, Coffee, IndianRupee, FileDown, Fuel, Store, Activity, Upload, FileBarChart, Menu, X, Zap, RefreshCw,
-    Package, ClipboardCheck, Scan
+    Package, ClipboardCheck, Scan, ChevronDown, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -57,7 +57,7 @@ interface TicketData {
 }
 
 const PropertyAdminDashboard = () => {
-    const { user, signOut } = useAuth();
+    const { user, signOut, membership } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const params = useParams();
     const router = useRouter();
@@ -84,6 +84,16 @@ const PropertyAdminDashboard = () => {
     const [showScannerModal, setShowScannerModal] = useState(false);
     const [pendingStatusFilter, setPendingStatusFilter] = useState('all');
 
+    // Property switcher — derive directly from AuthContext membership (already fetched + cached)
+    const assignedProperties = useMemo(() =>
+        (membership?.properties || [])
+            .filter(p => !['tenant', 'super_tenant'].includes((p.role || '').toLowerCase()))
+            .filter((p, i, arr) => arr.findIndex(x => x.id === p.id) === i),
+        [membership]
+    );
+    const [showPropertyDropdown, setShowPropertyDropdown] = useState(false);
+    const propertyDropdownRef = useRef<HTMLDivElement>(null);
+
     // Ref to prevent duplicate fetches
     const hasFetchedProperty = useRef(false);
 
@@ -93,6 +103,17 @@ const PropertyAdminDashboard = () => {
             fetchPropertyDetails(true);
         }
     }, [propertyId]);
+
+    // Close property dropdown on outside click
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (propertyDropdownRef.current && !propertyDropdownRef.current.contains(e.target as Node)) {
+                setShowPropertyDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     // Restore tab from URL
     useEffect(() => {
@@ -224,9 +245,10 @@ const PropertyAdminDashboard = () => {
 
             {/* Sidebar */}
             <aside className={`
-                w-72 bg-white border-r border-slate-300 flex flex-col h-screen z-50 transition-all duration-300
-                fixed top-0
-                ${sidebarOpen ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 lg:translate-y-0 lg:translate-x-0 lg:opacity-100'}
+                w-72 bg-white border-r border-slate-300 flex flex-col inset-y-0 z-50 transition-all duration-300
+                fixed left-0
+                ${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 lg:translate-x-0 lg:opacity-100'}
+                overflow-hidden
             `}>
                 {/* Mobile Close Button */}
                 <button
@@ -240,9 +262,10 @@ const PropertyAdminDashboard = () => {
                         <img src="/autopilot-logo-new.png" alt="Autopilot Logo" className="h-10 w-auto object-contain" />
                         <p className="text-[10px] text-text-tertiary font-black uppercase tracking-[0.2em]">Property Manager</p>
                     </div>
+
                 </div>
 
-                <nav className="flex-1 px-4 overflow-y-auto">
+                <nav className="flex-1 px-4 overflow-y-auto min-h-0 custom-scrollbar">
                     {/* Quick Actions - Compact Version */}
                     <div className="mb-6">
                         {/* Quick Actions - Simplified Dark Version */}
@@ -456,7 +479,7 @@ const PropertyAdminDashboard = () => {
                     </div>
                 </nav>
 
-                <div className="px-4 py-3 border-t border-border mt-auto">
+                <div className="px-4 pt-3 pb-12 border-t border-border mt-auto flex-shrink-0 bg-white">
                     <button
                         onClick={() => setShowSignOutModal(true)}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-text-secondary hover:bg-red-50 hover:text-red-600 transition-all font-bold text-xs"
@@ -480,6 +503,7 @@ const PropertyAdminDashboard = () => {
                         onClose={() => setShowCreateTicketModal(false)}
                         propertyId={property.id}
                         organizationId={property.organization_id}
+                        showInternalToggle={true}
                         onSuccess={() => {
                             setStatsVersion(v => v + 1);
                         }}
@@ -505,6 +529,55 @@ const PropertyAdminDashboard = () => {
                             </div>
                         </div>
                         <div className="flex items-center gap-6">
+                            {/* Property Indicator / Switcher — always visible, dropdown when 2+ properties */}
+                            <div className="relative" ref={propertyDropdownRef}>
+                                <button
+                                    onClick={() => assignedProperties.length > 1 && setShowPropertyDropdown(v => !v)}
+                                    className={`flex items-center gap-1.5 px-2.5 md:px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl transition-colors text-xs md:text-sm font-bold text-slate-800 min-h-[40px] ${assignedProperties.length > 1 ? 'hover:bg-slate-200 cursor-pointer active:bg-slate-300' : 'cursor-default'}`}
+                                >
+                                    <Building2 className="w-4 h-4 text-primary flex-shrink-0" />
+                                    <span className="max-w-[80px] sm:max-w-[120px] md:max-w-[160px] truncate">{property?.name || 'Property'}</span>
+                                    {assignedProperties.length > 1 && (
+                                        <ChevronDown className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${showPropertyDropdown ? 'rotate-180' : ''}`} />
+                                    )}
+                                </button>
+                                <AnimatePresence>
+                                    {showPropertyDropdown && assignedProperties.length > 1 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -4 }}
+                                            transition={{ duration: 0.15 }}
+                                            className="absolute top-full right-0 mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-[300] overflow-hidden w-[220px] max-w-[calc(100vw-1rem)]"
+                                        >
+                                            {assignedProperties.map(p => (
+                                                <button
+                                                    key={p.id}
+                                                    onClick={() => {
+                                                        setShowPropertyDropdown(false);
+                                                        if (p.id !== propertyId) {
+                                                            router.push(window.location.pathname.replace(propertyId, p.id));
+                                                        }
+                                                    }}
+                                                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left"
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
+                                                            <Building2 className="w-4 h-4 text-slate-400" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-bold text-slate-800 truncate">{p.name}</div>
+                                                            <div className="text-[11px] text-slate-400 font-medium">{p.code}</div>
+                                                        </div>
+                                                    </div>
+                                                    {p.id === propertyId && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
                             {/* Notification Bell */}
                             <NotificationBell />
 
@@ -553,6 +626,8 @@ const PropertyAdminDashboard = () => {
                             onMenuToggle={() => setSidebarOpen(true)}
                             onRefresh={() => setStatsVersion(v => v + 1)}
                             onTabChange={handleTabChange}
+                            assignedProperties={assignedProperties}
+                            onPropertySwitch={(id) => router.push(window.location.pathname.replace(propertyId, id))}
                         />}
                         {activeTab === 'users' && <UserDirectory
                             propertyId={propertyId}
@@ -758,34 +833,49 @@ const OverviewTab = memo(function OverviewTab({
     property,
     onMenuToggle,
     onRefresh,
-    onTabChange
+    onTabChange,
+    assignedProperties = [],
+    onPropertySwitch,
 }: {
     propertyId: string,
     statsVersion: number,
     property: { name: string; code: string; address?: string; image_url?: string } | null,
     onMenuToggle?: () => void,
     onRefresh: () => void,
-    onTabChange: (tab: Tab, filter?: string) => void
+    onTabChange: (tab: Tab, filter?: string) => void,
+    assignedProperties?: { id: string; name: string; code: string }[],
+    onPropertySwitch?: (id: string) => void,
 }) {
-    const fetchKey = `${propertyId}-${statsVersion}`;
     const { getCachedData, setCachedData } = useDataCache();
-    const supabase = useMemo(() => createClient(), []);
-
+    const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'all'>('all');
+    const fetchKey = `${propertyId}-${statsVersion}-${timePeriod}`;
     const initialCached = useMemo(() => getCachedData(fetchKey), [fetchKey, getCachedData]);
+    const supabase = useMemo(() => createClient(), []);
     const hasFetched = useRef(false);
     const lastFetchKey = useRef('');
+    const [showOverviewPropDropdown, setShowOverviewPropDropdown] = useState(false);
+    const overviewPropDropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (overviewPropDropdownRef.current && !overviewPropDropdownRef.current.contains(e.target as Node)) {
+                setShowOverviewPropDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     // Stats State initialized from cache if available
     const [ticketStats, setTicketStats] = useState(initialCached?.ticketStats || { total: 0, open: 0, waitlist: 0, in_progress: 0, resolved: 0, sla_breached: 0, avg_resolution_hours: 0 });
     const [electricityStats, setElectricityStats] = useState(initialCached?.electricityStats || { total_units_month: 0, total_units_today: 0 });
-    const [electricityPeriod, setElectricityPeriod] = useState<'today' | 'month'>(initialCached?.electricityPeriod || 'month');
     const [vmsStats, setVmsStats] = useState(initialCached?.vmsStats || { total_visitors_today: 0, checked_in: 0, checked_out: 0 });
     const [vendorStats, setVendorStats] = useState(initialCached?.vendorStats || { total_revenue: 0, total_commission: 0, total_vendors: 0 });
     const [recentTickets, setRecentTickets] = useState<any[]>(initialCached?.recentTickets || []);
     const [isLoading, setIsLoading] = useState(!initialCached);
 
     useEffect(() => {
-        const fetchKey = `${propertyId}-${statsVersion}`;
+        const fetchKey = `${propertyId}-${statsVersion}-${timePeriod}`;
 
         // Prevent duplicate fetches for the same key
         if (lastFetchKey.current === fetchKey && hasFetched.current) {
@@ -801,7 +891,6 @@ const OverviewTab = memo(function OverviewTab({
                     setTicketStats(cached.ticketStats);
                     setRecentTickets(cached.recentTickets);
                     setElectricityStats(cached.electricityStats);
-                    setElectricityPeriod(cached.electricityPeriod || 'month');
                     setVmsStats(cached.vmsStats);
                     setVendorStats(cached.vendorStats);
                     setIsLoading(false);
@@ -817,23 +906,56 @@ const OverviewTab = memo(function OverviewTab({
 
             try {
                 // --- Tickets (all in parallel) ---
+                const todayForTickets = new Date().toISOString().split('T')[0];
+                const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+
+                let openQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['open', 'waitlist', 'blocked', 'client_raised']);
+                let waitlistQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['waitlist']);
+                let inProgressQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['assigned', 'in_progress', 'paused', 'work_started']);
+                let resolvedQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['resolved', 'closed', 'satisfied']);
+                let totalQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId);
+
+                if (timePeriod === 'today') {
+                    openQuery = openQuery.gte('created_at', todayForTickets);
+                    waitlistQuery = waitlistQuery.gte('created_at', todayForTickets);
+                    inProgressQuery = inProgressQuery.gte('created_at', todayForTickets);
+                    resolvedQuery = resolvedQuery.gte('created_at', todayForTickets);
+                    totalQuery = totalQuery.gte('created_at', todayForTickets);
+                } else if (timePeriod === 'month') {
+                    openQuery = openQuery.gte('created_at', monthStart);
+                    waitlistQuery = waitlistQuery.gte('created_at', monthStart);
+                    inProgressQuery = inProgressQuery.gte('created_at', monthStart);
+                    resolvedQuery = resolvedQuery.gte('created_at', monthStart);
+                    totalQuery = totalQuery.gte('created_at', monthStart);
+                }
+
                 const [openRes, waitlistRes, inProgressRes, resolvedRes, totalRes, recentsRes] = await Promise.all([
-                    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['open', 'waitlist', 'blocked']),
-                    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['waitlist']),
-                    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['assigned', 'in_progress', 'paused', 'work_started']),
-                    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['resolved', 'closed']),
-                    supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId),
+                    openQuery,
+                    waitlistQuery,
+                    inProgressQuery,
+                    resolvedQuery,
+                    totalQuery,
                     supabase.from('tickets').select('id, title, status, created_at, sla_paused').eq('property_id', propertyId).order('created_at', { ascending: false }).limit(5),
                 ]);
 
                 // --- Diesel, VMS, Vendors (all in parallel) ---
                 const today = new Date().toISOString().split('T')[0];
-                const monthStart = new Date(new Date().setDate(1)).toISOString().split('T')[0];
+                const monthStartRaw = new Date();
+                monthStartRaw.setDate(1);
+
+                let vmsQuery = supabase.from('visitor_logs').select('status').eq('property_id', propertyId);
+                let vendorQuery = supabase.from('vendors').select('id, commission_rate, vendor_daily_revenue(revenue_amount, revenue_date)').eq('property_id', propertyId);
+
+                if (timePeriod === 'today') {
+                    vmsQuery = vmsQuery.gte('checkin_time', today);
+                } else if (timePeriod === 'month') {
+                    vmsQuery = vmsQuery.gte('checkin_time', monthStart);
+                }
 
                 const [electricityRes, vmsRes, vendorRes] = await Promise.all([
                     supabase.from('electricity_readings').select('computed_units, reading_date').eq('property_id', propertyId).gte('reading_date', monthStart),
-                    supabase.from('visitor_logs').select('status').eq('property_id', propertyId).gte('checkin_time', today),
-                    supabase.from('vendors').select('id, commission_rate, vendor_daily_revenue(revenue_amount, revenue_date)').eq('property_id', propertyId),
+                    vmsQuery,
+                    vendorQuery,
                 ]);
 
                 // Process electricity
@@ -847,11 +969,17 @@ const OverviewTab = memo(function OverviewTab({
                 // Process Vendors
                 let totalRev = 0, totalComm = 0;
                 vendorRes.data?.forEach(v => {
-                    const todayEntry = v.vendor_daily_revenue?.find((r: any) => r.revenue_date === today);
-                    if (todayEntry) {
-                        totalRev += todayEntry.revenue_amount || 0;
-                        totalComm += (todayEntry.revenue_amount || 0) * ((v.commission_rate || 0) / 100);
-                    }
+                    v.vendor_daily_revenue?.forEach((r: any) => {
+                        let include = false;
+                        if (timePeriod === 'today' && r.revenue_date === today) include = true;
+                        else if (timePeriod === 'month' && r.revenue_date >= monthStart) include = true;
+                        else if (timePeriod === 'all') include = true;
+
+                        if (include) {
+                            totalRev += r.revenue_amount || 0;
+                            totalComm += (r.revenue_amount || 0) * ((v.commission_rate || 0) / 100);
+                        }
+                    });
                 });
 
                 const result = {
@@ -864,9 +992,9 @@ const OverviewTab = memo(function OverviewTab({
                         sla_breached: 0,
                         avg_resolution_hours: 0
                     },
+                    timePeriod: timePeriod,
                     recentTickets: recentsRes.data || [],
                     electricityStats: { total_units_month: Math.round(monthUnits), total_units_today: Math.round(todayUnits) },
-                    electricityPeriod: electricityPeriod,
                     vmsStats: { total_visitors_today: vmsRes.data?.length || 0, checked_in: checkedInCount, checked_out: checkedOutCount },
                     vendorStats: { total_revenue: totalRev, total_commission: totalComm, total_vendors: vendorRes.data?.length || 0 },
                     timestamp: Date.now()
@@ -887,7 +1015,7 @@ const OverviewTab = memo(function OverviewTab({
         };
 
         if (propertyId) fetchPropertyData(true);
-    }, [propertyId, statsVersion, supabase, getCachedData, setCachedData]);
+    }, [propertyId, statsVersion, timePeriod, supabase, getCachedData, setCachedData]);
 
     const completionRate = ticketStats.total > 0 ? Math.round((ticketStats.resolved / ticketStats.total) * 100 * 10) / 10 : 0;
 
@@ -921,8 +1049,8 @@ const OverviewTab = memo(function OverviewTab({
         <div className="min-h-screen bg-background">
             {/* Header Section */}
             <div className="bg-[#708F96] px-2 lg:px-12 py-8 border-b border-white/10 shadow-lg">
-                <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-y-3 mb-5">
+                    <div className="flex items-center gap-3">
                         {/* Mobile Menu Toggle */}
                         <button
                             onClick={onMenuToggle}
@@ -930,10 +1058,85 @@ const OverviewTab = memo(function OverviewTab({
                         >
                             <Menu className="w-6 h-6" />
                         </button>
-                        <h1 className="text-2xl md:text-3xl font-black text-white">Unified Dashboard</h1>
+                        <h1 className="text-xl md:text-3xl font-black text-white">Unified Dashboard</h1>
                     </div>
 
+                    <div className="flex items-center gap-2 md:gap-3">
+                        {/* Global Time Period Filter — always visible, smaller on mobile */}
+                        <div className="flex items-center bg-white/15 backdrop-blur-sm rounded-full p-0.5 md:p-1 border border-white/20 shadow-inner">
+                            {([
+                                { value: 'today', label: 'TODAY' },
+                                { value: 'month', label: 'THIS MONTH' },
+                                { value: 'all', label: 'ALL TIME' },
+                            ] as const).map(opt => (
+                                <button
+                                    key={opt.value}
+                                    onClick={() => setTimePeriod(opt.value)}
+                                    className={`px-2.5 md:px-4 py-1.5 text-[9px] md:text-[10px] font-black tracking-wider md:tracking-widest rounded-full transition-all whitespace-nowrap ${timePeriod === opt.value
+                                        ? 'bg-yellow-400 text-slate-900 shadow-md'
+                                        : 'text-white/80 hover:text-white'}`}
+                                >
+                                    {opt.label}
+                                </button>
+                            ))}
+                        </div>
 
+                        {/* Property Indicator / Switcher — icon + name + chevron pill */}
+                        {property && (
+                            <div className="relative" ref={overviewPropDropdownRef}>
+                                <button
+                                    onClick={() => assignedProperties.length > 1 && setShowOverviewPropDropdown(v => !v)}
+                                    className={`flex items-center gap-1.5 md:gap-2 pl-1 pr-2.5 md:pr-3 py-1 bg-white/20 border border-white/25 backdrop-blur-sm rounded-full transition-colors min-h-[40px] ${assignedProperties.length > 1 ? 'hover:bg-white/30 cursor-pointer active:bg-white/35' : 'cursor-default'}`}
+                                >
+                                    {/* Property icon circle */}
+                                    <div className="w-8 h-8 rounded-full bg-white/30 border border-white/30 overflow-hidden flex items-center justify-center flex-shrink-0">
+                                        {property.image_url ? (
+                                            <img src={property.image_url} alt={property.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <Building2 className="w-4 h-4 text-white" />
+                                        )}
+                                    </div>
+                                    <span className="text-white font-bold text-xs md:text-sm max-w-[70px] sm:max-w-[110px] md:max-w-[140px] truncate">{property.name}</span>
+                                    {assignedProperties.length > 1 && (
+                                        <ChevronDown className={`w-3.5 h-3.5 md:w-4 md:h-4 text-white/80 flex-shrink-0 transition-transform ${showOverviewPropDropdown ? 'rotate-180' : ''}`} />
+                                    )}
+                                </button>
+                                <AnimatePresence>
+                                    {showOverviewPropDropdown && assignedProperties.length > 1 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: -4 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -4 }}
+                                            transition={{ duration: 0.15 }}
+                                            className="absolute top-full right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl z-[300] overflow-hidden w-[220px] max-w-[calc(100vw-1rem)]"
+                                        >
+                                            {assignedProperties.map(p => (
+                                                <button
+                                                    key={p.id}
+                                                    onClick={() => {
+                                                        setShowOverviewPropDropdown(false);
+                                                        if (p.id !== propertyId) onPropertySwitch?.(p.id);
+                                                    }}
+                                                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left"
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center flex-shrink-0">
+                                                            <Building2 className="w-4 h-4 text-slate-400" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <div className="text-sm font-bold text-slate-800 truncate">{p.name}</div>
+                                                            <div className="text-[11px] text-slate-400 font-medium">{p.code}</div>
+                                                        </div>
+                                                    </div>
+                                                    {p.id === propertyId && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div className="flex items-center gap-2 mb-5">
                     <span className="text-white text-sm font-bold">Dashboard / {property?.name || 'Property'}</span>
@@ -945,7 +1148,11 @@ const OverviewTab = memo(function OverviewTab({
                         onClick={() => onTabChange('requests', 'open,assigned,in_progress,blocked')}
                         className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm cursor-pointer hover:border-primary/50 transition-all group"
                     >
-                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-primary transition-colors">Open Tickets</div>
+                        <div className="flex justify-between items-start mb-1">
+                            <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest group-hover:text-primary transition-colors">
+                                Tickets {timePeriod === 'today' ? '(Today)' : timePeriod === 'month' ? '(This Month)' : '(All Time)'}
+                            </div>
+                        </div>
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-black text-slate-900">{ticketStats.open + ticketStats.in_progress}</span>
                             {ticketStats.sla_breached > 0 && (
@@ -971,7 +1178,9 @@ const OverviewTab = memo(function OverviewTab({
                         onClick={() => onTabChange('requests', 'resolved,closed')}
                         className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm cursor-pointer hover:border-emerald-500/50 transition-all group"
                     >
-                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-emerald-500 transition-colors">Resolved</div>
+                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-emerald-500 transition-colors">
+                            Resolved {timePeriod === 'today' ? '(Today)' : timePeriod === 'month' ? '(This Month)' : '(All Time)'}
+                        </div>
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-black text-slate-900">{ticketStats.resolved}</span>
                             <span className="text-[10px] text-slate-400 font-bold uppercase">Avg {ticketStats.avg_resolution_hours}h resolution</span>
@@ -981,7 +1190,9 @@ const OverviewTab = memo(function OverviewTab({
                         onClick={() => onTabChange('requests', 'all')}
                         className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm cursor-pointer hover:border-blue-500/50 transition-all group"
                     >
-                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-blue-500 transition-colors">Completion Rate</div>
+                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-blue-500 transition-colors">
+                            Completion Rate {timePeriod === 'today' ? '(Today)' : timePeriod === 'month' ? '(This Month)' : '(All Time)'}
+                        </div>
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-black text-slate-900">{completionRate}%</span>
                             <span className="text-[10px] text-slate-400 font-bold uppercase">{ticketStats.resolved} of {ticketStats.total} closed</span>
@@ -1001,36 +1212,10 @@ const OverviewTab = memo(function OverviewTab({
                         >
                             <div className="flex items-center gap-3 mb-2">
                                 <h3 className="text-sm font-black text-slate-900">Electricity</h3>
-                                <div className="flex items-center bg-slate-100/70 p-0.5 rounded-xl shrink-0">
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setElectricityPeriod('today');
-                                        }}
-                                        className={`px-2 py-1 text-[8px] font-black uppercase tracking-tight rounded-md transition-all ${electricityPeriod === 'today'
-                                            ? 'bg-white text-yellow-600 shadow-sm'
-                                            : 'text-slate-400 hover:text-slate-600'
-                                            }`}
-                                    >
-                                        Today
-                                    </button>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setElectricityPeriod('month');
-                                        }}
-                                        className={`px-2 py-1 text-[8px] font-black uppercase tracking-tight rounded-md transition-all ${electricityPeriod === 'month'
-                                            ? 'bg-white text-yellow-600 shadow-sm'
-                                            : 'text-slate-400 hover:text-slate-600'
-                                            }`}
-                                    >
-                                        Month
-                                    </button>
-                                </div>
                             </div>
                             <div className="text-yellow-600 text-xs font-bold mb-4 flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full animate-pulse ${electricityPeriod === 'today' ? 'bg-blue-400' : 'bg-yellow-500'}`} />
-                                {electricityPeriod === 'today' ? 'Today' : 'This Month'}
+                                <span className={`w-2 h-2 rounded-full animate-pulse ${timePeriod === 'all' ? 'bg-slate-400' : timePeriod === 'today' ? 'bg-blue-400' : 'bg-yellow-500'}`} />
+                                {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
                             </div>
                             <div className="flex justify-center my-4" onClick={() => onTabChange('electricity_analytics' as any)}>
                                 <div className="relative w-[140px] h-[140px] cursor-pointer">
@@ -1039,7 +1224,7 @@ const OverviewTab = memo(function OverviewTab({
                                         <circle
                                             cx="60" cy="60" r="52" fill="none"
                                             stroke="url(#propElecGrad)" strokeWidth="10" strokeLinecap="round"
-                                            strokeDasharray={`${Math.min(326, ((electricityPeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month) / (electricityPeriod === 'today' ? 100 : 1000)) * 326)} 326`}
+                                            strokeDasharray={`${Math.min(326, ((timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month) / (timePeriod === 'today' ? 100 : 1000)) * 326)} 326`}
                                         />
                                         <defs>
                                             <linearGradient id="propElecGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1051,7 +1236,7 @@ const OverviewTab = memo(function OverviewTab({
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                                         <Zap className="w-5 h-5 text-yellow-500 mb-1" />
                                         <span className="text-xl font-black text-slate-900">
-                                            {(electricityPeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}
+                                            {(timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}
                                         </span>
                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">kVAh</span>
                                     </div>
@@ -1060,7 +1245,7 @@ const OverviewTab = memo(function OverviewTab({
                             <div className="space-y-1" onClick={() => onTabChange('electricity_analytics' as any)}>
                                 <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Units Consumed</div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
-                                    {(electricityPeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}
+                                    {(timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}
                                     <span className="text-sm text-slate-400 font-bold">kVAh</span>
                                 </div>
                                 <div className="pt-2 border-t border-slate-50 mt-2">
@@ -1070,7 +1255,7 @@ const OverviewTab = memo(function OverviewTab({
                         </div>
                         <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
                             <h3 className="text-sm font-black text-slate-900 mb-2">Vendor Revenue</h3>
-                            <div className="text-slate-400 text-xs font-bold mb-2">Today</div>
+                            <div className="text-slate-400 text-xs font-bold mb-2">{timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}</div>
                             <div className="text-3xl font-black text-slate-900">₹ {vendorStats.total_revenue.toLocaleString()}</div>
                             <div className="text-xs text-slate-500 mt-2">Commission: ₹ {vendorStats.total_commission.toLocaleString()} from {vendorStats.total_vendors} vendors</div>
                         </div>
@@ -1097,7 +1282,7 @@ const OverviewTab = memo(function OverviewTab({
                                 )}
                             </div>
                             <div className="space-y-4">
-                                <div><div className="text-slate-700 text-xs font-bold">Visitors Today</div><div className="text-2xl font-black text-slate-900">{vmsStats.total_visitors_today}</div></div>
+                                <div><div className="text-slate-700 text-xs font-bold">Visitors {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}</div><div className="text-2xl font-black text-slate-900">{vmsStats.total_visitors_today}</div></div>
                                 <div><div className="text-slate-700 text-xs font-bold">Checked In / Out</div><div className="text-2xl font-black text-slate-900">{vmsStats.checked_in} / {vmsStats.checked_out}</div></div>
                             </div>
                         </div>
@@ -1130,7 +1315,7 @@ const OverviewTab = memo(function OverviewTab({
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 bg-blue-50 rounded-xl"><div className="text-xs font-bold text-blue-600 mb-1">Tickets</div><div className="text-2xl font-black text-blue-900">{ticketStats.total}</div></div>
                                 <div className="p-4 bg-emerald-50 rounded-xl"><div className="text-xs font-bold text-emerald-600 mb-1">Visitors</div><div className="text-2xl font-black text-emerald-900">{vmsStats.total_visitors_today}</div></div>
-                                <div className="p-4 bg-yellow-50 rounded-xl"><div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({electricityPeriod === 'today' ? 'Today' : 'Month'})</div><div className="text-2xl font-black text-slate-900">{(electricityPeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}</div></div>
+                                <div className="p-4 bg-yellow-50 rounded-xl"><div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div><div className="text-2xl font-black text-slate-900">{(timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}</div></div>
                                 <div className="p-4 bg-purple-50 rounded-xl"><div className="text-xs font-bold text-purple-600 mb-1">Vendors</div><div className="text-2xl font-black text-purple-900">{vendorStats.total_vendors}</div></div>
                             </div>
                         </div>

@@ -96,9 +96,10 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
 
             {/* Sidebar */}
             <aside className={`
-                w-64 bg-white border-r border-slate-300 flex flex-col h-screen z-50 transition-all duration-300
-                fixed top-0
+                w-64 bg-white border-r border-slate-300 flex flex-col inset-y-0 z-50 transition-all duration-300
+                fixed left-0
                 ${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 lg:translate-x-0 lg:opacity-100'}
+                overflow-hidden
             `}>
                 {/* Mobile Close Button */}
                 <button
@@ -107,14 +108,14 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
                 >
                     <X className="w-5 h-5 text-text-secondary" />
                 </button>
-                <div className="p-4 lg:p-5 pb-2">
+                <div className="p-4 lg:p-5 pb-2 flex-shrink-0">
                     <div className="flex flex-col items-center gap-1 mb-3">
                         <img src="/autopilot-logo-new.png" alt="Autopilot Logo" className="h-10 w-auto object-contain" />
                         <p className="text-[10px] text-text-tertiary font-black uppercase tracking-[0.2em]">{isManager ? 'Soft Service Manager' : 'Staff Soft Service'}</p>
                     </div>
                 </div>
 
-                <nav className="flex-1 px-4 overflow-y-auto">
+                <nav className="flex-1 px-4 overflow-y-auto min-h-0 custom-scrollbar">
                     {/* Operations */}
                     <div className="mb-6">
                         <p className="px-4 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
@@ -187,7 +188,7 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
                     </div>
                 </nav>
 
-                <div className="px-4 py-3 border-t border-border mt-auto">
+                <div className="px-4 pt-3 pb-12 border-t border-border mt-auto flex-shrink-0 bg-white">
                     <button
                         onClick={() => setShowSignOutModal(true)}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-text-secondary hover:bg-red-50 hover:text-red-600 transition-all font-bold text-xs"

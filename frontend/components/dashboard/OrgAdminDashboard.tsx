@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from '
 import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
-    Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan
+    Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
+    AlertCircle, CheckCircle2, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -26,9 +27,10 @@ import TicketCreateModal from '@/frontend/components/tickets/TicketCreateModal';
 import StockReportView from '@/frontend/components/stock/StockReportView';
 import StockMovementModal from '@/frontend/components/stock/StockMovementModal';
 import SOPDashboard from '@/frontend/components/sop/SOPDashboard';
+import PropertyFeaturesModal from './PropertyFeaturesModal';
 
 // Types
-type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel' | 'electricity' | 'stock_reports' | 'sop';
+type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel' | 'electricity' | 'stock_reports' | 'sop' | 'super_tenants';
 
 interface Property {
     id: string;
@@ -89,6 +91,8 @@ const OrgAdminDashboard = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [pendingStatusFilter, setPendingStatusFilter] = useState('all');
     const [showRequestsList, setShowRequestsList] = useState(false);
+    const [showFeaturesModal, setShowFeaturesModal] = useState(false);
+    const [selectedPropertyForFeatures, setSelectedPropertyForFeatures] = useState<Property | null>(null);
     const searchParams = useSearchParams();
 
     // Restore showRequestsList, filter, and selectedPropertyId from URL on mount/back navigation
@@ -171,13 +175,31 @@ const OrgAdminDashboard = () => {
 
     const fetchProperties = useCallback(async () => {
         if (!org) return;
-        const { data, error } = await supabase
+        const { data: props, error: propError } = await supabase
             .from('properties')
             .select('*')
             .eq('organization_id', org.id)
             .order('created_at', { ascending: false });
 
-        if (!error && data) setProperties(data);
+        if (propError || !props) return;
+
+        // Fetch ticket_validation feature status for all these properties
+        const { data: features, error: featError } = await supabase
+            .from('property_features')
+            .select('property_id, is_enabled')
+            .eq('feature_key', 'ticket_validation')
+            .in('property_id', props.map(p => p.id));
+
+        if (!featError && features) {
+            const featureMap = new Map(features.map(f => [f.property_id, f.is_enabled]));
+            const updatedProps = props.map(p => ({
+                ...p,
+                validation_enabled: featureMap.has(p.id) ? featureMap.get(p.id) : true
+            }));
+            setProperties(updatedProps);
+        } else {
+            setProperties(props);
+        }
     }, [org, supabase]);
 
     useEffect(() => {
@@ -193,7 +215,7 @@ const OrgAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel', 'electricity', 'stock_reports', 'sop'].includes(tab)) {
+        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel', 'electricity', 'stock_reports', 'sop', 'super_tenants'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -299,29 +321,46 @@ const OrgAdminDashboard = () => {
 
     const handleCreateProperty = async (propData: any) => {
         if (!org) return;
-        const { error } = await supabase.from('properties').insert({
-            ...propData,
+        const { validation_enabled, ...rest } = propData;
+        const { data: newProp, error } = await supabase.from('properties').insert({
+            ...rest,
             organization_id: org.id
-        });
-        if (!error) {
+        }).select().single();
+
+        if (!error && newProp) {
+            // Also set initial validation feature
+            await supabase.from('property_features').insert({
+                property_id: newProp.id,
+                feature_key: 'ticket_validation',
+                is_enabled: validation_enabled !== false
+            });
+
             fetchProperties();
             setShowCreatePropModal(false);
         } else {
-            alert('Failed to create property: ' + error.message);
+            alert('Failed to create property: ' + (error?.message || 'Unknown error'));
         }
     };
 
     const handleUpdateProperty = async (id: string, propData: any) => {
-        const { error } = await supabase
+        const { validation_enabled, ...rest } = propData;
+        const { error: propError } = await supabase
             .from('properties')
-            .update(propData)
+            .update(rest)
             .eq('id', id);
 
-        if (!error) {
+        if (!propError) {
+            // Also update property_features
+            await supabase.from('property_features').upsert({
+                property_id: id,
+                feature_key: 'ticket_validation',
+                is_enabled: validation_enabled !== false
+            }, { onConflict: 'property_id,feature_key' });
+
             fetchProperties();
             setEditingProperty(null);
         } else {
-            alert('Update failed: ' + error.message);
+            alert('Update failed: ' + propError.message);
         }
     };
 
@@ -444,9 +483,10 @@ const OrgAdminDashboard = () => {
 
             {/* Sidebar */}
             <aside className={`
-                w-72 bg-white border-r border-border flex flex-col h-screen z-50 transition-all duration-300
-                fixed top-0
-                ${sidebarOpen ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 lg:translate-y-0 lg:translate-x-0 lg:opacity-100'}
+                w-72 bg-white border-r border-border flex flex-col inset-y-0 z-50 transition-all duration-300
+                fixed left-0
+                ${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 lg:translate-x-0 lg:opacity-100'}
+                overflow-hidden
             `}>
                 {/* Mobile Close Button */}
                 <button
@@ -456,14 +496,14 @@ const OrgAdminDashboard = () => {
                     <X className="w-5 h-5 text-text-secondary" />
                 </button>
 
-                <div className="p-4 lg:p-5 pb-2">
+                <div className="p-4 lg:p-5 pb-2 flex-shrink-0">
                     <div className="flex flex-col items-center gap-1 mb-3">
                         <img src="/autopilot-logo-new.png" alt="Logo" className="h-10 w-auto object-contain" />
                         <p className="text-[10px] text-text-tertiary font-black uppercase tracking-[0.2em]">Super Admin Console</p>
                     </div>
                 </div>
 
-                <nav className="flex-1 px-4 overflow-y-auto">
+                <nav className="flex-1 px-4 overflow-y-auto min-h-0 custom-scrollbar">
                     {/* Quick Action Row */}
                     <div className="mb-8">
                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-6 mb-4 flex items-center gap-2">
@@ -665,7 +705,7 @@ const OrgAdminDashboard = () => {
                     </div>
                 </nav>
 
-                <div className="pt-3 border-t border-border px-4 pb-3">
+                <div className="pt-3 border-t border-border px-4 pb-12 flex-shrink-0 bg-white">
                     {/* User Profile Section */}
                     <div className="flex items-center gap-2 px-1 mb-2">
                         <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-text-inverse font-bold text-xs">
@@ -848,6 +888,10 @@ const OrgAdminDashboard = () => {
                                 properties={properties}
                                 onCreate={() => setShowCreatePropModal(true)}
                                 onEdit={(p: any) => setEditingProperty(p)}
+                                onConfigure={(p: any) => {
+                                    setSelectedPropertyForFeatures(p);
+                                    setShowFeaturesModal(true);
+                                }}
                                 onDelete={handleDeleteProperty}
                             />
                         )}
@@ -932,6 +976,10 @@ const OrgAdminDashboard = () => {
                                     <p className="text-sm text-slate-500 max-w-md">Please select a specific property from the property selector above to view and manage checklists.</p>
                                 </div>
                             )
+                        )}
+
+                        {activeTab === 'super_tenants' && org && (
+                            <SuperTenantOrgTab orgId={org.id} properties={properties} />
                         )}
 
                         {activeTab === 'settings' && <SettingsView />}
@@ -1035,6 +1083,8 @@ const OrgAdminDashboard = () => {
                         user={editingUser}
                         onClose={() => { setShowUserModal(false); setEditingUser(null); }}
                         onSave={(data: any) => editingUser && handleUpdateUser(editingUser.user_id, data)}
+                        allProperties={properties}
+                        orgId={org?.id || ''}
                     />
                 )
             }
@@ -1059,6 +1109,7 @@ const OrgAdminDashboard = () => {
                     organizationId={org.id}
                     propertyId={selectedPropertyId === 'all' ? undefined : selectedPropertyId}
                     isAdminMode={true}
+                    showInternalToggle={true}
                     organizations={(() => {
                         const orgs = org ? [org] : [];
                         // If user is from Autopilot Offices but viewing another org, add Autopilot to the list
@@ -1079,6 +1130,19 @@ const OrgAdminDashboard = () => {
                     propertyId={selectedPropertyId}
                     autoOpenScanner={true}
                     onSuccess={() => {/* Stats will refresh on tab change or memoized components */ }}
+                />
+            )}
+
+            {/* Property Features Modal */}
+            {showFeaturesModal && selectedPropertyForFeatures && (
+                <PropertyFeaturesModal
+                    propertyId={selectedPropertyForFeatures.id}
+                    propertyName={selectedPropertyForFeatures.name}
+                    onClose={() => {
+                        setShowFeaturesModal(false);
+                        setSelectedPropertyForFeatures(null);
+                        fetchProperties(); // Refresh to show updated validation status
+                    }}
                 />
             )}
         </div>
@@ -1208,8 +1272,12 @@ const OverviewTab = memo(function OverviewTab({
         waitlist: 0,
         in_progress: 0,
         resolved: 0,
+        pending_validation: 0,
+        validated_closed: 0,
+        urgent_open: 0,
         sla_breached: 0,
         avg_resolution_hours: 0,
+        properties_with_validation: 0,
         properties: [] as any[],
     });
 
@@ -1221,6 +1289,7 @@ const OverviewTab = memo(function OverviewTab({
         properties_today: [] as any[],
     });
     const [electricityPeriod, setElectricityPeriod] = useState<'today' | 'month'>('month');
+    const [ticketPeriod, setTicketPeriod] = useState<'today' | 'month' | 'all'>('month');
 
     const [vmsSummary, setVmsSummary] = useState({
         total_visitors_today: 0,
@@ -1238,8 +1307,8 @@ const OverviewTab = memo(function OverviewTab({
 
     // Fetch all org summaries ONCE
     useEffect(() => {
-        if (!orgId || hasFetched.current) return;
-        hasFetched.current = true;
+        if (!orgId) return;
+        // Fetch all org summaries ONCE (or on period change)
 
         const fetchSummaries = async () => {
             setIsLoading(true);
@@ -1250,7 +1319,7 @@ const OverviewTab = memo(function OverviewTab({
                 const todayDate = new Date().toISOString().split('T')[0];
 
                 const [ticketsRes, electricityRes, vmsRes, vendorRes] = await Promise.all([
-                    fetch(`/api/organizations/${orgId}/tickets-summary?period=month`),
+                    fetch(`/api/organizations/${orgId}/tickets-summary?period=${ticketPeriod}`),
                     fetch(`/api/organizations/${orgId}/electricity-readings?startDate=${monthStart}&endDate=${todayDate}`),
                     fetch(`/api/organizations/${orgId}/vms-summary?period=today`),
                     fetch(`/api/organizations/${orgId}/vendor-summary?period=month`),
@@ -1317,7 +1386,7 @@ const OverviewTab = memo(function OverviewTab({
         };
 
         fetchSummaries();
-    }, [orgId]);
+    }, [orgId, ticketPeriod]);
 
     const activeProperty = selectedPropertyId === 'all'
         ? null
@@ -1334,9 +1403,13 @@ const OverviewTab = memo(function OverviewTab({
             waitlist: 0,
             in_progress: 0,
             resolved: 0,
+            pending_validation: 0,
+            validated_closed: 0,
+            urgent_open: 0,
             sla_breached: 0,
             avg_resolution_hours: 0,
-            properties: ticketSummary.properties
+            properties_with_validation: ticketSummary.properties_with_validation,
+            properties: ticketSummary.properties,
         };
 
         return {
@@ -1345,9 +1418,13 @@ const OverviewTab = memo(function OverviewTab({
             waitlist: propStats.waitlist || 0,
             in_progress: propStats.in_progress,
             resolved: propStats.resolved,
+            pending_validation: propStats.pending_validation || 0,
+            validated_closed: propStats.validated_closed || 0,
+            urgent_open: propStats.urgent_open || 0,
             sla_breached: propStats.sla_breached,
             avg_resolution_hours: ticketSummary.avg_resolution_hours,
-            properties: ticketSummary.properties
+            properties_with_validation: propStats.validation_enabled ? 1 : 0,
+            properties: ticketSummary.properties,
         };
     }, [selectedPropertyId, ticketSummary]);
 
@@ -1393,6 +1470,15 @@ const OverviewTab = memo(function OverviewTab({
     const completionRate = displayTicketStats.total_tickets > 0
         ? Math.round((displayTicketStats.resolved / displayTicketStats.total_tickets) * 100 * 10) / 10
         : 0;
+    const activeCount = displayTicketStats.open_tickets + displayTicketStats.in_progress;
+    const validationRate = displayTicketStats.resolved > 0
+        ? Math.round((displayTicketStats.validated_closed / displayTicketStats.resolved) * 100)
+        : 0;
+    const directResolved = displayTicketStats.resolved - displayTicketStats.validated_closed;
+    const totalPropertiesCount = selectedPropertyId === 'all' ? properties.length : 1;
+    const validationEnabledCount = selectedPropertyId === 'all'
+        ? displayTicketStats.properties_with_validation
+        : (displayTicketStats.properties_with_validation > 0 ? 1 : 0);
 
     return (
         <div className="min-h-screen bg-background">
@@ -1413,6 +1499,33 @@ const OverviewTab = memo(function OverviewTab({
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
+                        {/* Ticket Period Filter */}
+                        <div className="hidden md:flex items-center bg-white/10 rounded-xl p-1 border border-white/10 shadow-sm">
+                            <button
+                                onClick={() => setTicketPeriod('today')}
+                                className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${ticketPeriod === 'today'
+                                    ? 'bg-yellow-400 text-slate-900 shadow-lg scale-105'
+                                    : 'text-white/70 hover:text-white'}`}
+                            >
+                                Today
+                            </button>
+                            <button
+                                onClick={() => setTicketPeriod('month')}
+                                className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${ticketPeriod === 'month'
+                                    ? 'bg-yellow-400 text-slate-900 shadow-lg scale-105'
+                                    : 'text-white/70 hover:text-white'}`}
+                            >
+                                This Month
+                            </button>
+                            <button
+                                onClick={() => setTicketPeriod('all')}
+                                className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${ticketPeriod === 'all'
+                                    ? 'bg-yellow-400 text-slate-900 shadow-lg scale-105'
+                                    : 'text-white/70 hover:text-white'}`}
+                            >
+                                All Time
+                            </button>
+                        </div>
 
                         {/* Property Selector for Requests/Other tabs */}
                         {properties.length > 0 && (
@@ -1491,64 +1604,155 @@ const OverviewTab = memo(function OverviewTab({
                     </div>
                 </div>
 
-                {/* Breadcrumb */}
-                <div className="flex items-center gap-2 mb-5">
-                    <span className="text-white text-sm font-bold">Dashboard / Home</span>
-                </div>
+                {/* KPI Cards Row — 4 insightful cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5">
 
-                {/* KPI Cards Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-                    {/* Active Requests */}
-                    <div
-                        onClick={() => onTabChange('requests', 'open,assigned,in_progress,blocked')}
-                        className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm transition-all hover:shadow-md cursor-pointer hover:border-primary/50 group"
-                    >
-                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-primary transition-colors">Open Tickets</div>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-slate-900">{displayTicketStats.open_tickets + displayTicketStats.in_progress}</span>
-                            {displayTicketStats.sla_breached > 0 && (
-                                <span className="text-[10px] text-rose-500 font-bold uppercase">{displayTicketStats.sla_breached} SLA breached</span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-3 mt-1.5 pt-1.5 border-t border-slate-100">
-                            <span className="text-[10px] font-bold text-slate-500">
-                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-400 mr-1"></span>
-                                {displayTicketStats.open_tickets - displayTicketStats.waitlist} Open
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-500">
-                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1"></span>
-                                {displayTicketStats.waitlist} Waitlist
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-500">
-                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1"></span>
-                                {displayTicketStats.in_progress} In Progress
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Resolved */}
-                    <div
-                        onClick={() => onTabChange('requests', 'resolved,closed')}
-                        className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm transition-all hover:shadow-md cursor-pointer hover:border-emerald-500/50 group"
-                    >
-                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-emerald-500 transition-colors">Resolved</div>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-slate-900">{displayTicketStats.resolved}</span>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase">Avg {displayTicketStats.avg_resolution_hours}h resolution</span>
-                        </div>
-                    </div>
-
-                    {/* Completion Rate */}
+                    {/* Card 1 — Total Tickets */}
                     <div
                         onClick={() => onTabChange('requests', 'all')}
-                        className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm transition-all hover:shadow-md cursor-pointer hover:border-blue-500/50 group"
+                        className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group"
                     >
-                        <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-1 group-hover:text-blue-500 transition-colors">Completion Rate</div>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-slate-900">{completionRate}%</span>
-                            <span className="text-[10px] text-slate-400 font-bold uppercase">{displayTicketStats.resolved} of {displayTicketStats.total_tickets} closed</span>
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600 transition-colors">Total Tickets</span>
+                            <div className="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center">
+                                <Ticket className="w-3.5 h-3.5 text-slate-500" />
+                            </div>
+                        </div>
+                        <div className="flex items-baseline gap-2 mb-2">
+                            <span className="text-4xl font-black text-slate-900">{displayTicketStats.total_tickets}</span>
+                            <span className="text-xs text-slate-400 font-bold">{completionRate}% resolved</span>
+                        </div>
+                        {/* Resolution progress bar */}
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
+                            <div
+                                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(completionRate, 100)}%` }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                            <span>{activeCount} active</span>
+                            <span>{displayTicketStats.avg_resolution_hours > 0 ? `Avg ${displayTicketStats.avg_resolution_hours}h` : 'No data'}</span>
                         </div>
                     </div>
+
+                    {/* Card 2 — Open & Active */}
+                    <div
+                        onClick={() => onTabChange('requests', 'open,assigned,in_progress,blocked')}
+                        className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-blue-200 transition-all group"
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-500 transition-colors">Open & Active</span>
+                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${displayTicketStats.sla_breached > 0 ? 'bg-rose-50' : 'bg-blue-50'}`}>
+                                <AlertCircle className={`w-3.5 h-3.5 ${displayTicketStats.sla_breached > 0 ? 'text-rose-500' : 'text-blue-500'}`} />
+                            </div>
+                        </div>
+                        <div className="flex items-baseline gap-2 mb-2">
+                            <span className="text-4xl font-black text-slate-900">{activeCount}</span>
+                            {displayTicketStats.sla_breached > 0 && (
+                                <span className="text-[10px] text-rose-500 font-black uppercase bg-rose-50 px-1.5 py-0.5 rounded-md">{displayTicketStats.sla_breached} SLA breach</span>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+                                {displayTicketStats.open_tickets - displayTicketStats.waitlist} Open
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                                {displayTicketStats.waitlist} Waitlist
+                            </span>
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
+                                {displayTicketStats.in_progress} In Progress
+                            </span>
+                            {displayTicketStats.urgent_open > 0 && (
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block" />
+                                    {displayTicketStats.urgent_open} High/Urgent
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Card 3 — Resolved & Validated */}
+                    <div
+                        onClick={() => onTabChange('requests', 'resolved,closed')}
+                        className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-emerald-200 transition-all group"
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-emerald-500 transition-colors">Resolved & Closed</span>
+                            <div className="w-7 h-7 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                            </div>
+                        </div>
+                        <div className="flex items-baseline gap-2 mb-2">
+                            <span className="text-4xl font-black text-slate-900">{displayTicketStats.resolved}</span>
+                            <span className="text-xs text-emerald-500 font-bold">{completionRate}%</span>
+                        </div>
+                        {/* Validation breakdown bar */}
+                        {displayTicketStats.resolved > 0 && (
+                            <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden flex">
+                                <div className="h-full bg-emerald-500 rounded-l-full transition-all duration-500" style={{ width: `${validationRate}%` }} />
+                                <div className="h-full bg-slate-300 rounded-r-full transition-all duration-500" style={{ width: `${100 - validationRate}%` }} />
+                            </div>
+                        )}
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                            {validationEnabledCount > 0 ? (
+                                <span>
+                                    <span className="text-emerald-600">{displayTicketStats.validated_closed} validated</span>
+                                    {directResolved > 0 && <span> · {directResolved} direct</span>}
+                                </span>
+                            ) : (
+                                <span>{displayTicketStats.resolved} direct closed</span>
+                            )}
+                            <span>Avg {displayTicketStats.avg_resolution_hours}h</span>
+                        </div>
+                    </div>
+
+                    {/* Card 4 — Pending Client Validation */}
+                    <div
+                        onClick={() => onTabChange('requests', 'pending_validation')}
+                        className={`bg-white rounded-2xl p-3 border shadow-sm hover:shadow-md cursor-pointer transition-all group ${displayTicketStats.pending_validation > 0
+                            ? 'border-amber-200 hover:border-amber-300'
+                            : 'border-slate-100 hover:border-slate-200'
+                            }`}
+                    >
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Pending Validation</span>
+                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${displayTicketStats.pending_validation > 0 ? 'bg-amber-50' : 'bg-emerald-50'
+                                }`}>
+                                <Clock className={`w-3.5 h-3.5 ${displayTicketStats.pending_validation > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
+                            </div>
+                        </div>
+                        <div className="flex items-baseline gap-2 mb-2">
+                            <span className={`text-4xl font-black ${displayTicketStats.pending_validation > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+                                {validationEnabledCount > 0 ? displayTicketStats.pending_validation : 0}
+                            </span>
+                            {displayTicketStats.pending_validation === 0 && validationEnabledCount > 0 && (
+                                <span className="text-[10px] text-emerald-500 font-black">All clear ✓</span>
+                            )}
+                            {displayTicketStats.pending_validation > 0 && (
+                                <span className="text-[10px] text-amber-500 font-black bg-amber-50 px-1.5 py-0.5 rounded-md">Needs action</span>
+                            )}
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                            {validationEnabledCount === 0 ? (
+                                <span className="text-slate-400">
+                                    {selectedPropertyId === 'all'
+                                        ? 'Validation not enabled on any property'
+                                        : 'Validation is not enabled for this property'}
+                                </span>
+                            ) : displayTicketStats.pending_validation > 0 ? (
+                                <span className="text-amber-600">Awaiting tenant sign-off</span>
+                            ) : (
+                                <span className="text-emerald-600">All resolved tickets confirmed</span>
+                            )}
+                            <div className="mt-1 text-slate-300">
+                                Enabled on {validationEnabledCount}/{totalPropertiesCount} {totalPropertiesCount === 1 ? 'property' : 'properties'}
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -1761,7 +1965,7 @@ const OverviewTab = memo(function OverviewTab({
     );
 });
 
-const PropertiesTab = ({ properties, onCreate, onEdit, onDelete }: any) => (
+const PropertiesTab = ({ properties, onCreate, onEdit, onConfigure, onDelete }: any) => (
     <div className="space-y-5">
         <div className="flex justify-between items-center bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
             <div className="relative">
@@ -1807,6 +2011,13 @@ const PropertiesTab = ({ properties, onCreate, onEdit, onDelete }: any) => (
                                 <Edit className="w-4 h-4" />
                             </button>
                             <button
+                                onClick={() => onConfigure(prop)}
+                                title="Configure Features"
+                                className="p-3 bg-white/90 backdrop-blur-xl text-slate-600 rounded-2xl hover:bg-slate-900 hover:text-white shadow-xl shadow-black/5 transition-all"
+                            >
+                                <Settings className="w-4 h-4" />
+                            </button>
+                            <button
                                 onClick={() => onDelete(prop.id)}
                                 className="p-3 bg-white/90 backdrop-blur-xl text-slate-600 rounded-2xl hover:bg-rose-500 hover:text-white shadow-xl shadow-black/5 transition-all"
                             >
@@ -1824,13 +2035,24 @@ const PropertiesTab = ({ properties, onCreate, onEdit, onDelete }: any) => (
 
                     <div className="p-8 flex-1 flex flex-col">
                         <h3 className="text-xl font-black text-slate-900 leading-tight mb-2 truncate decoration-blue-500 decoration-4">{prop.name}</h3>
-                        <div className="flex items-start gap-2.5 text-slate-500 text-xs font-medium mb-8">
+                        <div className="flex items-start gap-2.5 text-slate-500 text-xs font-medium mb-4">
                             <MapPin className="w-4 h-4 mt-0.5 text-slate-400 shrink-0" />
                             <span className="line-clamp-2 leading-relaxed">{prop.address || 'No physical address registered'}</span>
                         </div>
 
-                        <button className="w-full py-4 bg-slate-50 border border-slate-100 text-slate-900 font-bold rounded-2xl text-[10px] hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all mt-auto uppercase tracking-[0.2em] shadow-sm">
-                            View Live Analytics
+                        {/* Validation badge */}
+                        <div className="mb-6">
+                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${prop.validation_enabled !== false ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${prop.validation_enabled !== false ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                                {prop.validation_enabled !== false ? 'Validation On' : 'Validation Off'}
+                            </span>
+                        </div>
+
+                        <button
+                            onClick={() => onConfigure(prop)}
+                            className="w-full py-4 bg-slate-50 border border-slate-100 text-slate-900 font-bold rounded-2xl text-[10px] hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all mt-auto uppercase tracking-[0.2em] shadow-sm flex items-center justify-center gap-2"
+                        >
+                            <Settings className="w-3.5 h-3.5" /> Configure Property
                         </button>
                     </div>
                 </div>
@@ -1938,6 +2160,7 @@ const PropertyModal = ({ property, onClose, onSave }: any) => {
     const [code, setCode] = useState(property?.code || '');
     const [address, setAddress] = useState(property?.address || '');
     const [imageUrl, setImageUrl] = useState(property?.image_url || '');
+    const [validationEnabled, setValidationEnabled] = useState<boolean>(property?.validation_enabled !== false);
     const [isDragging, setIsDragging] = useState(false);
 
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2039,9 +2262,24 @@ const PropertyModal = ({ property, onClose, onSave }: any) => {
                         </div>
                     </div>
 
+                    {/* Validation Flow Toggle */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <div>
+                            <p className="text-sm font-black text-slate-800">Client Validation Flow</p>
+                            <p className="text-xs text-slate-400 mt-0.5">When enabled, tenants must approve completed tickets before they close</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setValidationEnabled(v => !v)}
+                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${validationEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                        >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${validationEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </div>
+
                     <div className="flex gap-3 mt-8">
                         <button onClick={onClose} className="flex-1 py-4 font-black text-slate-400 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-colors uppercase text-xs tracking-widest">Cancel</button>
-                        <button onClick={() => onSave({ name, code, address, image_url: imageUrl })} className="flex-1 py-4 font-black text-white bg-slate-900 rounded-2xl hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 uppercase text-xs tracking-widest flex items-center justify-center gap-2">
+                        <button onClick={() => onSave({ name, code, address, image_url: imageUrl, validation_enabled: validationEnabled })} className="flex-1 py-4 font-black text-white bg-slate-900 rounded-2xl hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200 uppercase text-xs tracking-widest flex items-center justify-center gap-2">
                             <Check className="w-4 h-4" /> {property ? 'Update' : 'Create'}
                         </button>
                     </div>
@@ -2051,17 +2289,86 @@ const PropertyModal = ({ property, onClose, onSave }: any) => {
     );
 }
 
-const UserModal = ({ user, onClose, onSave }: any) => {
+const UserModal = ({ user, onClose, onSave, allProperties = [], orgId = '' }: any) => {
     const [fullName, setFullName] = useState(user?.user?.full_name || '');
     const [phone, setPhone] = useState(user?.user?.phone || '');
     const [orgRole, setOrgRole] = useState(user?.role || 'org_admin');
+
+    // Property assignment state (only for property-level users)
+    const isPropertyUser = !user?.role || user?.role === '';
+    const currentPropIds: string[] = (user?.propertyMemberships || []).map((pm: any) => pm.property_id);
+    const [assigningPropId, setAssigningPropId] = useState('');
+    const [propAssignRole, setPropAssignRole] = useState('property_admin');
+    const [assignedProps, setAssignedProps] = useState<{ property_id: string; property_name: string; role: string }[]>(
+        (user?.propertyMemberships || []).map((pm: any) => ({
+            property_id: pm.property_id,
+            property_name: pm.property_name,
+            role: pm.role,
+        }))
+    );
+    const [propSaving, setPropSaving] = useState(false);
+    const [propError, setPropError] = useState('');
+
+    const unassignedProps = allProperties.filter((p: any) => !assignedProps.find(a => a.property_id === p.id));
+
+    const handleAddProperty = async () => {
+        if (!assigningPropId) return;
+        setPropSaving(true);
+        setPropError('');
+        try {
+            const res = await fetch('/api/users/assign-property', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user.user_id,
+                    propertyId: assigningPropId,
+                    role: propAssignRole,
+                    organizationId: orgId,
+                    action: 'add',
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setPropError(data.error || 'Failed'); return; }
+            const prop = allProperties.find((p: any) => p.id === assigningPropId);
+            setAssignedProps(prev => [...prev, { property_id: assigningPropId, property_name: prop?.name || '', role: propAssignRole }]);
+            setAssigningPropId('');
+        } catch {
+            setPropError('Network error');
+        } finally {
+            setPropSaving(false);
+        }
+    };
+
+    const handleRemoveProperty = async (propId: string) => {
+        setPropSaving(true);
+        setPropError('');
+        try {
+            const res = await fetch('/api/users/assign-property', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: user.user_id,
+                    propertyId: propId,
+                    organizationId: orgId,
+                    action: 'remove',
+                }),
+            });
+            if (res.ok) {
+                setAssignedProps(prev => prev.filter(p => p.property_id !== propId));
+            }
+        } catch {
+            setPropError('Network error');
+        } finally {
+            setPropSaving(false);
+        }
+    };
 
     return (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md flex items-center justify-center z-[9998] p-4">
             <motion.div
                 initial={{ scale: 0.95, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="bg-white/90 backdrop-blur-xl rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl relative border border-white/20"
+                className="bg-white/90 backdrop-blur-xl rounded-[2.5rem] p-10 max-w-lg w-full shadow-2xl relative border border-white/20 max-h-[90vh] overflow-y-auto"
             >
                 <button onClick={onClose} className="absolute right-6 top-5 text-slate-300 hover:text-slate-900 transition-colors">
                     <X className="w-6 h-6" />
@@ -2085,13 +2392,83 @@ const UserModal = ({ user, onClose, onSave }: any) => {
                         <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Phone Number</label>
                         <input type="text" value={phone} onChange={e => setPhone(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-100" />
                     </div>
-                    <div>
-                        <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Organization Role</label>
-                        <select value={orgRole} onChange={e => setOrgRole(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-100 appearance-none">
-                            <option value="org_super_admin">Super Admin</option>
-                            <option value="org_admin">Admin</option>
-                        </select>
-                    </div>
+                    {user?.role && (
+                        <div>
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Organization Role</label>
+                            <select value={orgRole} onChange={e => setOrgRole(e.target.value)} className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-100 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-100 appearance-none">
+                                <option value="org_super_admin">Super Admin</option>
+                                <option value="org_admin">Admin</option>
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Property Access Manager — shown for property-level users */}
+                    {isPropertyUser && (
+                        <div className="pt-2 border-t border-slate-100">
+                            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3 block flex items-center gap-2">
+                                <Building2 className="w-3.5 h-3.5" /> Property Access
+                            </label>
+
+                            {/* Current assignments */}
+                            <div className="space-y-2 mb-3">
+                                {assignedProps.length === 0 && (
+                                    <p className="text-xs text-slate-400 italic">No properties assigned yet.</p>
+                                )}
+                                {assignedProps.map(pm => (
+                                    <div key={pm.property_id} className="flex items-center justify-between px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+                                        <div>
+                                            <span className="text-sm font-bold text-slate-800">{pm.property_name}</span>
+                                            <span className="ml-2 text-[10px] font-black uppercase text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded">{pm.role?.replace(/_/g, ' ')}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRemoveProperty(pm.property_id)}
+                                            disabled={propSaving}
+                                            className="p-1.5 text-slate-300 hover:text-rose-500 transition-colors rounded-lg hover:bg-rose-50"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Add new property */}
+                            {unassignedProps.length > 0 && (
+                                <div className="flex gap-2">
+                                    <select
+                                        value={assigningPropId}
+                                        onChange={e => setAssigningPropId(e.target.value)}
+                                        className="flex-1 px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold text-slate-900 focus:outline-none appearance-none"
+                                    >
+                                        <option value="">+ Add property…</option>
+                                        {unassignedProps.map((p: any) => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                    <select
+                                        value={propAssignRole}
+                                        onChange={e => setPropAssignRole(e.target.value)}
+                                        className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-sm font-bold text-slate-900 focus:outline-none appearance-none"
+                                    >
+                                        <option value="property_admin">Admin</option>
+                                        <option value="staff">Staff</option>
+                                        <option value="mst">MST</option>
+                                        <option value="security">Security</option>
+                                        <option value="tenant">Tenant</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddProperty}
+                                        disabled={!assigningPropId || propSaving}
+                                        className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-sm font-black disabled:opacity-40 hover:bg-slate-800 transition-colors"
+                                    >
+                                        {propSaving ? '…' : 'Add'}
+                                    </button>
+                                </div>
+                            )}
+                            {propError && <p className="text-xs text-rose-500 font-bold mt-2">{propError}</p>}
+                        </div>
+                    )}
 
                     <div className="flex gap-3 mt-8">
                         <button onClick={onClose} className="flex-1 py-4 font-black text-slate-400 bg-slate-50 rounded-2xl hover:bg-slate-100 transition-colors uppercase text-xs tracking-widest">Cancel</button>
@@ -2217,18 +2594,24 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Vendor</th>
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Comm %</th>
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Revenue</th>
+                                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Last Entry</th>
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Commission</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {vendors.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-16 text-center text-slate-400 font-bold italic">No vendor data available.</td>
+                                    <td colSpan={6} className="px-8 py-16 text-center text-slate-400 font-bold italic">No vendor data available.</td>
                                 </tr>
                             ) : (
                                 vendors.map((v) => {
                                     const rev = v.vendor_daily_revenue?.reduce((sum: number, r: any) => sum + r.revenue_amount, 0) || 0;
                                     const comm = rev * (v.commission_rate / 100);
+                                    const lastEntry = v.vendor_daily_revenue?.reduce((latest: string | null, r: any) =>
+                                        !latest || r.revenue_date > latest ? r.revenue_date : latest, null as string | null);
+                                    const lastEntryDisplay = lastEntry
+                                        ? new Date(lastEntry).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                                        : '—';
                                     return (
                                         <tr key={v.id} className="hover:bg-slate-50/50 transition-colors group">
                                             <td className="px-8 py-5">
@@ -2242,6 +2625,7 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
                                                 <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-500 uppercase tracking-wider">{v.commission_rate}%</span>
                                             </td>
                                             <td className="px-8 py-5 text-right font-black text-sm text-slate-900">₹{rev.toLocaleString()}</td>
+                                            <td className="px-8 py-5 text-center text-xs font-bold text-slate-500">{lastEntryDisplay}</td>
                                             <td className="px-8 py-5 text-right font-black text-sm text-emerald-600">₹{comm.toLocaleString()}</td>
                                         </tr>
                                     );
@@ -2278,36 +2662,32 @@ const VisitorsTab = ({ properties, selectedPropertyId }: { properties: any[], se
     const fetchVisitors = async () => {
         setIsLoading(true);
         try {
-            let query = supabase
-                .from('visitor_logs')
-                .select('*, properties(name)')
-                .order('checkin_time', { ascending: false });
+            // Use API routes (admin client) instead of direct Supabase query to avoid RLS restrictions
+            const targetProperties = selectedProperty === 'all'
+                ? properties.map((p: any) => p.id)
+                : [selectedProperty];
 
-            if (selectedProperty !== 'all') {
-                query = query.eq('property_id', selectedProperty);
-            }
+            const allVisitors: any[] = [];
 
-            // Apply date filter
-            if (dateFilter !== 'all') {
-                const now = new Date();
-                let startDate: Date;
-
-                if (dateFilter === 'today') {
-                    startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                } else if (dateFilter === 'week') {
-                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                } else if (dateFilter === 'month') {
-                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                } else {
-                    startDate = new Date(0);
+            for (const propId of targetProperties) {
+                const params = new URLSearchParams();
+                if (dateFilter !== 'all') params.set('date', dateFilter); // API uses 'date' param
+                const res = await fetch(`/api/vms/${propId}?${params.toString()}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const visitors = Array.isArray(data) ? data : (data.visitors || data.data || []);
+                    // Attach property name from the properties prop
+                    const prop = properties.find((p: any) => p.id === propId);
+                    allVisitors.push(...visitors.map((v: any) => ({
+                        ...v,
+                        properties: { name: prop?.name || '' },
+                    })));
                 }
-
-                query = query.gte('checkin_time', startDate.toISOString());
             }
 
-            const { data, error } = await query;
-            if (error) throw error;
-            setVisitors(data || []);
+            // Sort by checkin_time descending
+            allVisitors.sort((a, b) => new Date(b.checkin_time).getTime() - new Date(a.checkin_time).getTime());
+            setVisitors(allVisitors);
         } catch (err) {
             console.error('Error fetching visitors:', err);
         } finally {
@@ -2587,6 +2967,229 @@ const VisitorsTab = ({ properties, selectedPropertyId }: { properties: any[], se
                 )}
             </AnimatePresence>
 
+        </div>
+    );
+};
+
+// ── SuperTenantOrgTab ─────────────────────────────────────────────────────────
+
+interface STProperty { id: string; name: string; code: string; }
+
+const SuperTenantOrgTab = ({ orgId, properties }: { orgId: string; properties: STProperty[] }) => {
+    const supabase = createClient();
+    const [superTenants, setSuperTenants] = useState<any[]>([]);
+    const [orgUsers, setOrgUsers] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [showModal, setShowModal] = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState('');
+    const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+    const [isSaving, setIsSaving] = useState(false);
+    const [toastMsg, setToastMsg] = useState<{ msg: string; ok: boolean } | null>(null);
+
+    const showToast = (msg: string, ok = true) => {
+        setToastMsg({ msg, ok });
+        setTimeout(() => setToastMsg(null), 3000);
+    };
+
+    useEffect(() => { fetchData(); }, [orgId]);
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const { data: stMems } = await supabase
+                .from('organization_memberships')
+                .select('user_id, users(id, full_name, email)')
+                .eq('organization_id', orgId)
+                .eq('role', 'super_tenant')
+                .eq('is_active', true);
+
+            const enriched = await Promise.all(
+                (stMems || []).map(async (row: any) => {
+                    const { data: props } = await supabase
+                        .from('super_tenant_properties')
+                        .select('property_id, properties(name, code)')
+                        .eq('user_id', row.user_id);
+                    return { ...row, assignedProperties: props || [] };
+                })
+            );
+            setSuperTenants(enriched);
+
+            const { data: members } = await supabase
+                .from('organization_memberships')
+                .select('user_id, role, users(id, full_name, email)')
+                .eq('organization_id', orgId)
+                .eq('is_active', true)
+                .neq('role', 'super_tenant');
+            setOrgUsers((members || []).map((m: any) => m.users).filter(Boolean));
+        } catch (err) {
+            console.error('[SuperTenantOrgTab] fetch error', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAssign = async () => {
+        if (!selectedUserId || selectedPropertyIds.length === 0) {
+            showToast('Select a user and at least one property.', false);
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const res = await fetch('/api/super-tenant', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: selectedUserId, organization_id: orgId, property_ids: selectedPropertyIds }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            showToast('Super Tenant assigned successfully.');
+            setShowModal(false);
+            setSelectedUserId('');
+            setSelectedPropertyIds([]);
+            fetchData();
+        } catch (err: any) {
+            showToast(err.message || 'Failed to assign', false);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleRemove = async (userId: string, propertyId: string) => {
+        if (!confirm('Remove this property from the super tenant?')) return;
+        const res = await fetch('/api/super-tenant', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, property_id: propertyId }),
+        });
+        if (res.ok) { showToast('Property removed.'); fetchData(); }
+        else showToast('Failed to remove.', false);
+    };
+
+    const toggleProp = (id: string) =>
+        setSelectedPropertyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-2xl font-black text-slate-900">Super Tenants</h2>
+                    <p className="text-sm text-slate-500 mt-0.5">Assign cross-property analytics access to tenant accounts</p>
+                </div>
+                <button
+                    onClick={() => setShowModal(true)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 text-white font-bold text-xs rounded-xl uppercase tracking-widest hover:bg-violet-700 transition-all shadow-lg shadow-violet-200"
+                >
+                    <Plus className="w-4 h-4" /> Assign Super Tenant
+                </button>
+            </div>
+
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-violet-50 border border-violet-200 text-violet-700">
+                <Key className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <p className="text-xs font-semibold leading-relaxed">
+                    Super Tenants have read-only access to view and analyze all tickets across their assigned properties. They cannot create tickets, manage users, or access admin settings.
+                </p>
+            </div>
+
+            {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                    <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : superTenants.length === 0 ? (
+                <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-2xl">
+                    <Key className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                    <p className="text-sm font-semibold text-slate-500">No super tenant accounts yet.</p>
+                    <p className="text-xs text-slate-400 mt-1">Click "Assign Super Tenant" to get started.</p>
+                </div>
+            ) : (
+                <div className="space-y-3">
+                    {superTenants.map((st, i) => (
+                        <div key={i} className="p-5 rounded-2xl border border-slate-200 bg-white shadow-sm space-y-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-violet-100 flex items-center justify-center text-violet-700 font-black text-sm">
+                                        {st.users?.full_name?.[0]?.toUpperCase() || 'S'}
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-slate-900 text-sm">{st.users?.full_name || '—'}</p>
+                                        <p className="text-xs text-slate-500">{st.users?.email}</p>
+                                    </div>
+                                </div>
+                                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-violet-100 text-violet-700 tracking-widest">
+                                    Super Tenant
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {st.assignedProperties.map((ap: any) => (
+                                    <div key={ap.property_id} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200">
+                                        <Building2 className="w-3 h-3 text-slate-400" />
+                                        {ap.properties?.name || ap.property_id}
+                                        <button onClick={() => handleRemove(st.user_id, ap.property_id)} className="ml-1 text-slate-400 hover:text-red-500 transition-colors">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {st.assignedProperties.length === 0 && <span className="text-xs text-slate-400 italic">No properties assigned</span>}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <AnimatePresence>
+                {showModal && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                        onClick={() => setShowModal(false)}>
+                        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                            onClick={e => e.stopPropagation()}
+                            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md p-6 space-y-5">
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-black text-slate-900 text-lg">Assign Super Tenant</h3>
+                                <button onClick={() => setShowModal(false)} className="p-2 rounded-xl hover:bg-slate-100 text-slate-400"><X className="w-4 h-4" /></button>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-black uppercase tracking-widest text-slate-500">Select User</label>
+                                <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}
+                                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-500">
+                                    <option value="">— Choose user —</option>
+                                    {orgUsers.map((u: any) => <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>)}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-xs font-black uppercase tracking-widest text-slate-500">Assign Properties</label>
+                                <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-3">
+                                    {properties.length === 0 && <p className="text-xs text-slate-400 text-center py-4">No properties found.</p>}
+                                    {properties.map(prop => (
+                                        <label key={prop.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                                            <input type="checkbox" checked={selectedPropertyIds.includes(prop.id)} onChange={() => toggleProp(prop.id)} className="w-4 h-4 rounded accent-violet-600" />
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-800">{prop.name}</p>
+                                                <p className="text-[10px] font-mono text-slate-400">{prop.code}</p>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                                {selectedPropertyIds.length > 0 && <p className="text-xs font-semibold text-violet-600">{selectedPropertyIds.length} propert{selectedPropertyIds.length > 1 ? 'ies' : 'y'} selected</p>}
+                            </div>
+                            <button onClick={handleAssign} disabled={isSaving || !selectedUserId || selectedPropertyIds.length === 0}
+                                className="w-full py-3 bg-violet-600 text-white font-bold rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm">
+                                {isSaving ? 'Assigning...' : 'Assign Super Tenant Role & Properties'}
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {toastMsg && (
+                    <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+                        className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]">
+                        <div className={`px-6 py-3 rounded-2xl shadow-2xl font-bold text-sm border ${toastMsg.ok ? 'bg-emerald-900 border-emerald-500/50 text-emerald-50' : 'bg-rose-900 border-rose-500/50 text-rose-50'}`}>
+                            {toastMsg.msg}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

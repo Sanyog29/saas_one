@@ -5,7 +5,8 @@ import {
     BarChart3, Users, Building2, LayoutDashboard,
     Settings, Search, Plus, Zap, AlertTriangle,
     History, ShieldCheck, Mail, LogOut, Command,
-    ClipboardList, Package, Map, PieChart, ExternalLink, IndianRupee, Store, UsersRound, Activity
+    ClipboardList, Package, Map, PieChart, ExternalLink, IndianRupee, Store, UsersRound, Activity,
+    Key, X
 } from 'lucide-react';
 import PropertyManagement from './PropertyManagement';
 import UserManagement from './UserManagement';
@@ -18,7 +19,7 @@ import VMSOrgSummary from '@/frontend/components/vms/VMSOrgSummary';
 import { useTheme } from '@/frontend/context/ThemeContext';
 import { Sun, Moon } from 'lucide-react';
 
-type SubTab = 'dashboard' | 'properties' | 'requests' | 'alerts' | 'users' | 'analytics' | 'vendors' | 'visitors' | 'flow-map';
+type SubTab = 'dashboard' | 'properties' | 'requests' | 'alerts' | 'users' | 'analytics' | 'vendors' | 'visitors' | 'flow-map' | 'super-tenants';
 
 interface Property {
     id: string;
@@ -77,6 +78,7 @@ const OrgDashboard = ({ orgId }: { orgId: string }) => {
                 { id: 'properties', label: 'Entity Manager', icon: Building2 },
                 { id: 'flow-map', label: 'Entity Flow', icon: Activity },
                 { id: 'users', label: 'User Management', icon: Users },
+                { id: 'super-tenants', label: 'Super Tenants', icon: Key },
                 { id: 'visitors', label: 'Visitors', icon: UsersRound },
                 { id: 'vendors', label: 'Cafeteria Revenue', icon: Store },
                 { id: 'analytics', label: 'SLA Analytics', icon: BarChart3 },
@@ -247,6 +249,7 @@ const OrgDashboard = ({ orgId }: { orgId: string }) => {
                             {activeTab === 'vendors' && <VendorSummary orgId={orgId} />}
                             {activeTab === 'visitors' && <VMSOrgSummary orgId={orgId} />}
                             {activeTab === 'analytics' && <SLAAnalytics />}
+                            {activeTab === 'super-tenants' && <SuperTenantOrgTab orgId={orgId} properties={properties} />}
                         </motion.div>
                     </AnimatePresence>
                 </div>
@@ -560,6 +563,275 @@ const VendorSummary = ({ orgId }: { orgId: string }) => {
                     </table>
                 </div>
             </div>
+        </div>
+    );
+};
+
+// ── SuperTenantOrgTab ─────────────────────────────────────────────────────────
+
+const SuperTenantOrgTab = ({ orgId, properties }: { orgId: string; properties: Property[] }) => {
+    const supabase = createClient();
+    const [superTenants, setSuperTenants] = useState<any[]>([]);
+    const [orgUsers, setOrgUsers] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [showModal, setShowModal] = useState(false);
+    const [selectedUserId, setSelectedUserId] = useState('');
+    const [selectedPropertyIds, setSelectedPropertyIds] = useState<string[]>([]);
+    const [isSaving, setIsSaving] = useState(false);
+    const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+
+    const showToast = (msg: string, ok = true) => {
+        setToast({ msg, ok });
+        setTimeout(() => setToast(null), 3000);
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, [orgId]);
+
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            // Fetch existing super tenants for this org
+            const { data: stMems } = await supabase
+                .from('organization_memberships')
+                .select('user_id, users(id, full_name, email)')
+                .eq('organization_id', orgId)
+                .eq('role', 'super_tenant')
+                .eq('is_active', true);
+
+            const enriched = await Promise.all(
+                (stMems || []).map(async (row: any) => {
+                    const { data: props } = await supabase
+                        .from('super_tenant_properties')
+                        .select('property_id, properties(name, code)')
+                        .eq('user_id', row.user_id);
+                    return { ...row, assignedProperties: props || [] };
+                })
+            );
+            setSuperTenants(enriched);
+
+            // Fetch all users in this org (to pick from)
+            const { data: members } = await supabase
+                .from('organization_memberships')
+                .select('user_id, role, users(id, full_name, email)')
+                .eq('organization_id', orgId)
+                .eq('is_active', true)
+                .neq('role', 'super_tenant');
+            setOrgUsers((members || []).map((m: any) => m.users).filter(Boolean));
+        } catch (err) {
+            console.error('[SuperTenantOrgTab] fetch error', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAssign = async () => {
+        if (!selectedUserId || selectedPropertyIds.length === 0) {
+            showToast('Select a user and at least one property.', false);
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const res = await fetch('/api/super-tenant', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: selectedUserId, organization_id: orgId, property_ids: selectedPropertyIds }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+            showToast('Super Tenant assigned successfully.');
+            setShowModal(false);
+            setSelectedUserId('');
+            setSelectedPropertyIds([]);
+            fetchData();
+        } catch (err: any) {
+            showToast(err.message || 'Failed to assign', false);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleRemove = async (userId: string, propertyId: string) => {
+        if (!confirm('Remove this property from the super tenant?')) return;
+        const res = await fetch('/api/super-tenant', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, property_id: propertyId }),
+        });
+        if (res.ok) { showToast('Property removed.'); fetchData(); }
+        else showToast('Failed to remove.', false);
+    };
+
+    const toggleProp = (id: string) =>
+        setSelectedPropertyIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+    return (
+        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* Header */}
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-4xl font-black text-white tracking-widest italic uppercase mb-2">Super Tenants</h2>
+                    <p className="text-zinc-500 text-sm font-medium uppercase tracking-[0.2em]">Assign cross-property analytics accounts</p>
+                </div>
+                <button
+                    onClick={() => setShowModal(true)}
+                    className="flex items-center gap-2 px-6 py-3 bg-violet-600 text-white font-black text-xs rounded-xl uppercase tracking-widest hover:bg-violet-700 transition-all shadow-lg shadow-violet-900/40"
+                >
+                    <Plus className="w-4 h-4" /> Assign Super Tenant
+                </button>
+            </div>
+
+            {/* Info */}
+            <div className="flex items-start gap-3 p-5 rounded-2xl bg-violet-500/10 border border-violet-500/20 text-violet-300">
+                <Key className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <p className="text-xs font-semibold leading-relaxed">
+                    Super Tenants can view and analyze all tickets across their assigned properties. They have read-only access — no ticket creation, user management, or admin controls.
+                </p>
+            </div>
+
+            {/* List */}
+            {isLoading ? (
+                <div className="flex items-center justify-center py-20">
+                    <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+            ) : superTenants.length === 0 ? (
+                <div className="text-center py-20 border border-dashed border-zinc-800 rounded-2xl">
+                    <Key className="w-10 h-10 mx-auto mb-3 text-zinc-600" />
+                    <p className="text-sm font-semibold text-zinc-500">No super tenant accounts yet.</p>
+                    <p className="text-xs text-zinc-600 mt-1">Click "Assign Super Tenant" to get started.</p>
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {superTenants.map((st, i) => (
+                        <div key={i} className="bg-zinc-900/30 border border-zinc-800/50 p-6 rounded-3xl space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-2xl bg-violet-500/20 flex items-center justify-center text-violet-400 font-black text-sm">
+                                        {st.users?.full_name?.[0]?.toUpperCase() || 'S'}
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-white text-sm">{st.users?.full_name || '—'}</p>
+                                        <p className="text-xs text-zinc-500">{st.users?.email}</p>
+                                    </div>
+                                </div>
+                                <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase bg-violet-500/20 text-violet-400 tracking-widest border border-violet-500/30">
+                                    Super Tenant
+                                </span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {st.assignedProperties.map((ap: any) => (
+                                    <div key={ap.property_id} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-800 text-zinc-300 text-xs font-bold border border-zinc-700">
+                                        <Building2 className="w-3 h-3 text-zinc-500" />
+                                        {ap.properties?.name || ap.property_id}
+                                        <button
+                                            onClick={() => handleRemove(st.user_id, ap.property_id)}
+                                            className="ml-1 text-zinc-600 hover:text-red-400 transition-colors"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                                {st.assignedProperties.length === 0 && (
+                                    <span className="text-xs text-zinc-600 italic">No properties assigned</span>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Assign Modal */}
+            <AnimatePresence>
+                {showModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                        onClick={() => setShowModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.95, opacity: 0 }}
+                            onClick={e => e.stopPropagation()}
+                            className="bg-zinc-950 border border-zinc-800 rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5"
+                        >
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-black text-white text-lg">Assign Super Tenant</h3>
+                                <button onClick={() => setShowModal(false)} className="p-2 rounded-xl hover:bg-zinc-800 text-zinc-500">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Select User</label>
+                                <select
+                                    value={selectedUserId}
+                                    onChange={e => setSelectedUserId(e.target.value)}
+                                    className="w-full px-3 py-2.5 bg-zinc-900 border border-zinc-700 rounded-xl text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                >
+                                    <option value="">— Choose user —</option>
+                                    {orgUsers.map((u: any) => (
+                                        <option key={u.id} value={u.id}>{u.full_name} ({u.email})</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Assign Properties</label>
+                                <div className="max-h-48 overflow-y-auto space-y-1.5 border border-zinc-700 rounded-xl p-3">
+                                    {properties.length === 0 && (
+                                        <p className="text-xs text-zinc-500 text-center py-4">No properties in this organization.</p>
+                                    )}
+                                    {properties.map(prop => (
+                                        <label key={prop.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedPropertyIds.includes(prop.id)}
+                                                onChange={() => toggleProp(prop.id)}
+                                                className="w-4 h-4 rounded accent-violet-600"
+                                            />
+                                            <div>
+                                                <p className="text-sm font-bold text-white">{prop.name}</p>
+                                                <p className="text-[10px] font-mono text-zinc-500">{prop.code}</p>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                                {selectedPropertyIds.length > 0 && (
+                                    <p className="text-xs font-semibold text-violet-400">{selectedPropertyIds.length} propert{selectedPropertyIds.length > 1 ? 'ies' : 'y'} selected</p>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={handleAssign}
+                                disabled={isSaving || !selectedUserId || selectedPropertyIds.length === 0}
+                                className="w-full py-3 bg-violet-600 text-white font-black rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                            >
+                                {isSaving ? 'Assigning...' : 'Assign Super Tenant Role & Properties'}
+                            </button>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Toast */}
+            <AnimatePresence>
+                {toast && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 20 }}
+                        className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]"
+                    >
+                        <div className={`px-6 py-3 rounded-2xl shadow-2xl font-bold text-sm border ${toast.ok ? 'bg-emerald-900 border-emerald-500/50 text-emerald-50' : 'bg-rose-900 border-rose-500/50 text-rose-50'}`}>
+                            {toast.msg}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };

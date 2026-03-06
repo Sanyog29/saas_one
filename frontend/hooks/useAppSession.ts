@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 export interface AppSession {
     user_id: string;
-    role: 'master_admin' | 'org_super_admin' | 'org_admin' | 'property_admin' | 'staff' | 'soft_service_manager' | 'soft_service_staff' | 'tenant';
+    role: 'master_admin' | 'org_super_admin' | 'org_admin' | 'property_admin' | 'staff' | 'soft_service_manager' | 'soft_service_staff' | 'tenant' | 'super_tenant';
     org_id: string;
     property_ids: string[];
     available_modules: string[];
@@ -34,12 +34,15 @@ export function useAppSession() {
                 role = 'master_admin';
             }
 
-            // Fetch ACTIVE memberships only
+            // Fetch org membership — use neq(is_active, false) to also match NULL rows
+            // (rows inserted without explicit is_active will have NULL, not false)
             const { data: orgMem } = await supabase
                 .from('organization_memberships')
                 .select('role, organization_id')
                 .eq('user_id', user.id)
-                .eq('is_active', true)
+                .neq('is_active', false)
+                .order('created_at', { ascending: false })
+                .limit(1)
                 .maybeSingle();
 
             const { data: propMems } = await supabase
@@ -55,19 +58,35 @@ export function useAppSession() {
             // Resolve org_id from active org membership, or from property's org
             const resolvedOrgId = orgMem?.organization_id || org_id;
 
+            const resolvedRole = (membershipRole || role) as string;
+
+            // For super_tenant: fetch assigned properties from super_tenant_properties table
+            let superTenantPropertyIds: string[] = [];
+            if (resolvedRole === 'super_tenant') {
+                const { data: stProps } = await supabase
+                    .from('super_tenant_properties')
+                    .select('property_id')
+                    .eq('user_id', user.id);
+                superTenantPropertyIds = stProps?.map(r => r.property_id) || [];
+            }
+
+            const finalPropertyIds = resolvedRole === 'super_tenant'
+                ? superTenantPropertyIds
+                : (propMems?.map(pm => pm.property_id) || []);
+
             console.log('[useAppSession] Role resolution:', {
                 orgRole: orgMem?.role,
                 propRole,
                 metadataRole: role,
-                resolved: membershipRole || role,
-                activeProperties: propMems?.length || 0
+                resolved: resolvedRole,
+                activeProperties: finalPropertyIds.length
             });
 
             setSession({
                 user_id: user.id,
-                role: (membershipRole || role) as any,
+                role: resolvedRole as any,
                 org_id: resolvedOrgId,
-                property_ids: propMems?.map(pm => pm.property_id) || [],
+                property_ids: finalPropertyIds,
                 available_modules: ['ticketing', 'viewer', 'analytics', 'stock', 'sop']
             });
             setIsLoading(false);

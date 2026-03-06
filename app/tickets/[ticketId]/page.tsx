@@ -50,7 +50,7 @@ interface Ticket {
     ticket_number: string;
     title: string;
     description: string;
-    status: 'open' | 'assigned' | 'in_progress' | 'blocked' | 'resolved' | 'closed' | 'waitlist';
+    status: 'open' | 'assigned' | 'in_progress' | 'blocked' | 'resolved' | 'closed' | 'waitlist' | 'pending_validation';
     priority: string;
     category?: { name: string; code: string };
     skill_group?: { name: string; code: string };
@@ -95,11 +95,19 @@ interface Comment {
     user?: { full_name: string; avatar_url?: string };
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export default function TicketDetailPage() {
     const { ticketId } = useParams();
     const router = useRouter();
     const searchParams = useSearchParams();
     const from = searchParams.get('from');
+
+    // Guard: if ticketId is not a valid UUID (e.g. /tickets/requests), redirect away
+    if (typeof ticketId === 'string' && !UUID_REGEX.test(ticketId)) {
+        router.replace('/');
+        return null;
+    }
     const { theme } = useTheme();
     const supabase = createClient();
 
@@ -135,6 +143,11 @@ export default function TicketDetailPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [userSkills, setUserSkills] = useState<string[]>([]);
     const [userNameMap, setUserNameMap] = useState<Record<string, string>>({});
+
+    // Validation State
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [rejectNote, setRejectNote] = useState('');
+    const [validationEnabled, setValidationEnabled] = useState(true);
 
     // Camera Modal State
     const [showCameraModal, setShowCameraModal] = useState(false);
@@ -192,12 +205,26 @@ export default function TicketDetailPage() {
                     assignee:users!assigned_to(id, full_name, email)
                 `)
                 .eq('id', ticketId)
-                .single();
+                .maybeSingle();
 
             if (error) throw error;
+            if (!t) throw { message: 'Ticket not found', code: 'NOT_FOUND' };
             setTicket(t);
 
-            if (t.property_id) fetchResolvers(t.property_id);
+            if (t.property_id) {
+                fetchResolvers(t.property_id);
+                // Check if validation is enabled for this property
+                try {
+                    const featRes = await fetch(`/api/properties/${t.property_id}/features`);
+                    if (featRes.ok) {
+                        const featData = await featRes.json();
+                        const valFeature = featData.features?.find((f: any) => f.feature_key === 'ticket_validation');
+                        setValidationEnabled(valFeature ? valFeature.is_enabled : true);
+                    }
+                } catch (e) {
+                    console.error('Error fetching property features:', e);
+                }
+            }
 
             // Fetch creator's role from property_memberships
             if (t.raised_by && t.property_id) {
@@ -415,6 +442,44 @@ export default function TicketDetailPage() {
         } catch (err: any) {
             console.error('Status Change Error:', err);
             showToast(err.message || 'Failed to update status', 'error');
+        }
+    };
+
+    const handleComplete = async () => {
+        try {
+            const res = await fetch(`/api/tickets/${ticketId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'complete' })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to complete ticket');
+            }
+            fetchTicketDetails(userId, true);
+            playTickleSound();
+            showToast('Task submitted for client approval', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to complete ticket', 'error');
+        }
+    };
+
+    const handleValidate = async (approved: boolean, note?: string) => {
+        try {
+            const res = await fetch(`/api/tickets/${ticketId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'validate', validation_approved: approved, validation_note: note })
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Failed to validate ticket');
+            }
+            fetchTicketDetails(userId, true);
+            if (approved) playTickleSound();
+            showToast(approved ? 'Request confirmed as resolved!' : 'Request reopened for rework', approved ? 'success' : 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to validate ticket', 'error');
         }
     };
 
@@ -730,7 +795,9 @@ export default function TicketDetailPage() {
 
             showToast('Request Deleted Successfully', 'success');
             setTimeout(() => {
-                router.push(from || `/property/${ticket?.property_id}/${userRole === 'admin' ? 'dashboard' : userRole === 'mst' ? 'mst' : userRole === 'staff' ? 'staff' : 'tenant'}?tab=requests`);
+                // Only use `from` if it's an absolute path (starts with /), not a tab name like "requests"
+                const destination = (from?.startsWith('/') ? from : null) || `/property/${ticket?.property_id}/${userRole === 'admin' ? 'dashboard' : userRole === 'mst' ? 'mst' : userRole === 'staff' ? 'staff' : 'tenant'}?tab=requests`;
+                router.push(destination);
             }, 1000);
         } catch (err: any) {
             console.error(err);
@@ -900,11 +967,12 @@ export default function TicketDetailPage() {
                         </div>
                         <div className="text-right hidden sm:block">
                             <div className={`text-[10px] font-black uppercase tracking-widest mb-1.5 px-3 py-1 rounded-full border inline-block ${ticket.status === 'closed' || ticket.status === 'resolved' ? (isDark ? 'bg-success/10 border-success/20 text-success' : 'bg-success/5 border-success/20 text-success') :
-                                ticket.status === 'in_progress' ? (isDark ? 'bg-info/10 border-info/20 text-info' : 'bg-info/5 border-info/20 text-info') :
-                                    ticket.status === 'assigned' ? (isDark ? 'bg-primary/10 border-primary/20 text-primary-light' : 'bg-primary/5 border-primary/20 text-primary') :
-                                        (isDark ? 'bg-[#21262d] border-[#30363d] text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500')
+                                ticket.status === 'pending_validation' ? (isDark ? 'bg-violet-900/30 border-violet-700/40 text-violet-300' : 'bg-violet-50 border-violet-200 text-violet-700') :
+                                    ticket.status === 'in_progress' ? (isDark ? 'bg-info/10 border-info/20 text-info' : 'bg-info/5 border-info/20 text-info') :
+                                        ticket.status === 'assigned' ? (isDark ? 'bg-primary/10 border-primary/20 text-primary-light' : 'bg-primary/5 border-primary/20 text-primary') :
+                                            (isDark ? 'bg-[#21262d] border-[#30363d] text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500')
                                 }`}>
-                                {ticket.status === 'closed' || ticket.status === 'resolved' ? 'COMPLETE' : ticket.status.replace('_', ' ')}
+                                {ticket.status === 'closed' || ticket.status === 'resolved' ? 'COMPLETE' : ticket.status === 'pending_validation' ? 'AWAITING APPROVAL' : ticket.status.replace('_', ' ')}
                             </div>
                             {ticket.sla_deadline && ticket.status !== 'closed' && (
                                 <div className={`flex items-center justify-end gap-1 text-xs font-bold ${ticket.sla_breached ? 'text-error' : (isDark ? 'text-slate-500' : 'text-slate-400')}`}>
@@ -958,11 +1026,33 @@ export default function TicketDetailPage() {
                         {/* Complete Task button: ONLY show if work is IN PROGRESS */}
                         {isAssignedToMe && ticket.status === 'in_progress' && (
                             <button
-                                onClick={() => handleStatusChange('closed')}
+                                onClick={handleComplete}
                                 className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-primary-dark transition-all shadow-lg"
                             >
                                 <CheckCircle2 className="w-4 h-4" /> Complete Task
                             </button>
+                        )}
+
+                        {/* Tenant Validation — shown when ticket is pending client approval */}
+                        {userRole === 'tenant' && ticket.status === 'pending_validation' && (
+                            <>
+                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold ${isDark ? 'bg-violet-900/30 text-violet-300 border border-violet-700/40' : 'bg-violet-50 text-violet-700 border border-violet-200'}`}>
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    Awaiting your approval
+                                </div>
+                                <button
+                                    onClick={() => handleValidate(true)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-500/20"
+                                >
+                                    <CheckCircle2 className="w-4 h-4" /> Looks Good
+                                </button>
+                                <button
+                                    onClick={() => { setRejectNote(''); setShowRejectModal(true); }}
+                                    className={`flex items-center gap-2 px-4 py-2 ${isDark ? 'bg-[#21262d] border-[#30363d] text-rose-400 hover:bg-rose-900/20' : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'} border rounded-xl text-xs font-black uppercase tracking-widest transition-all`}
+                                >
+                                    <XCircle className="w-4 h-4" /> Not Resolved
+                                </button>
+                            </>
                         )}
 
                         {/* Admin Actions */}
@@ -1181,7 +1271,7 @@ export default function TicketDetailPage() {
                                                     (a.action === 'photo_upload' && a.new_value?.includes('before')) ||
                                                     (a.action === 'video_upload' && a.new_value?.includes('before'))
                                                 );
-                                                const ts = act?.old_value;
+                                                const ts = act?.old_value || act?.created_at;
                                                 if (!ts) return null;
                                                 return (
                                                     <div className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold font-mono border border-white/30 backdrop-blur-sm pointer-events-none z-20 shadow-lg" key="ts-before">
@@ -1297,7 +1387,7 @@ export default function TicketDetailPage() {
                                                     (a.action === 'photo_upload' && a.new_value?.includes('after')) ||
                                                     (a.action === 'video_upload' && a.new_value?.includes('after'))
                                                 );
-                                                const ts = act?.old_value;
+                                                const ts = act?.old_value || act?.created_at;
                                                 if (!ts) return null;
                                                 return (
                                                     <div className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold font-mono border border-white/30 backdrop-blur-sm pointer-events-none z-20 shadow-lg" key="ts-after">
@@ -1389,20 +1479,109 @@ export default function TicketDetailPage() {
                                     )}
                                 </div>
 
-                                {/* 4. Resolved */}
+                                {/* 4. Work Completed by MST */}
                                 <div className="relative pl-12">
-                                    <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${(ticket.resolved_at || ticket.status === 'closed' || ticket.status === 'resolved') ? 'bg-success text-white shadow-success/20' : (isDark ? 'bg-[#21262d] text-slate-600' : 'bg-slate-100 text-slate-400')}`}>
-                                        {(ticket.resolved_at || ticket.status === 'closed' || ticket.status === 'resolved') ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                    <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${ticket.resolved_at ? 'bg-success text-white shadow-success/20' : (isDark ? 'bg-[#21262d] text-slate-600' : 'bg-slate-100 text-slate-400')}`}>
+                                        {ticket.resolved_at ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                                     </div>
-                                    <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>{(ticket.resolved_at || ticket.status === 'closed' || ticket.status === 'resolved') ? new Date(ticket.resolved_at || ticket.created_at).toLocaleString() : 'RESOLUTION TARGET'}</p>
-                                    <p className={`text-sm font-bold ${(ticket.resolved_at || ticket.status === 'closed' || ticket.status === 'resolved') ? (isDark ? 'text-white' : 'text-slate-900') : (isDark ? 'text-slate-700' : 'text-slate-300')}`}>Completed</p>
+                                    <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>{ticket.resolved_at ? new Date(ticket.resolved_at).toLocaleString() : 'PENDING'}</p>
+                                    <p className={`text-sm font-bold ${ticket.resolved_at ? (isDark ? 'text-white' : 'text-slate-900') : (isDark ? 'text-slate-700' : 'text-slate-300')}`}>Work Completed</p>
+                                    {ticket.resolved_at && <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{validationEnabled ? 'Resolver submitted work for client approval' : 'Work has been completed and closed'}</p>}
                                 </div>
+
+                                {/* 5+6. All Validation Cycles — only shown when validation is enabled */}
+                                {validationEnabled && (() => {
+                                    const valActivities = activities
+                                        .filter(a => ['pending_validation', 'validated_approved', 'validated_rejected'].includes(a.action))
+                                        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+                                    const isCurrentlyPending = ticket.status === 'pending_validation';
+                                    const lastValAct = valActivities[valActivities.length - 1];
+
+                                    if (valActivities.length === 0) {
+                                        // Ticket hasn't reached validation yet — show placeholders
+                                        return (
+                                            <>
+                                                <div className="relative pl-12">
+                                                    <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${isDark ? 'bg-[#21262d] text-slate-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    </div>
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>PENDING</p>
+                                                    <p className={`text-sm font-bold ${isDark ? 'text-slate-700' : 'text-slate-300'}`}>Sent for Approval</p>
+                                                </div>
+                                                <div className="relative pl-12">
+                                                    <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${isDark ? 'bg-[#21262d] text-slate-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                        <AlertCircle className="w-4 h-4" />
+                                                    </div>
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>AWAITING</p>
+                                                    <p className={`text-sm font-bold ${isDark ? 'text-slate-700' : 'text-slate-300'}`}>Client Validation</p>
+                                                </div>
+                                            </>
+                                        );
+                                    }
+
+                                    const nodes = valActivities.map((act) => {
+                                        if (act.action === 'pending_validation') {
+                                            const isThisCurrentlyPending = isCurrentlyPending && act === lastValAct;
+                                            return (
+                                                <div key={act.id} className="relative pl-12">
+                                                    <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${isThisCurrentlyPending ? 'bg-violet-500 text-white shadow-violet-500/20 animate-pulse' : 'bg-success text-white shadow-success/20'}`}>
+                                                        <CheckCircle2 className="w-4 h-4" />
+                                                    </div>
+                                                    <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>
+                                                        {isThisCurrentlyPending ? 'AWAITING CLIENT' : new Date(act.created_at).toLocaleString()}
+                                                    </p>
+                                                    <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Sent for Approval</p>
+                                                    {isThisCurrentlyPending
+                                                        ? <p className={`text-xs ${isDark ? 'text-violet-400' : 'text-violet-600'} font-semibold`}>Waiting for client to confirm resolution</p>
+                                                        : <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Sent to client for validation</p>
+                                                    }
+                                                </div>
+                                            );
+                                        }
+                                        // validated_approved or validated_rejected
+                                        const isApproved = act.action === 'validated_approved';
+                                        const note = act.new_value && act.new_value !== 'rejected by client' ? act.new_value : null;
+                                        return (
+                                            <div key={act.id} className="relative pl-12">
+                                                <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${isApproved ? 'bg-success text-white shadow-success/20' : 'bg-rose-500 text-white shadow-rose-500/20'}`}>
+                                                    {isApproved ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                                                </div>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>{new Date(act.created_at).toLocaleString()}</p>
+                                                <p className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                                                    {isApproved ? 'Client Approved ✓' : 'Client Rejected — Reopened'}
+                                                </p>
+                                                {note && (
+                                                    <p className={`text-xs mt-0.5 ${isDark ? 'text-rose-400' : 'text-rose-600'} font-medium italic`}>"{note}"</p>
+                                                )}
+                                                {isApproved && <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Client confirmed the issue is resolved</p>}
+                                                <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{act.user?.full_name || 'Tenant'}</p>
+                                            </div>
+                                        );
+                                    });
+
+                                    // If still waiting for client response, append a placeholder
+                                    if (isCurrentlyPending && lastValAct?.action === 'pending_validation') {
+                                        nodes.push(
+                                            <div key="val-placeholder" className="relative pl-12">
+                                                <div className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full flex items-center justify-center ring-4 ${isDark ? 'ring-[#161b22]' : 'ring-white'} shadow-lg ${isDark ? 'bg-[#21262d] text-slate-600' : 'bg-slate-100 text-slate-400'}`}>
+                                                    <AlertCircle className="w-4 h-4" />
+                                                </div>
+                                                <p className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'} mb-1`}>AWAITING</p>
+                                                <p className={`text-sm font-bold ${isDark ? 'text-slate-700' : 'text-slate-300'}`}>Client Validation</p>
+                                                <p className={`text-xs ${isDark ? 'text-slate-600' : 'text-slate-300'}`}>Tenant yet to confirm</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    return <>{nodes}</>;
+                                })()}
                             </div>
 
                             <div className={`mt-8 pt-6 border-t ${isDark ? 'border-[#21262d]' : 'border-slate-50'}`}>
                                 <h4 className={`text-[10px] font-black ${isDark ? 'text-slate-600' : 'text-slate-400'} uppercase tracking-widest mb-4 italic`}>Internal Trace Log</h4>
                                 <div className="space-y-4">
-                                    {activities.slice(0, 5).map((act) => (
+                                    {activities.map((act) => (
                                         <div key={act.id} className="flex justify-between items-start gap-4 opacity-75">
                                             <div className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                                                 <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-600'} leading-relaxed`}>
@@ -1639,6 +1818,50 @@ export default function TicketDetailPage() {
                     videoUrl={previewVideoUrl}
                     title={previewVideoTitle}
                 />
+
+                {/* Rejection Note Modal */}
+                <AnimatePresence>
+                    {showRejectModal && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                            onClick={() => setShowRejectModal(false)}
+                        >
+                            <motion.div
+                                initial={{ scale: 0.95, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.95, opacity: 0 }}
+                                className={`${isDark ? 'bg-[#161b22] border-[#30363d]' : 'bg-white border-slate-200'} rounded-2xl shadow-2xl w-full max-w-md border p-6 space-y-4`}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Why wasn't this resolved?</h2>
+                                <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Optional — let the team know what still needs to be done.</p>
+                                <textarea
+                                    value={rejectNote}
+                                    onChange={(e) => setRejectNote(e.target.value)}
+                                    placeholder="Describe what's still missing or incorrect..."
+                                    className={`w-full h-28 px-4 py-3 ${isDark ? 'bg-[#0d1117] border-[#30363d] text-white placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400'} border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-red-400 transition-all text-sm`}
+                                />
+                                <div className="flex gap-3 justify-end">
+                                    <button
+                                        onClick={() => setShowRejectModal(false)}
+                                        className={`px-4 py-2 ${isDark ? 'text-slate-400 hover:bg-[#21262d]' : 'text-slate-600 hover:bg-slate-100'} font-semibold rounded-xl transition-colors text-sm`}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => { handleValidate(false, rejectNote || undefined); setShowRejectModal(false); }}
+                                        className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors text-sm"
+                                    >
+                                        Reopen Request
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );

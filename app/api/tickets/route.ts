@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
         *,
         category:issue_categories(id, code, name),
         skill_group:skill_groups(id, code, name),
-        creator:users!raised_by(id, full_name, email),
+        creator:users!raised_by(id, full_name, email, property_memberships(role, property_id)),
         assignee:users!assigned_to(id, full_name, email),
         organization:organizations(id, name, code),
         property:properties(id, name, code)
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
             }
         }
         if (isInternal !== null && isInternal !== undefined) {
-            query = query.eq('is_internal', isInternal === 'true');
+            query = query.eq('internal', isInternal === 'true');
         }
         if (assignedTo) query = query.eq('assigned_to', assignedTo);
         if (raisedBy) query = query.eq('raised_by', raisedBy);
@@ -189,12 +189,13 @@ export async function POST(request: NextRequest) {
             is_internal,
             isInternal,
             title,
+            priority: explicitPriority,
             department: explicitDepartment, // Allow explicit department override
         } = body;
 
         const propId = property_id || propertyId;
         const orgId = organization_id || organizationId;
-        const internal = is_internal ?? isInternal ?? false;
+        const internalValue = is_internal ?? isInternal ?? false;
 
         if (!description || !propId || !orgId) {
             return NextResponse.json(
@@ -271,10 +272,10 @@ export async function POST(request: NextRequest) {
                 description,
                 category_id: categoryId,
                 skill_group_id: skillGroupId,
-                priority: resolution.priority?.toLowerCase() || priority,
+                priority: explicitPriority || resolution.priority?.toLowerCase() || priority,
                 status: 'open',
                 raised_by: user.id,
-                is_internal: internal,
+                internal: internalValue,
                 is_vague: isVague,
                 sla_hours: slaHours,
                 floor_number: extractFloorNumber(title || description) ?? undefined,
@@ -323,6 +324,14 @@ export async function POST(request: NextRequest) {
             NotificationService.afterTicketCreated(finalTicket.id).catch(err => {
                 console.error('>>>>>>>>>> [NOTIFICATION TEST] Notification error (Unified):', err);
             });
+
+            // If priority is critical, send an urgent alert to all property staff/admins
+            if (finalTicket.priority === 'critical') {
+                console.log('>>>>>>>>>> [NOTIFICATION TEST] Critical ticket — triggering urgent staff alert');
+                NotificationService.afterCriticalTicketCreated(finalTicket.id).catch(err => {
+                    console.error('>>>>>>>>>> [NOTIFICATION TEST] Critical notification error:', err);
+                });
+            }
         } catch (err) {
             console.error('>>>>>>>>>> [NOTIFICATION TEST] Failed to load NotificationService:', err);
         }

@@ -56,6 +56,9 @@ interface Ticket {
     photo_before_url?: string;
     raised_by?: string;
     sla_paused?: boolean;
+    internal?: boolean;
+    property_id?: string;
+    creator?: { property_memberships?: { role: string; property_id: string }[] };
 }
 
 const MstDashboard = () => {
@@ -243,7 +246,8 @@ const MstDashboard = () => {
             .from('tickets')
             .select(`
                 *,
-                assignee:users!assigned_to(id, full_name, email)
+                assignee:users!assigned_to(id, full_name, email),
+                creator:users!raised_by(property_memberships(role, property_id))
             `)
             .eq('property_id', propertyId)
             .order('created_at', { ascending: false });
@@ -378,9 +382,10 @@ const MstDashboard = () => {
 
             {/* Sidebar */}
             <aside className={`
-                w-64 bg-sidebar border-r border-slate-300 flex flex-col h-screen z-50 transition-all duration-300
-                fixed top-0
-                ${sidebarOpen ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 lg:translate-y-0 lg:translate-x-0 lg:opacity-100'}
+                w-64 bg-sidebar border-r border-slate-300 flex flex-col inset-y-0 z-50 transition-all duration-300
+                fixed left-0
+                ${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 lg:translate-x-0 lg:opacity-100'}
+                overflow-hidden
             `}>
                 {/* Mobile Close Button */}
                 <button
@@ -391,7 +396,7 @@ const MstDashboard = () => {
                 </button>
 
                 {/* Logo */}
-                <div className="p-5 lg:p-6 pb-1">
+                <div className="p-5 lg:p-6 pb-1 flex-shrink-0">
                     <div className="flex flex-col items-center gap-1.5 mb-3">
                         <img src="/autopilot-logo-new.png" alt="Autopilot Logo" className="h-10 w-auto object-contain" />
                         <p className="text-[9px] text-text-tertiary font-black uppercase tracking-[0.2em]">Maintenance Portal</p>
@@ -493,7 +498,7 @@ const MstDashboard = () => {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 px-3 overflow-y-auto">
+                <nav className="flex-1 px-3 overflow-y-auto min-h-0 custom-scrollbar">
                     {/* Daily Work */}
                     <div className="mb-4">
                         <p className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider px-2 mb-2 flex items-center gap-1.5">
@@ -617,10 +622,10 @@ const MstDashboard = () => {
                 </nav>
 
                 {/* Footer */}
-                <div className="border-t border-border p-3">
+                <div className="border-t border-border p-4 pb-12 flex-shrink-0 bg-sidebar">
                     <button
                         onClick={() => setShowSignOutModal(true)}
-                        className="flex items-center gap-2 px-2.5 py-2 text-text-tertiary hover:text-red-400 rounded-lg w-full transition-colors text-[11px] font-bold uppercase tracking-wider"
+                        className="flex items-center gap-2 px-3 py-2 text-text-tertiary hover:text-red-400 rounded-lg w-full transition-colors text-[11px] font-bold uppercase tracking-wider"
                     >
                         <LogOut className="w-3.5 h-3.5" />
                         Sign Out
@@ -728,6 +733,7 @@ const MstDashboard = () => {
                                     user={{ id: user.id, full_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Staff' }}
                                     propertyName={property.name}
                                     isStaff={true}
+                                    showInternalToggle={true}
                                 />
                             )}
                             {activeTab === 'flow-map' && (
@@ -1006,6 +1012,7 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
                                     assignedTo={ticket.assignee?.full_name}
                                     photoUrl={ticket.photo_before_url}
                                     isSlaPaused={ticket.sla_paused}
+                                    raisedByTenant={((ticket.creator as any)?.property_memberships || []).some((m: any) => m.property_id === ticket.property_id && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}
                                     onClick={() => onTicketClick?.(ticket.id)}
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
                                 />
@@ -1166,6 +1173,7 @@ const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick,
                                     assignedTo={ticket.assignee?.full_name}
                                     photoUrl={ticket.photo_before_url}
                                     isSlaPaused={ticket.sla_paused}
+                                    raisedByTenant={((ticket.creator as any)?.property_memberships || []).some((m: any) => m.property_id === ticket.property_id && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}
                                     onClick={() => onTicketClick?.(ticket.id)}
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
                                 />

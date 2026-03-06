@@ -193,9 +193,10 @@ const SecurityDashboard = () => {
 
             {/* Sidebar */}
             <aside className={`
-                w-72 bg-white border-r border-slate-300 flex flex-col h-screen z-50 transition-all duration-300
-                fixed top-0
-                ${sidebarOpen ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 lg:translate-y-0 lg:translate-x-0 lg:opacity-100'}
+                w-72 bg-white border-r border-slate-300 flex flex-col inset-y-0 z-50 transition-all duration-300
+                fixed left-0
+                ${sidebarOpen ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 lg:translate-x-0 lg:opacity-100'}
+                overflow-hidden
             `}>
                 {/* Mobile Close Button */}
                 <button
@@ -204,14 +205,14 @@ const SecurityDashboard = () => {
                 >
                     <X className="w-5 h-5 text-text-secondary" />
                 </button>
-                <div className="p-5 lg:p-6 pb-1">
+                <div className="p-5 lg:p-6 pb-1 flex-shrink-0">
                     <div className="flex flex-col items-center gap-1.5 mb-4">
                         <img src="/autopilot-logo-new.png" alt="Autopilot Logo" className="h-10 w-auto object-contain" />
                         <p className="text-[9px] text-text-tertiary font-black uppercase tracking-[0.2em]">Security Portal</p>
                     </div>
                 </div>
 
-                <nav className="flex-1 px-4 overflow-y-auto">
+                <nav className="flex-1 px-4 overflow-y-auto min-h-0 custom-scrollbar">
                     {/* Quick Actions */}
                     <div className="mb-4">
                         <p className="text-[9px] font-black text-text-tertiary uppercase tracking-widest px-4 mb-2 flex items-center gap-1.5">
@@ -357,7 +358,7 @@ const SecurityDashboard = () => {
                     </div>
                 </nav>
 
-                <div className="pt-3 border-t border-border px-4 pb-3">
+                <div className="pt-3 border-t border-border px-4 pb-12 flex-shrink-0 bg-white">
                     {/* User Profile Section */}
                     <div className="flex items-center gap-2 px-1 mb-3">
                         <div className="w-8 h-8 bg-brand-orange/10 rounded-full flex items-center justify-center text-brand-orange font-bold text-xs shadow-lg shadow-orange-500/5">

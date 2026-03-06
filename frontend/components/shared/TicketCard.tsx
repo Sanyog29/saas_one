@@ -2,7 +2,8 @@
 
 import React from 'react';
 import Image from 'next/image';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 /**
  * THE Standard Ticket Card Component
@@ -18,7 +19,7 @@ export interface TicketCardProps {
     id: string;
     title: string;
     priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-    status: 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'OPEN';
+    status: 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'OPEN' | 'PENDING_VALIDATION';
 
     // Metadata
     ticketNumber: string;
@@ -30,17 +31,23 @@ export interface TicketCardProps {
     isSlaPaused?: boolean;
     propertyName?: string; // Property name for Super Admin view
 
+    // Visual hint
+    raisedByTenant?: boolean; // yellow border when ticket was raised by a client/tenant (internal === false)
+
     // Actions
     onClick: () => void;
     onEdit?: (e: React.MouseEvent) => void;
     onDelete?: (e: React.MouseEvent) => void;
+    // Validation actions (shown when status is PENDING_VALIDATION)
+    onValidate?: (e: React.MouseEvent) => void;
+    onReject?: (e: React.MouseEvent) => void;
 }
 
 const PRIORITY_STYLES = {
     LOW: 'bg-blue-50 text-blue-700 border-blue-200',
     MEDIUM: 'bg-yellow-50 text-yellow-700 border-yellow-200',
     HIGH: 'bg-orange-50 text-orange-700 border-orange-200',
-    CRITICAL: 'bg-red-50 text-red-700 border-red-200',
+    CRITICAL: 'bg-rose-50 text-rose-700 border-rose-200',
 } as const;
 
 const STATUS_STYLES = {
@@ -48,10 +55,10 @@ const STATUS_STYLES = {
     ASSIGNED: 'bg-blue-100 text-blue-700',
     IN_PROGRESS: 'bg-amber-100 text-amber-700',
     COMPLETED: 'bg-emerald-100 text-emerald-700',
+    PENDING_VALIDATION: 'bg-violet-100 text-violet-700',
 } as const;
 
 export default function TicketCard({
-    id,
     title,
     priority,
     status,
@@ -61,24 +68,54 @@ export default function TicketCard({
     photoUrl,
     isSlaPaused,
     propertyName,
+    raisedByTenant,
     onClick,
     onEdit,
     onDelete,
+    onValidate,
+    onReject,
 }: TicketCardProps) {
-    const formattedDate = new Date(createdAt).toLocaleDateString('en-US', {
+    const dateObj = new Date(createdAt);
+    const dateStr = dateObj.toLocaleDateString('en-US', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
     });
+    const timeStr = dateObj.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+    });
+    const formattedDate = `${dateStr} • ${timeStr}`;
+
+
+    const isCritical = priority?.toUpperCase() === 'CRITICAL';
 
     return (
-        <div
+        <motion.div
             onClick={onClick}
-            className="
-                @container w-full h-full bg-white rounded-2xl border border-gray-200 
-                p-[clamp(0.5rem,4cqw,1.25rem)] cursor-pointer transition-all hover:shadow-lg
-                flex flex-col gap-[clamp(0.5rem,3cqw,1.25rem)]
-            "
+            initial={isCritical ? { scale: 1 } : false}
+            animate={isCritical ? {
+                boxShadow: [
+                    '0 0 0 0px rgba(225, 29, 72, 0)',
+                    '0 0 30px 6px rgba(225, 29, 72, 0.6)',
+                    '0 0 0 0px rgba(225, 29, 72, 0)'
+                ],
+                borderColor: ['#e11d48', '#fb7185', '#e11d48'],
+                scale: [1, 1.02, 1]
+            } : {}}
+            transition={isCritical ? {
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut"
+            } : {}}
+            className={`@container w-full h-full bg-white rounded-2xl p-[clamp(0.5rem,4cqw,1.25rem)] cursor-pointer transition-all hover:shadow-lg flex flex-col gap-[clamp(0.5rem,3cqw,1.25rem)] ${isCritical ? 'border-2' : ''}`}
+            style={isCritical
+                ? { borderStyle: 'solid' }
+                : raisedByTenant
+                    ? { border: '2px solid #F59E0B', boxShadow: '0 0 0 3px rgba(245,158,11,0.1)' }
+                    : { border: '1px solid #e5e7eb' }
+            }
         >
             {/* Header: Title, Photo + Actions */}
             <div className="flex items-start justify-between gap-[clamp(0.5rem,3cqw,1.5rem)]">
@@ -189,9 +226,9 @@ export default function TicketCard({
 
                 <button
                     className="
-                        w-full @sm:w-auto px-[clamp(1rem,4cqw,1.5rem)] py-[clamp(0.4rem,2cqw,0.6rem)] 
-                        bg-blue-600 text-white rounded-xl 
-                        text-[clamp(0.75rem,3cqw,0.875rem)] font-bold hover:bg-blue-700 
+                        w-full @sm:w-auto px-[clamp(1rem,4cqw,1.5rem)] py-[clamp(0.4rem,2cqw,0.6rem)]
+                        bg-blue-600 text-white rounded-xl
+                        text-[clamp(0.75rem,3cqw,0.875rem)] font-bold hover:bg-blue-700
                         transition-all active:scale-[0.98] shadow-sm shadow-blue-200
                     "
                     onClick={(e) => {
@@ -202,6 +239,30 @@ export default function TicketCard({
                     View Ticket
                 </button>
             </div>
-        </div>
+
+            {/* Validation Actions — shown only when pending client approval */}
+            {status === 'PENDING_VALIDATION' && (onValidate || onReject) && (
+                <div className="flex gap-2 pt-[clamp(0.5rem,2cqw,0.75rem)] border-t border-violet-100">
+                    {onValidate && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onValidate(e); }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all active:scale-[0.98]"
+                        >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Looks Good
+                        </button>
+                    )}
+                    {onReject && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onReject(e); }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold rounded-xl transition-all active:scale-[0.98]"
+                        >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Not Resolved
+                        </button>
+                    )}
+                </div>
+            )}
+        </motion.div>
     );
 }

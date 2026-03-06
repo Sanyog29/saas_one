@@ -244,7 +244,7 @@ const StockItemList: React.FC<StockItemListProps> = ({ propertyId, onRefresh, pr
                                     />
                                 </th>
                                 <th className="text-left py-2.5 px-3 font-semibold text-xs text-gray-500 uppercase tracking-wide whitespace-nowrap">Code</th>
-                                <th className="text-left py-2.5 px-3 font-semibold text-xs text-gray-500 uppercase tracking-wide whitespace-nowrap">Barcode</th>
+                                <th className="text-left py-2.5 px-3 font-semibold text-xs text-gray-500 uppercase tracking-wide whitespace-nowrap">QR Code</th>
                                 <th className="text-left py-2.5 px-3 font-semibold text-xs text-gray-500 uppercase tracking-wide whitespace-nowrap">Name</th>
                                 <th className="text-left py-2.5 px-3 font-semibold text-xs text-gray-500 uppercase tracking-wide whitespace-nowrap">Category</th>
                                 <th className="text-right py-2.5 px-3 font-semibold text-xs text-gray-500 uppercase tracking-wide whitespace-nowrap">Qty</th>

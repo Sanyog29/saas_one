@@ -401,7 +401,7 @@ export default function BarcodeScannerModal({
             }
         } catch (err) {
             console.error('Gallery scan error:', err);
-            setError('Could not detect any barcode. Try a clearer photo or use Manual ID.');
+            setError('Could not detect any QR code. Try a clearer photo or use Manual ID.');
         } finally {
             setGalleryProcessing(false);
             URL.revokeObjectURL(previewUrl);

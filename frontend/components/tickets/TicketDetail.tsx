@@ -164,6 +164,22 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
         }
     };
 
+    // SLA helpers
+    const slaDeadline = ticket?.sla_deadline ? new Date(ticket.sla_deadline as string) : null;
+    const resolvedAt = ticket?.resolved_at ? new Date(ticket.resolved_at as string) : null;
+    const isResolved = ['resolved', 'closed'].includes(ticket?.status as string);
+    const referenceTime = isResolved && resolvedAt ? resolvedAt : new Date();
+    const isSLABreached = Boolean(ticket?.sla_breached) || (slaDeadline !== null && slaDeadline < referenceTime);
+    const breachMs = slaDeadline && isSLABreached ? referenceTime.getTime() - slaDeadline.getTime() : 0;
+
+    const formatDuration = (ms: number): string => {
+        const totalMins = Math.floor(ms / 60000);
+        if (totalMins < 60) return `${totalMins}m`;
+        const h = Math.floor(totalMins / 60);
+        const m = totalMins % 60;
+        return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    };
+
     const openUpload = (type: 'before' | 'after') => {
         setUploadingType(type);
         setUploadError(null);
@@ -281,6 +297,122 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                         )}
                     </div>
                 </div>
+
+                {/* SLA Breach Section — shown whenever sla_deadline exists */}
+                {slaDeadline && (
+                    <div className={`border rounded-xl p-6 ${isSLABreached
+                        ? 'bg-red-500/10 border-red-500/40'
+                        : 'bg-[#161b22] border-[#30363d]'}`}>
+                        {/* Header */}
+                        <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isSLABreached ? 'bg-red-500/20' : 'bg-green-500/20'}`}>
+                                    <AlertTriangle className={`w-5 h-5 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`} />
+                                </div>
+                                <div>
+                                    <h2 className={`text-lg font-bold ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
+                                        {isSLABreached ? 'SLA Breached' : 'SLA On Track'}
+                                    </h2>
+                                    <p className="text-sm text-gray-500">
+                                        {isSLABreached
+                                            ? isResolved
+                                                ? 'Ticket was resolved after the SLA deadline'
+                                                : 'Service Level Agreement has not been met'
+                                            : 'Ticket is within the agreed service time'}
+                                    </p>
+                                </div>
+                            </div>
+                            {/* Stats pills */}
+                            <div className="flex flex-wrap gap-2">
+                                <div className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-center">
+                                    <div className="text-base font-black text-white">{(ticket?.sla_hours as number) || 24}h</div>
+                                    <div className="text-[9px] text-gray-500 uppercase tracking-wide">SLA Target</div>
+                                </div>
+                                {isSLABreached && (
+                                    <div className="px-3 py-1.5 bg-red-500/15 border border-red-500/30 rounded-lg text-center">
+                                        <div className="text-base font-black text-red-400">{formatDuration(breachMs)}</div>
+                                        <div className="text-[9px] text-gray-500 uppercase tracking-wide">Overdue By</div>
+                                    </div>
+                                )}
+                                {(ticket?.total_paused_minutes as number) > 0 && (
+                                    <div className="px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-center">
+                                        <div className="text-base font-black text-yellow-400">{formatDuration((ticket?.total_paused_minutes as number) * 60000)}</div>
+                                        <div className="text-[9px] text-gray-500 uppercase tracking-wide">Time Paused</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Timeline of events */}
+                        <div className="relative pl-4">
+                            {/* Vertical line */}
+                            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-[#30363d]" />
+
+                            <div className="space-y-3">
+                                {/* Created */}
+                                <div className="flex items-center gap-3">
+                                    <div className="w-3.5 h-3.5 rounded-full bg-gray-500 border-2 border-[#0d1117] flex-shrink-0 z-10" />
+                                    <div className="flex-1 flex items-center justify-between min-w-0">
+                                        <span className="text-sm text-gray-400">Ticket Created</span>
+                                        <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{new Date(ticket?.created_at as string).toLocaleString()}</span>
+                                    </div>
+                                </div>
+
+                                {/* Assigned / SLA started */}
+                                {!!ticket?.assigned_at && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3.5 h-3.5 rounded-full bg-blue-500 border-2 border-[#0d1117] flex-shrink-0 z-10" />
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <span className="text-sm text-gray-400">SLA Timer Started <span className="text-gray-600 text-xs">(ticket assigned)</span></span>
+                                            <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{new Date(ticket.assigned_at as string).toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Paused */}
+                                {(ticket?.total_paused_minutes as number) > 0 && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3.5 h-3.5 rounded-full bg-yellow-500 border-2 border-[#0d1117] flex-shrink-0 z-10" />
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <span className="text-sm text-yellow-400/80">
+                                                SLA Paused
+                                                {!!ticket?.sla_pause_reason && <span className="text-gray-500 ml-1">— {ticket.sla_pause_reason as string}</span>}
+                                            </span>
+                                            <span className="text-xs text-yellow-500/70 ml-2 flex-shrink-0">+{formatDuration((ticket.total_paused_minutes as number) * 60000)} added to deadline</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Deadline row — highlighted red if breached */}
+                                <div className={`flex items-center gap-3 rounded-lg px-2 py-1.5 -ml-2 ${isSLABreached ? 'bg-red-500/10' : 'bg-green-500/10'}`}>
+                                    <div className={`w-3.5 h-3.5 rounded-full border-2 border-[#0d1117] flex-shrink-0 z-10 ${isSLABreached ? 'bg-red-500' : 'bg-green-500'}`} />
+                                    <div className="flex-1 flex items-center justify-between min-w-0">
+                                        <span className={`text-sm font-bold ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
+                                            SLA Deadline {isSLABreached ? '— Missed' : '— Met'}
+                                        </span>
+                                        <span className={`text-xs font-bold ml-2 flex-shrink-0 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
+                                            {slaDeadline.toLocaleString()}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Resolved (if applicable) */}
+                                {!!resolvedAt && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-[#0d1117] flex-shrink-0 z-10" />
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <span className="text-sm text-green-400">
+                                                Resolved
+                                                {isSLABreached && <span className="text-red-400/70 text-xs ml-1">(+{formatDuration(breachMs)} after deadline)</span>}
+                                            </span>
+                                            <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{resolvedAt.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Request Progress Timeline */}
                 <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6">

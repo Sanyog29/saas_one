@@ -182,31 +182,54 @@ function AuthContent() {
                     return;
                 }
 
-                // ✅ Step 3: Now resolve organization membership (Strictly Org Super Admin first)
-                const { data: orgMembership } = await supabase
+                // ✅ Step 3: Resolve organization membership
+                // Industry pattern: fetch ALL org memberships (no role filter, handles any is_active state),
+                // then pick the highest-priority one. Avoids maybeSingle() failure on multiple rows.
+                const { data: orgMemberships } = await supabase
                     .from('organization_memberships')
-                    .select('organization_id, role')
-                    .eq('user_id', userProfile.id)
-                    .eq('role', 'org_super_admin')
-                    .is('is_active', true) // Maintaining is_active check for safety
-                    .maybeSingle(); // Changed to maybeSingle to avoid errors if not found
+                    .select('organization_id, role, is_active')
+                    .eq('user_id', userProfile.id);
 
-                if (orgMembership) {
-                    if (redirectPath && redirectPath !== '/') {
-                        router.replace(redirectPath);
-                    } else {
-                        router.replace(`/org/${orgMembership.organization_id}/dashboard`);
-                    }
+                // Only org-level roles should route to the org dashboard.
+                // Property-level roles (property_admin, staff, tenant, etc.) may also have
+                // an org_membership row (created by the user-create API), but they should
+                // be routed via Step 4 (property_memberships) instead.
+                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin'];
+                const activeOrgMemberships = (orgMemberships || []).filter(
+                    (m) => ORG_LEVEL_ROLES.includes(m.role) && (m.is_active === true || m.is_active === null)
+                );
+
+                if (activeOrgMemberships.length > 0) {
+                    // Pick best by priority (org_super_admin first, then super_tenant, then others)
+                    const ORG_PRIORITY = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'member'];
+                    const best = [...activeOrgMemberships].sort((a, b) => {
+                        const ai = ORG_PRIORITY.indexOf(a.role) === -1 ? 99 : ORG_PRIORITY.indexOf(a.role);
+                        const bi = ORG_PRIORITY.indexOf(b.role) === -1 ? 99 : ORG_PRIORITY.indexOf(b.role);
+                        return ai - bi;
+                    })[0];
+
+                    router.replace(
+                        redirectPath && redirectPath !== '/'
+                            ? redirectPath
+                            : `/org/${best.organization_id}/dashboard`
+                    );
                     return;
                 }
 
-                // ✅ Step 4: Finally resolve property membership
-                const { data: propMembership } = await supabase
+                // ✅ Step 4: Resolve property membership
+                // Industry pattern: fetch ALL memberships, use first — never maybeSingle() on a
+                // table where a user can have multiple rows (e.g. multi-property users).
+                const { data: propMemberships } = await supabase
                     .from('property_memberships')
-                    .select('property_id, organization_id, role')
+                    .select('property_id, organization_id, role, is_active')
                     .eq('user_id', userProfile.id)
-                    .is('is_active', true) // Maintaining is_active check
-                    .maybeSingle();
+                    .order('created_at', { ascending: false });
+
+                const activePropMemberships = (propMemberships || []).filter(
+                    (m) => m.is_active === true || m.is_active === null
+                );
+
+                const propMembership = activePropMemberships[0] ?? null;
 
                 if (propMembership) {
                     if (redirectPath && redirectPath !== '/') {
@@ -230,7 +253,6 @@ function AuthContent() {
                     } else if (role === 'vendor') {
                         router.replace(`/property/${pId}/vendor`);
                     } else {
-                        // Fallback for unknown roles
                         router.replace(`/property/${pId}/dashboard`);
                     }
                     return;

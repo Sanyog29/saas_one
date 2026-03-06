@@ -4,10 +4,27 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     FileText, Download, Calendar, User, CheckCircle, AlertCircle,
-    Loader2, RefreshCw, Filter, ChevronDown, FileSpreadsheet, Clock, Eye, Trash2, Upload
+    Loader2, RefreshCw, Filter, ChevronDown, FileSpreadsheet, Clock, Eye, Trash2, Upload,
+    BarChart2, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { createClient } from '@/frontend/utils/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
+
+function getCurrentMonth() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthLabel(month: string) {
+    const [year, m] = month.split('-').map(Number);
+    return new Date(year, m - 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+}
+
+function changeMonth(month: string, delta: number) {
+    const [year, m] = month.split('-').map(Number);
+    const d = new Date(year, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 interface SnagImport {
     id: string;
@@ -51,6 +68,7 @@ export default function ImportReportsView({ propertyId, organizationId }: Import
     const [isExporting, setIsExporting] = useState<string | null>(null);
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+    const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
 
     const supabase = createClient();
 
@@ -330,6 +348,64 @@ export default function ImportReportsView({ propertyId, organizationId }: Import
 
     return (
         <div className="space-y-4">
+            {/* Monthly Requests Report Card */}
+            <div className="bg-white rounded-2xl border border-border shadow-sm p-5">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <BarChart2 className="w-5 h-5 text-primary" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-black text-text-primary lowercase">monthly requests report</h3>
+                            <p className="text-[11px] text-text-tertiary font-medium mt-0.5">
+                                view full report of all tickets raised for a selected month
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {/* Month Picker */}
+                            <div className="flex items-center gap-1 bg-muted border border-border rounded-xl px-3 py-2">
+                                <button
+                                    onClick={() => setSelectedMonth(prev => changeMonth(prev, -1))}
+                                    className="p-0.5 hover:bg-border rounded transition-colors"
+                                >
+                                    <ChevronLeft className="w-3.5 h-3.5 text-text-secondary" />
+                                </button>
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
+                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                    className="text-xs font-bold text-text-primary bg-transparent outline-none w-[120px] text-center"
+                                    max={getCurrentMonth()}
+                                />
+                                <button
+                                    onClick={() => setSelectedMonth(prev => changeMonth(prev, 1))}
+                                    disabled={selectedMonth >= getCurrentMonth()}
+                                    className="p-0.5 hover:bg-border rounded transition-colors disabled:opacity-40"
+                                >
+                                    <ChevronRight className="w-3.5 h-3.5 text-text-secondary" />
+                                </button>
+                            </div>
+                            <button
+                                onClick={() => propertyId && router.push(`/property/${propertyId}/reports/requests?month=${selectedMonth}`)}
+                                disabled={!propertyId}
+                                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-black hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={!propertyId ? 'Select a specific property first' : undefined}
+                            >
+                                <Eye className="w-3.5 h-3.5" />
+                                view report
+                            </button>
+                        </div>
+                        {!propertyId && (
+                            <p className="text-[10px] text-text-tertiary font-medium">
+                                select a specific property to view its monthly report
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>

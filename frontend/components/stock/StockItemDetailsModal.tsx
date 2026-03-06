@@ -134,7 +134,7 @@ export default function StockItemDetailsModal({
                     {/* Barcode Display */}
                     {item.barcode && (
                         <div>
-                            <h3 className="font-semibold text-text-primary mb-4">Barcode & QR Code</h3>
+                            <h3 className="font-semibold text-text-primary mb-4">QR Code</h3>
                             <BarcodeDisplay
                                 value={item.barcode}
                                 itemName={item.name}

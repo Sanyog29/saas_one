@@ -71,6 +71,7 @@ export default function AdminSPOCDashboard({
     const [overrideCategory, setOverrideCategory] = useState('');
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const [statusFilter, setStatusFilter] = useState(initialStatusFilter || 'all');
+    const [timePeriod, setTimePeriod] = useState<'today' | 'all'>('all');
 
     const { getCachedData, setCachedData } = useDataCache();
     const cacheKey = `spoc-dashboard-${propertyId}-${statusFilter}`;
@@ -87,11 +88,7 @@ export default function AdminSPOCDashboard({
         }
     }, [initialStatusFilter]);
 
-    useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 30000);
-        return () => clearInterval(interval);
-    }, [propertyId, organizationId]);
+    // Consolidate fetchData effect at the end of the component
 
     const fetchData = useCallback(async () => {
         if (!loading && !tickets.length) setLoading(true);
@@ -102,22 +99,38 @@ export default function AdminSPOCDashboard({
 
         try {
             const params = new URLSearchParams();
-            if (propertyId) params.append('propertyId', propertyId);
-            if (organizationId && organizationId !== '') params.append('organizationId', organizationId);
-            if (statusFilter === 'tenant_raised') {
+            if (propertyId && propertyId !== 'undefined') params.append('propertyId', propertyId);
+            if (organizationId && organizationId !== '' && organizationId !== 'undefined') params.append('organizationId', organizationId);
+            if (statusFilter === 'client_raised') {
                 params.append('raisedByRole', 'tenant');
             } else if (statusFilter !== 'all') {
                 params.append('status', statusFilter);
             }
+            if (timePeriod === 'today') {
+                params.append('period', 'today');
+            }
 
-            console.log('Fetching tickets with params:', params.toString()); // Debug
+            console.log('[AdminSPOCDashboard] Fetching with params:', params.toString());
 
-            // Fetch data in parallel
+            // Fetch data with individual error handling to identify which one fails
+            const fetchWithLog = async (url: string, name: string) => {
+                try {
+                    const res = await fetch(url);
+                    if (!res.ok) {
+                        console.error(`[AdminSPOCDashboard] ${name} fetch failed with status: ${res.status}`);
+                    }
+                    return res;
+                } catch (err) {
+                    console.error(`[AdminSPOCDashboard] ${name} fetch CRASHED:`, err);
+                    throw err; // Re-throw to be caught by the outer try-catch
+                }
+            };
+
             const [ticketsRes, resolversRes, configRes] = await Promise.all([
-                fetch(`/api/tickets?${params.toString()}`),
-                fetch(`/api/resolvers/workload?${params.toString()}`),
-                propertyId
-                    ? fetch(`/api/properties/${propertyId}/ticket-config`)
+                fetchWithLog(`/api/tickets?${params.toString()}`, 'Tickets'),
+                fetchWithLog(`/api/resolvers/workload?${params.toString()}`, 'Resolvers'),
+                (propertyId && propertyId !== 'undefined')
+                    ? fetchWithLog(`/api/properties/${propertyId}/ticket-config`, 'Config')
                     : Promise.resolve(null)
             ]);
 
@@ -127,12 +140,18 @@ export default function AdminSPOCDashboard({
                 setTickets(fetchedTickets);
 
                 // Fetch activity for the first ticket if available
-                if (fetchedTickets.length > 0) {
-                    const actRes = await fetch(`/api/tickets/${fetchedTickets[0].id}/activity`);
-                    if (actRes.ok) {
-                        const actData = await actRes.json();
-                        fetchedActivities = actData.activities?.slice(0, 5) || [];
-                        setActivities(fetchedActivities);
+                if (fetchedTickets.length > 0 && fetchedTickets[0]?.id) {
+                    try {
+                        const actRes = await fetch(`/api/tickets/${fetchedTickets[0].id}/activity`);
+                        if (actRes.ok) {
+                            const actData = await actRes.json();
+                            fetchedActivities = actData.activities?.slice(0, 5) || [];
+                            setActivities(fetchedActivities);
+                        } else {
+                            console.warn(`[AdminSPOCDashboard] Activity fetch failed: ${actRes.status}`);
+                        }
+                    } catch (actErr) {
+                        console.error('[AdminSPOCDashboard] Activity fetch CRASHED:', actErr);
                     }
                 }
             }
@@ -166,7 +185,7 @@ export default function AdminSPOCDashboard({
         } finally {
             setLoading(false);
         }
-    }, [propertyId, organizationId, statusFilter]);
+    }, [propertyId, organizationId, statusFilter, timePeriod]);
 
     useEffect(() => {
         fetchData();
@@ -308,6 +327,26 @@ export default function AdminSPOCDashboard({
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    <div className="flex items-center bg-white border border-slate-200 p-0.5 rounded-xl">
+                        <button
+                            onClick={() => setTimePeriod('today')}
+                            className={`px-3 py-1 text-[10px] font-black uppercase tracking-tight rounded-lg transition-all ${timePeriod === 'today'
+                                ? 'bg-slate-900 text-white shadow-sm'
+                                : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                        >
+                            Today
+                        </button>
+                        <button
+                            onClick={() => setTimePeriod('all')}
+                            className={`px-3 py-1 text-[10px] font-black uppercase tracking-tight rounded-lg transition-all ${timePeriod === 'all'
+                                ? 'bg-slate-900 text-white shadow-sm'
+                                : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                        >
+                            All
+                        </button>
+                    </div>
                     <select
                         value={statusFilter}
                         onChange={(e) => {
@@ -328,7 +367,7 @@ export default function AdminSPOCDashboard({
                         <option value="open,assigned,in_progress,blocked">Open</option>
                         <option value="resolved,closed">Completed</option>
                         <option value="waitlist">Waitlist</option>
-                        <option value="tenant_raised">Tenant Raised</option>
+                        <option value="client_raised">Client Raised</option>
                     </select>
                 </div>
             </div>

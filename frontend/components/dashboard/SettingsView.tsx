@@ -6,7 +6,8 @@ import { createClient } from '@/frontend/utils/supabase/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     User, Mail, Phone, Camera, Save, Loader2,
-    Shield, Building, CheckCircle2, AlertCircle, Home, Store
+    Shield, Building, CheckCircle2, AlertCircle, Home, Store,
+    Bell, Video, ExternalLink, Info, X
 } from 'lucide-react';
 import Image from 'next/image';
 import imageCompression from 'browser-image-compression';
@@ -33,6 +34,47 @@ export default function SettingsView({ onUpdate }: SettingsViewProps) {
     const [vendorInfo, setVendorInfo] = useState<{ id: string; shop_name: string } | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
+
+    // Permissions
+    const [notifPerm, setNotifPerm] = useState<NotificationPermission | 'unsupported'>('default');
+    const [cameraPerm, setCameraPerm] = useState<'granted' | 'denied' | 'prompt' | 'unsupported'>('prompt');
+    const [revokeHint, setRevokeHint] = useState<'notif' | 'camera' | null>(null);
+
+    useEffect(() => {
+        // Notification permission
+        if (typeof Notification === 'undefined') {
+            setNotifPerm('unsupported');
+        } else {
+            setNotifPerm(Notification.permission);
+        }
+        // Camera permission
+        if (!navigator.permissions) {
+            setCameraPerm('unsupported');
+        } else {
+            navigator.permissions.query({ name: 'camera' as PermissionName })
+                .then(r => setCameraPerm(r.state as any))
+                .catch(() => setCameraPerm('unsupported'));
+        }
+    }, []);
+
+    const handleEnableNotifications = async () => {
+        if (typeof Notification === 'undefined') return;
+        const result = await Notification.requestPermission();
+        setNotifPerm(result);
+        if (result === 'granted') showToast('Notifications enabled');
+    };
+
+    const handleEnableCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            stream.getTracks().forEach(t => t.stop());
+            setCameraPerm('granted');
+            showToast('Camera access granted');
+        } catch {
+            setCameraPerm('denied');
+            showToast('Camera access denied', 'error');
+        }
+    };
 
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
         setToast({ message, type });
@@ -233,7 +275,8 @@ export default function SettingsView({ onUpdate }: SettingsViewProps) {
     };
 
     const formatRole = (role: string) => {
-        return role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        let displayRole = role === 'tenant' ? 'client' : role;
+        return displayRole.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     };
 
     if (isLoading) {
@@ -405,6 +448,161 @@ export default function SettingsView({ onUpdate }: SettingsViewProps) {
                                 No active memberships found.
                             </div>
                         )}
+                    </div>
+                </section>
+
+                {/* Permissions Section */}
+                <section className="bg-white rounded-2xl border border-slate-200 p-4 md:p-8 shadow-sm">
+                    <h2 className="text-xl font-display font-semibold text-slate-900 mb-1 flex items-center gap-2">
+                        <Bell className="w-5 h-5 text-primary" />
+                        App Permissions
+                    </h2>
+                    <p className="text-sm text-slate-500 mb-6">Manage browser permissions used by this app.</p>
+
+                    <div className="space-y-3">
+                        {/* Notifications */}
+                        <div className="rounded-xl bg-slate-50 border border-slate-100 overflow-hidden">
+                            <div className="flex items-center gap-4 p-4">
+                                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                    <Bell className="w-5 h-5 text-indigo-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm text-slate-900">Push Notifications</p>
+                                    <p className="text-xs text-slate-500">Receive alerts for tickets, updates &amp; reminders</p>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    {notifPerm === 'granted' && (
+                                        <>
+                                            <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
+                                                <CheckCircle2 className="w-3.5 h-3.5" /> Enabled
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setRevokeHint(revokeHint === 'notif' ? null : 'notif')}
+                                                className="text-xs font-black px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl hover:bg-rose-100 hover:text-rose-700 active:scale-95 transition-all whitespace-nowrap"
+                                            >
+                                                Revoke
+                                            </button>
+                                        </>
+                                    )}
+                                    {notifPerm === 'denied' && (
+                                        <a href="https://support.google.com/chrome/answer/3220216" target="_blank" rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full hover:bg-amber-100 transition-colors">
+                                            <ExternalLink className="w-3.5 h-3.5" /> Blocked — Fix in browser
+                                        </a>
+                                    )}
+                                    {notifPerm === 'default' && (
+                                        <button type="button" onClick={handleEnableNotifications}
+                                            className="text-xs font-black px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 active:scale-95 transition-all whitespace-nowrap">
+                                            Enable
+                                        </button>
+                                    )}
+                                    {notifPerm === 'unsupported' && (
+                                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-full">Not supported</span>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Revoke instructions for notifications */}
+                            <AnimatePresence>
+                                {revokeHint === 'notif' && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="mx-4 mb-4 p-4 bg-indigo-50 border border-indigo-100 rounded-xl flex gap-3">
+                                            <Info className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" />
+                                            <div className="flex-1">
+                                                <p className="text-xs font-bold text-indigo-800 mb-1">How to revoke notification permission:</p>
+                                                <ol className="text-xs text-indigo-700 space-y-1 list-decimal list-inside">
+                                                    <li>Click the <strong>lock icon 🔒</strong> in your browser's address bar</li>
+                                                    <li>Click <strong>"Notifications"</strong></li>
+                                                    <li>Select <strong>"Block"</strong> or <strong>"Ask"</strong></li>
+                                                    <li>Reload the page</li>
+                                                </ol>
+                                            </div>
+                                            <button type="button" onClick={() => setRevokeHint(null)} className="flex-shrink-0 text-indigo-400 hover:text-indigo-600">
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+
+                        {/* Camera */}
+                        <div className="rounded-xl bg-slate-50 border border-slate-100 overflow-hidden">
+                            <div className="flex items-center gap-4 p-4">
+                                <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                                    <Video className="w-5 h-5 text-violet-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold text-sm text-slate-900">Camera</p>
+                                    <p className="text-xs text-slate-500">Scan QR codes &amp; capture photos for reports</p>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    {cameraPerm === 'granted' && (
+                                        <>
+                                            <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
+                                                <CheckCircle2 className="w-3.5 h-3.5" /> Enabled
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setRevokeHint(revokeHint === 'camera' ? null : 'camera')}
+                                                className="text-xs font-black px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl hover:bg-rose-100 hover:text-rose-700 active:scale-95 transition-all whitespace-nowrap"
+                                            >
+                                                Revoke
+                                            </button>
+                                        </>
+                                    )}
+                                    {cameraPerm === 'denied' && (
+                                        <a href="https://support.google.com/chrome/answer/2693767" target="_blank" rel="noopener noreferrer"
+                                            className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-full hover:bg-amber-100 transition-colors">
+                                            <ExternalLink className="w-3.5 h-3.5" /> Blocked — Fix in browser
+                                        </a>
+                                    )}
+                                    {cameraPerm === 'prompt' && (
+                                        <button type="button" onClick={handleEnableCamera}
+                                            className="text-xs font-black px-4 py-2 bg-violet-600 text-white rounded-xl hover:bg-violet-700 active:scale-95 transition-all whitespace-nowrap">
+                                            Enable
+                                        </button>
+                                    )}
+                                    {cameraPerm === 'unsupported' && (
+                                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-3 py-1.5 rounded-full">Not supported</span>
+                                    )}
+                                </div>
+                            </div>
+                            {/* Revoke instructions for camera */}
+                            <AnimatePresence>
+                                {revokeHint === 'camera' && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="mx-4 mb-4 p-4 bg-violet-50 border border-violet-100 rounded-xl flex gap-3">
+                                            <Info className="w-4 h-4 text-violet-500 flex-shrink-0 mt-0.5" />
+                                            <div className="flex-1">
+                                                <p className="text-xs font-bold text-violet-800 mb-1">How to revoke camera permission:</p>
+                                                <ol className="text-xs text-violet-700 space-y-1 list-decimal list-inside">
+                                                    <li>Click the <strong>lock icon 🔒</strong> in your browser's address bar</li>
+                                                    <li>Click <strong>"Camera"</strong></li>
+                                                    <li>Select <strong>"Block"</strong> or <strong>"Ask"</strong></li>
+                                                    <li>Reload the page</li>
+                                                </ol>
+                                            </div>
+                                            <button type="button" onClick={() => setRevokeHint(null)} className="flex-shrink-0 text-violet-400 hover:text-violet-600">
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
                 </section>
 

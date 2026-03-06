@@ -3,11 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import {
     ArrowLeft, Users, Building2, AlertCircle, TrendingUp,
-    Activity, Plus, Database, Zap, UserX, UserMinus, Ticket,
-    Package, Calendar, ChevronDown, ChevronUp
+    Activity, Plus, Database, Zap, UserX, UserMinus, Ticket, Settings,
+    Package, Calendar, ChevronDown, ChevronUp, ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import CreatePropertyModal from './CreatePropertyModal';
+import PropertyFeaturesModal from './PropertyFeaturesModal';
 
 interface Property {
     id: string;
@@ -60,6 +61,8 @@ const OrgPropertyDashboard: React.FC<Props> = ({ organization, onBack }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [expandedUsers, setExpandedUsers] = useState(false);
+    const [showFeaturesModal, setShowFeaturesModal] = useState(false);
+    const [selectedPropertyForFeatures, setSelectedPropertyForFeatures] = useState<{ id: string, name: string } | null>(null);
 
     useEffect(() => {
         fetchAllData();
@@ -374,12 +377,15 @@ const OrgPropertyDashboard: React.FC<Props> = ({ organization, onBack }) => {
                                     </td>
                                     <td className="px-8 py-6 text-right">
                                         <button
-                                            onClick={() => window.location.href = `/property/${property.id}/flow-map`}
-                                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors text-[10px] font-black uppercase tracking-wider border border-slate-200"
-                                            title="View Operational Flow Map"
+                                            onClick={() => {
+                                                setSelectedPropertyForFeatures({ id: property.id, name: property.name });
+                                                setShowFeaturesModal(true);
+                                            }}
+                                            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl hover:bg-slate-800 transition-all text-[10px] font-black uppercase tracking-widest shadow-sm hover:shadow-md active:scale-95"
+                                            title="Configure Property Features & Analytics"
                                         >
-                                            <Activity className="w-3 h-3" />
-                                            Flow Map
+                                            <Settings className="w-3.5 h-3.5" />
+                                            Configure
                                         </button>
                                     </td>
                                 </tr>
@@ -395,6 +401,18 @@ const OrgPropertyDashboard: React.FC<Props> = ({ organization, onBack }) => {
                     organizationId={organization.id}
                     onClose={() => setShowCreateModal(false)}
                     onSuccess={handlePropertyCreated}
+                />
+            )}
+
+            {/* Property Features Modal */}
+            {showFeaturesModal && selectedPropertyForFeatures && (
+                <PropertyFeaturesModal
+                    propertyId={selectedPropertyForFeatures.id}
+                    propertyName={selectedPropertyForFeatures.name}
+                    onClose={() => {
+                        setShowFeaturesModal(false);
+                        setSelectedPropertyForFeatures(null);
+                    }}
                 />
             )}
         </div>

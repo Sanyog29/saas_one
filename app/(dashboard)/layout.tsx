@@ -17,7 +17,6 @@ export default function DashboardLayout({
     const params = useParams();
     const pathname = usePathname();
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
     useEffect(() => {
         if (!isLoading && !user) {
             router.push('/login');
@@ -81,6 +80,7 @@ export default function DashboardLayout({
                     {children}
                 </main>
             </div>
+
         </div>
     );
 }
