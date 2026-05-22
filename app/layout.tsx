@@ -55,28 +55,58 @@ export default function RootLayout({
                             (function() {
                                 if (!('serviceWorker' in navigator)) return;
 
+                                // ── CHUNK LOAD ERROR RECOVERY ───────────────────────────────────
+                                // Detects failed Next.js chunks and reloads once to recover.
+                                window.addEventListener('error', function(e) {
+                                    if (e.message && (e.message.includes('ChunkLoadError') || e.message.includes('Loading chunk'))) {
+                                        const lastReload = localStorage.getItem('last_chunk_reload');
+                                        const now = Date.now();
+                                        if (!lastReload || (now - parseInt(lastReload)) > 5000) {
+                                            localStorage.setItem('last_chunk_reload', now.toString());
+                                            window.location.reload();
+                                        }
+                                    }
+                                }, true);
+
+                                // Also handle async promise rejections for chunks
+                                window.addEventListener('unhandledrejection', function(e) {
+                                    if (e.reason && e.reason.name === 'ChunkLoadError') {
+                                        window.location.reload();
+                                    }
+                                });
+
                                 // ── DEEP PURGE & RESET ───────────────────────────────────────────
                                 // We aggressively unregister ALL workers and clear ALL caches 
                                 // to recover from the aggressive caching bugs in previous versions.
-                                const PURGE_KEY = 'sw_deep_purge_v5';
+                                const PURGE_KEY = 'sw_deep_purge_v6';
                                 if (!localStorage.getItem(PURGE_KEY)) {
                                     localStorage.setItem(PURGE_KEY, 'true');
                                     
+                                    let foundOldStuff = false;
+
                                     // 1. Unregister EVERY found worker
                                     navigator.serviceWorker.getRegistrations().then(function(regs) {
-                                        for (let reg of regs) reg.unregister();
+                                        if (regs.length > 0) {
+                                            foundOldStuff = true;
+                                            for (let reg of regs) reg.unregister();
+                                        }
+                                        
+                                        // 2. Delete EVERY found cache bucket
+                                        if ('caches' in window) {
+                                            caches.keys().then(function(keys) {
+                                                if (keys.length > 0) {
+                                                    foundOldStuff = true;
+                                                    keys.forEach(function(key) { caches.delete(key); });
+                                                }
+                                                
+                                                // 3. ONLY reload if we actually found something to clean
+                                                if (foundOldStuff) {
+                                                    console.log('[Deep Purge] Cleaning up old workers/caches and reloading...');
+                                                    setTimeout(function() { window.location.reload(); }, 1000);
+                                                }
+                                            });
+                                        }
                                     });
-
-                                    // 2. Delete EVERY found cache bucket
-                                    if ('caches' in window) {
-                                        caches.keys().then(function(keys) {
-                                            keys.forEach(function(key) { caches.delete(key); });
-                                        });
-                                    }
-                                    
-                                    // 3. Force a one-time clean reload
-                                    console.log('[Deep Purge] Cleaning up old workers/caches and reloading...');
-                                    setTimeout(function() { window.location.reload(); }, 500);
                                     return;
                                 }
 

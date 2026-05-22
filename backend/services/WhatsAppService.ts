@@ -75,13 +75,26 @@ export class WhatsAppService {
             // Non-JSON response — treat as success if HTTP was ok
         }
 
-        console.log(`>>>>>>>>>> [WHATSAPP] ✅ [${endpoint}] SENT SUCCESSFULLY`);
-        console.log('>>>>>>>>>> [WHATSAPP] Response:', responseText);
+        // success — no-op
         return true;
     }
 
     // The actual send logic — returns true on success, false on failure
     private static async _send(phone: string, options: WhatsAppOptions): Promise<boolean> {
+        // Check global system config
+        const { data: config } = await supabaseAdmin
+            .from('system_config')
+            .select('value')
+            .eq('key', 'whatsapp_notifications_enabled')
+            .single();
+
+        const isEnabled = config?.value === true;
+
+        if (!isEnabled) {
+            // globally disabled — skip silently
+            return true; 
+        }
+
         if (!WASENDER_API_KEY || !WASENDER_SENDER_ID) {
             console.error('>>>>>>>>>> [WHATSAPP] ❌ MISSING CONFIG');
             return false;
@@ -99,13 +112,11 @@ export class WhatsAppService {
             ? `${options.message}\n\n${ticketUrl}`
             : options.message;
 
-        console.log('>>>>>>>>>> [WHATSAPP] To:', to);
-        console.log('>>>>>>>>>> [WHATSAPP] Media:', options.mediaUrl || 'none');
-        console.log('>>>>>>>>>> [WHATSAPP] Message:', captionText);
+        // prepared payload — no-op
 
         try {
             if (options.mediaUrl && options.mediaType === 'image') {
-                console.log('>>>>>>>>>> [WHATSAPP] Sending as image+caption message...');
+                // sending image+caption
                 const sent = await this.callAPI('send-message', {
                     session: WASENDER_SENDER_ID,
                     to,
@@ -113,11 +124,11 @@ export class WhatsAppService {
                     text: captionText,
                 });
                 if (sent) return true;
-                console.log('>>>>>>>>>> [WHATSAPP] Image send failed, falling back to text...');
+                // image send failed — will fall back to text
             }
 
             if (options.mediaUrl && options.mediaType === 'video') {
-                console.log('>>>>>>>>>> [WHATSAPP] Sending as video+caption message...');
+                // sending video+caption
                 const sent = await this.callAPI('send-message', {
                     session: WASENDER_SENDER_ID,
                     to,
@@ -125,11 +136,11 @@ export class WhatsAppService {
                     text: captionText,
                 });
                 if (sent) return true;
-                console.log('>>>>>>>>>> [WHATSAPP] Video send failed, falling back to text...');
+                // video send failed — will fall back to text
             }
 
             // Plain text fallback
-            console.log('>>>>>>>>>> [WHATSAPP] Sending as text message...');
+            // sending plain text
             const sent = await this.callAPI('send-message', {
                 session: WASENDER_SENDER_ID,
                 to,
@@ -176,13 +187,13 @@ export class WhatsAppService {
     }
 
     static async sendToUser(userId: string, options: WhatsAppOptions): Promise<'SENT' | 'SKIPPED' | 'FAILED'> {
-        console.log('>>>>>>>>>> [WHATSAPP] sendToUser() for userId:', userId);
+        // resolve phone and send
         const phone = await this.getPhone(userId);
         if (!phone) {
-            console.warn('>>>>>>>>>> [WHATSAPP] ⚠️ No phone number for userId:', userId, '— skipping.');
+            // no phone — skip silently
             return 'SKIPPED';
         }
-        console.log('>>>>>>>>>> [WHATSAPP] Phone found:', phone);
+        // phone resolved
         try {
             await WhatsAppService._send(phone, options);
             return 'SENT';

@@ -105,15 +105,15 @@ export default function SnagIntakeDashboard({ propertyId, organizationId }: Snag
                 throw new Error(data.error || 'Import failed');
             }
 
-            console.log('Import API response:', data);
-            console.log('Inserted tickets:', data.tickets);
+            
+            
 
             // Convert to dashboard format - use actual ticket IDs from response
             const importedTickets: Ticket[] = previewData.rows
                 .filter(row => row.isValid)
                 .map((row, idx) => {
                     const ticketFromDB = data.tickets?.[idx];
-                    console.log(`Ticket ${idx}:`, ticketFromDB);
+                    
 
                     return {
                         id: ticketFromDB?.id || `temp-${idx}`,
@@ -129,8 +129,6 @@ export default function SnagIntakeDashboard({ propertyId, organizationId }: Snag
                         vendor: row.skill_group === 'vendor' ? row.issue_description : '',
                     };
                 });
-
-            console.log('Imported tickets with IDs:', importedTickets.map(t => t.id));
 
             setTickets(importedTickets);
             setView('dashboard');

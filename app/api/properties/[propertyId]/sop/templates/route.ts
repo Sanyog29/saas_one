@@ -78,8 +78,8 @@ export async function POST(
             return NextResponse.json({ error: 'Title is required' }, { status: 400 });
         }
 
-        // Get org ID from property
-        const { data: property, error: propError } = await supabase
+        // Get org ID from property - use admin client to ensure we always get this metadata
+        const { data: property, error: propError } = await supabaseAdmin
             .from('properties')
             .select('organization_id')
             .eq('id', propertyId)

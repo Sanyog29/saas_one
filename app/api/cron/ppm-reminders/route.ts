@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { WhatsAppQueueService } from '@/backend/services/WhatsAppQueueService';
+import { NotificationService } from '@/backend/services/NotificationService';
 
 /**
  * GET /api/cron/ppm-reminders
@@ -109,6 +110,19 @@ export async function GET(request: NextRequest) {
 
         lines.push(`Please ensure vendors and staff are notified in advance.`);
         const message = lines.join('\n');
+
+        // Send FCM push notification (in addition to WhatsApp)
+        const recipientArray = [...recipientIds];
+        const firstTask = orgTasks[0];
+        await NotificationService.sendToMany(recipientArray, {
+            propertyId: firstTask.property_id || '',
+            organizationId: orgId,
+            type: 'PPM_REMINDER',
+            title: `PPM Due in 3 Days 🔧`,
+            message: `${orgTasks.length} maintenance task${orgTasks.length > 1 ? 's' : ''} due on ${dateLabel}. Please arrange vendors and staff.`,
+            deepLink: `/ppm?date=${targetDate}`,
+            priority: 'HIGH',
+        }).catch(err => console.error('[PPM Cron] FCM push error:', err));
 
         await WhatsAppQueueService.enqueue({
             userIds: [...recipientIds],

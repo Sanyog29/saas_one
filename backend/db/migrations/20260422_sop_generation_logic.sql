@@ -97,9 +97,20 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION update_missed_sop_completions()
 RETURNS void AS $$
 BEGIN
-    UPDATE sop_completions
+    UPDATE sop_completions c
     SET status = 'missed'
-    WHERE status IN ('pending', 'in_progress')
-      AND due_at < (NOW() - INTERVAL '1 hour'); -- Allow 1 hour grace period, or adjust as needed
+    FROM sop_templates t
+    WHERE c.template_id = t.id
+      AND c.status IN ('pending', 'in_progress')
+      AND (
+          CASE 
+            WHEN t.end_time < t.start_time THEN 
+                -- Overnight: end is on the next calendar day relative to start
+                (c.due_at + (EXTRACT(EPOCH FROM (t.end_time + INTERVAL '1 day' - t.start_time)) || ' seconds')::INTERVAL + INTERVAL '1 hour') < NOW()
+            ELSE
+                -- Normal: end is on the same calendar day
+                (c.due_at + (EXTRACT(EPOCH FROM (t.end_time - t.start_time)) || ' seconds')::INTERVAL + INTERVAL '1 hour') < NOW()
+          END
+      );
 END;
 $$ LANGUAGE plpgsql;

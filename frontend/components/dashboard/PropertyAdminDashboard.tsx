@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Ticket, Settings, UserCircle, UsersRound,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Building2,
     Calendar, CheckCircle2, AlertCircle, Clock, Coffee, IndianRupee, FileDown, Fuel, Store, Activity, Upload, FileBarChart, Menu, X, Zap, RefreshCw,
-    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays
+    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -37,10 +37,11 @@ import StockMovementModal from '@/frontend/components/stock/StockMovementModal';
 import SOPDashboard from '@/frontend/components/sop/SOPDashboard';
 import EscalationHierarchyBuilder from '@/frontend/components/escalation/EscalationHierarchyBuilder';
 import PPMModule from '@/frontend/components/ppm/PPMModule';
+import ProcurementModule from '@/frontend/components/procurement/ProcurementModule';
 import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
 
 // Types
-type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm';
+type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement';
 
 interface Property {
     id: string;
@@ -57,6 +58,33 @@ interface TicketData {
     status: 'open' | 'in_progress' | 'resolved' | 'closed';
     priority: 'low' | 'medium' | 'high' | 'urgent';
     created_at: string;
+}
+
+function useCountUp(target: number, duration = 1400): number {
+    const [display, setDisplay] = useState(0);
+    const raf = useRef<number | null>(null);
+    const startRef = useRef<{ from: number; to: number; startTime: number } | null>(null);
+
+    useEffect(() => {
+        const from = display;
+        startRef.current = { from, to: target, startTime: performance.now() };
+
+        const tick = (now: number) => {
+            if (!startRef.current) return;
+            const { from: f, to, startTime } = startRef.current;
+            const t = Math.min((now - startTime) / duration, 1);
+            const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+            const current = Math.round(f + (to - f) * eased);
+            setDisplay(current);
+            if (t < 1) raf.current = requestAnimationFrame(tick);
+        };
+
+        if (raf.current) cancelAnimationFrame(raf.current);
+        raf.current = requestAnimationFrame(tick);
+        return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+    }, [target, duration]);
+
+    return display;
 }
 
 const PropertyAdminDashboard = () => {
@@ -431,6 +459,16 @@ const PropertyAdminDashboard = () => {
                                 Stock Management
                             </button>
                             <button
+                                onClick={() => handleTabChange('procurement')}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'procurement'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <ShoppingCart className="w-4 h-4" />
+                                Procurement
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('checklist')}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'checklist'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -448,7 +486,7 @@ const PropertyAdminDashboard = () => {
                                     }`}
                             >
                                 <CalendarDays className="w-4 h-4" />
-                                PPM Calendar
+                                PPM
                             </button>
                             <button
                                 onClick={() => handleTabChange('escalation')}
@@ -550,7 +588,11 @@ const PropertyAdminDashboard = () => {
                             </button>
                             {activeTab !== 'checklist' && (
                                 <div className="hidden md:block">
-                                    <h1 className="text-2xl md:text-3xl font-black text-text-primary tracking-tight capitalize">{activeTab.replace(/_/g, ' ')}</h1>
+                                    <h1 className="text-2xl md:text-3xl font-black text-text-primary tracking-tight capitalize">
+                                        {activeTab === 'ppm' ? 'Planned Preventive Maintenance' : 
+                                         activeTab === 'rooms' ? 'Meeting Rooms' : 
+                                         activeTab.replace(/_/g, ' ')}
+                                    </h1>
                                     <p className="text-text-tertiary text-xs md:text-sm font-medium mt-0.5">{property?.address || 'Property Management Hub'}</p>
                                 </div>
                             )}
@@ -708,6 +750,13 @@ const PropertyAdminDashboard = () => {
                             <EscalationHierarchyBuilder
                                 organizationId={property.organization_id}
                                 propertyId={property.id}
+                            />
+                        )}
+                        {activeTab === 'procurement' && property && (
+                            <ProcurementModule
+                                orgId={property.organization_id}
+                                isAdmin={false}
+                                properties={[property]}
                             />
                         )}
                         {activeTab === 'settings' && <SettingsView />}
@@ -905,7 +954,8 @@ const OverviewTab = memo(function OverviewTab({
     const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'all'>('all');
     // v2 prefix busts any pre-API-migration cached data that had 0/0 for visitors
     const fetchKey = `v2-${propertyId}-${statsVersion}-${timePeriod}`;
-    const initialCached = useMemo(() => getCachedData(fetchKey), [fetchKey, getCachedData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const initialCached = useMemo(() => getCachedData(fetchKey), [fetchKey]);
     const supabase = useMemo(() => createClient(), []);
     const hasFetched = useRef(false);
     const lastFetchKey = useRef('');
@@ -925,8 +975,8 @@ const OverviewTab = memo(function OverviewTab({
     // Stats State initialized from cache if available
     const [ticketStats, setTicketStats] = useState(initialCached?.ticketStats || { total: 0, open: 0, waitlist: 0, in_progress: 0, resolved: 0, sla_breached: 0, avg_resolution_hours: 0, pending_validation: 0, urgent_open: 0 });
     const [validationEnabled, setValidationEnabled] = useState<boolean>(initialCached?.validationEnabled ?? false);
-    const [electricityStats, setElectricityStats] = useState(initialCached?.electricityStats || { total_units_month: 0, total_units_today: 0 });
-    const [vmsStats, setVmsStats] = useState(initialCached?.vmsStats || { total_visitors_today: 0, checked_in: 0, checked_out: 0 });
+    const [electricityStats, setElectricityStats] = useState(initialCached?.electricityStats || { total_units: 0, total_units_today: 0, total_units_month: 0 });
+    const [vmsStats, setVmsStats] = useState(initialCached?.vmsStats || { total_visitors: 0, checked_in: 0, checked_out: 0 });
     const [vendorStats, setVendorStats] = useState(initialCached?.vendorStats || { total_revenue: 0, total_commission: 0, total_vendors: 0 });
     const [recentTickets, setRecentTickets] = useState<any[]>(initialCached?.recentTickets || []);
     const [isLoading, setIsLoading] = useState(!initialCached);
@@ -974,6 +1024,7 @@ const OverviewTab = memo(function OverviewTab({
                 let totalQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId);
                 let pendingValQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).eq('status', 'pending_validation');
                 let urgentOpenQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('priority', ['urgent', 'high', 'critical']).not('status', 'in', '("resolved","closed","satisfied")');
+                let slaBreachedQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).or(`sla_deadline.lt.${new Date().toISOString()},sla_breached.eq.true`).not('status', 'in', '("resolved","closed")');
 
                 if (timePeriod === 'today') {
                     openQuery = openQuery.gte('created_at', todayForTickets);
@@ -983,6 +1034,7 @@ const OverviewTab = memo(function OverviewTab({
                     totalQuery = totalQuery.gte('created_at', todayForTickets);
                     pendingValQuery = pendingValQuery.gte('created_at', todayForTickets);
                     urgentOpenQuery = urgentOpenQuery.gte('created_at', todayForTickets);
+                    slaBreachedQuery = slaBreachedQuery.gte('created_at', todayForTickets);
                 } else if (timePeriod === 'month') {
                     openQuery = openQuery.gte('created_at', monthStart);
                     waitlistQuery = waitlistQuery.gte('created_at', monthStart);
@@ -991,9 +1043,10 @@ const OverviewTab = memo(function OverviewTab({
                     totalQuery = totalQuery.gte('created_at', monthStart);
                     pendingValQuery = pendingValQuery.gte('created_at', monthStart);
                     urgentOpenQuery = urgentOpenQuery.gte('created_at', monthStart);
+                    slaBreachedQuery = slaBreachedQuery.gte('created_at', monthStart);
                 }
 
-                const [openRes, waitlistRes, inProgressRes, resolvedRes, totalRes, recentsRes, pendingValRes, urgentOpenRes, validationFeatureRes] = await Promise.all([
+                const [openRes, waitlistRes, inProgressRes, resolvedRes, totalRes, recentsRes, pendingValRes, urgentOpenRes, slaBreachedRes, validationFeatureRes] = await Promise.all([
                     openQuery,
                     waitlistQuery,
                     inProgressQuery,
@@ -1002,26 +1055,36 @@ const OverviewTab = memo(function OverviewTab({
                     supabase.from('tickets').select('id, title, status, created_at').eq('property_id', propertyId).order('created_at', { ascending: false }).limit(5),
                     pendingValQuery,
                     urgentOpenQuery,
+                    slaBreachedQuery,
                     supabase.from('property_features').select('is_enabled').eq('property_id', propertyId).eq('feature_key', 'ticket_validation').maybeSingle(),
                 ]);
 
                 // --- Electricity, VMS, Vendors (all in parallel via APIs) ---
                 const today = new Date().toISOString().split('T')[0];
-
                 const apiPeriod = timePeriod; // 'today' | 'month' | 'all'
 
-                const { data: { session } } = await supabase.auth.getSession();
-                const headers: HeadersInit = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+                // Optimize electricity fetch: only fetch what's needed for the period
+                let electricityQuery = supabase.from('electricity_readings').select('computed_units, reading_date').eq('property_id', propertyId);
+                if (timePeriod === 'today') {
+                    electricityQuery = electricityQuery.eq('reading_date', today);
+                } else if (timePeriod === 'month') {
+                    electricityQuery = electricityQuery.gte('reading_date', monthStart);
+                }
 
                 const [electricityRes, vmsApiRes, vendorApiRes] = await Promise.all([
-                    supabase.from('electricity_readings').select('computed_units, reading_date').eq('property_id', propertyId).gte('reading_date', monthStart),
-                    fetch(`/api/properties/${propertyId}/vms-summary?period=${apiPeriod}`, { headers }),
-                    fetch(`/api/properties/${propertyId}/vendor-summary?period=${apiPeriod}`, { headers }),
+                    electricityQuery,
+                    fetch(`/api/properties/${propertyId}/vms-summary?period=${apiPeriod}`),
+                    fetch(`/api/properties/${propertyId}/vendor-summary?period=${apiPeriod}`),
                 ]);
 
                 // Process electricity
-                const monthUnits = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0) || 0;
-                const todayUnits = electricityRes.data?.filter((r: any) => r.reading_date === today).reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0) || 0;
+                const periodUnits = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0) || 0;
+                
+                // For 'all' time, we might still want to know today/month units for other parts of UI if needed,
+                // but let's keep it simple and just use the period units for the main display.
+                const totalUnits = timePeriod === 'all' ? periodUnits : 0; // We'll handle this in the state update
+                const monthUnits = timePeriod === 'month' ? periodUnits : 0;
+                const todayUnits = timePeriod === 'today' ? periodUnits : 0;
 
                 // Process VMS from API
                 let vmsData: any = null;
@@ -1054,7 +1117,7 @@ const OverviewTab = memo(function OverviewTab({
                         waitlist: waitlistRes.count || 0,
                         in_progress: inProgressRes.count || 0,
                         resolved: resolvedRes.count || 0,
-                        sla_breached: 0,
+                        sla_breached: slaBreachedRes.count || 0,
                         avg_resolution_hours: 0,
                         pending_validation: pendingValRes.count || 0,
                         urgent_open: urgentOpenRes.count || 0,
@@ -1062,8 +1125,12 @@ const OverviewTab = memo(function OverviewTab({
                     validationEnabled: isValidationEnabled,
                     timePeriod: timePeriod,
                     recentTickets: recentsRes.data || [],
-                    electricityStats: { total_units_month: Math.round(monthUnits), total_units_today: Math.round(todayUnits) },
-                    vmsStats: { total_visitors_today: totalVisitors, checked_in: checkedInCount, checked_out: checkedOutCount },
+                    electricityStats: { 
+                        total_units: timePeriod === 'all' ? Math.round(periodUnits) : (electricityStats.total_units || 0), 
+                        total_units_month: timePeriod === 'month' ? Math.round(periodUnits) : (electricityStats.total_units_month || 0), 
+                        total_units_today: timePeriod === 'today' ? Math.round(periodUnits) : (electricityStats.total_units_today || 0) 
+                    },
+                    vmsStats: { total_visitors: totalVisitors, checked_in: checkedInCount, checked_out: checkedOutCount },
                     vendorStats: { total_revenue: totalRev, total_commission: totalComm, total_vendors: vendorData?.total_vendors || 0 },
                     timestamp: Date.now()
                 };
@@ -1083,11 +1150,18 @@ const OverviewTab = memo(function OverviewTab({
         };
 
         if (propertyId) fetchPropertyData(true);
-    }, [propertyId, statsVersion, timePeriod, supabase, getCachedData, setCachedData]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [propertyId, statsVersion, timePeriod, supabase]);
 
     // resolved includes pending_validation (staff already closed their side)
     const completionRate = ticketStats.total > 0 ? Math.round((ticketStats.resolved / ticketStats.total) * 100 * 10) / 10 : 0;
     const trulyClosedCount = ticketStats.resolved - ticketStats.pending_validation;
+
+    // Animated Counters
+    const animatedTotal = useCountUp(ticketStats.total);
+    const animatedActive = useCountUp(ticketStats.open + ticketStats.in_progress);
+    const animatedResolved = useCountUp(ticketStats.resolved);
+    const animatedPending = useCountUp(ticketStats.pending_validation);
 
     if (isLoading && ticketStats.total === 0) return (
         <div className="p-8 space-y-6">
@@ -1212,8 +1286,8 @@ const OverviewTab = memo(function OverviewTab({
                     <span className="text-white text-sm font-bold">Dashboard / {property?.name || 'Property'}</span>
                 </div>
 
-                {/* KPI Cards Row */}
-                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5 ${validationEnabled ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+                {/* KPI Cards Row — 4 insightful cards */}
+                <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5 relative ${validationEnabled ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
 
                     {/* Card 1 — Total Tickets */}
                     <motion.div
@@ -1230,7 +1304,7 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{ticketStats.total}</span>
+                            <span className="text-4xl font-black text-slate-900">{animatedTotal}</span>
                             <span className="text-xs text-slate-400 font-bold">{completionRate}% resolved</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
@@ -1255,7 +1329,7 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{ticketStats.open + ticketStats.in_progress}</span>
+                            <span className="text-4xl font-black text-slate-900">{animatedActive}</span>
                             {ticketStats.sla_breached > 0 && (
                                 <span className="text-[10px] text-rose-500 font-black uppercase bg-rose-50 px-1.5 py-0.5 rounded-md">{ticketStats.sla_breached} SLA</span>
                             )}
@@ -1295,7 +1369,7 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{ticketStats.resolved}</span>
+                            <span className="text-4xl font-black text-slate-900">{animatedResolved}</span>
                             <span className="text-xs text-emerald-500 font-bold">{completionRate}%</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
@@ -1318,14 +1392,14 @@ const OverviewTab = memo(function OverviewTab({
                             className={`bg-white rounded-2xl p-4 border shadow-sm hover:shadow-md cursor-pointer transition-all group relative overflow-hidden ${ticketStats.pending_validation > 0 ? 'border-amber-200 hover:border-amber-300' : 'border-slate-100 hover:border-slate-200'}`}
                         >
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Pending Validation</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Needs Review</span>
                                 <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${ticketStats.pending_validation > 0 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
                                     <Clock className={`w-3.5 h-3.5 ${ticketStats.pending_validation > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
                                 </div>
                             </div>
                             <div className="flex items-baseline gap-2 mb-2">
                                 <span className={`text-4xl font-black ${ticketStats.pending_validation > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
-                                    {ticketStats.pending_validation}
+                                    {animatedPending}
                                 </span>
                                 {ticketStats.pending_validation === 0 ? (
                                     <span className="text-[10px] text-emerald-500 font-black">All clear ✓</span>
@@ -1367,7 +1441,7 @@ const OverviewTab = memo(function OverviewTab({
                                         <circle
                                             cx="60" cy="60" r="52" fill="none"
                                             stroke="url(#propElecGrad)" strokeWidth="10" strokeLinecap="round"
-                                            strokeDasharray={`${Math.min(326, ((timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month) / (timePeriod === 'today' ? 100 : 1000)) * 326)} 326`}
+                                            strokeDasharray={`${Math.min(326, ((timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units) / (timePeriod === 'today' ? 100 : 1000)) * 326)} 326`}
                                         />
                                         <defs>
                                             <linearGradient id="propElecGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1379,7 +1453,7 @@ const OverviewTab = memo(function OverviewTab({
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                                         <Zap className="w-5 h-5 text-yellow-500 mb-1" />
                                         <span className="text-xl font-black text-slate-900">
-                                            {(timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}
+                                            {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}
                                         </span>
                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">kVAh</span>
                                     </div>
@@ -1388,7 +1462,7 @@ const OverviewTab = memo(function OverviewTab({
                             <div className="space-y-1" onClick={() => onTabChange('electricity_analytics' as any)}>
                                 <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Units Consumed</div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
-                                    {(timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}
+                                    {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}
                                     <span className="text-sm text-slate-400 font-bold">kVAh</span>
                                 </div>
                                 <div className="pt-2 border-t border-slate-50 mt-2">
@@ -1425,7 +1499,7 @@ const OverviewTab = memo(function OverviewTab({
                                 )}
                             </div>
                             <div className="space-y-4">
-                                <div><div className="text-slate-700 text-xs font-bold">Visitors {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}</div><div className="text-2xl font-black text-slate-900">{vmsStats.total_visitors_today}</div></div>
+                                <div><div className="text-slate-700 text-xs font-bold">Visitors {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}</div><div className="text-2xl font-black text-slate-900">{vmsStats.total_visitors}</div></div>
                                 <div><div className="text-slate-700 text-xs font-bold">Checked In / Out</div><div className="text-2xl font-black text-slate-900">{vmsStats.checked_in} / {vmsStats.checked_out}</div></div>
                             </div>
                         </div>
@@ -1454,9 +1528,15 @@ const OverviewTab = memo(function OverviewTab({
                             <h3 className="text-sm font-black text-slate-900 mb-4">Module Summary</h3>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 bg-blue-50 rounded-xl"><div className="text-xs font-bold text-blue-600 mb-1">Tickets</div><div className="text-2xl font-black text-blue-900">{ticketStats.total}</div></div>
-                                <div className="p-4 bg-emerald-50 rounded-xl"><div className="text-xs font-bold text-emerald-600 mb-1">Visitors</div><div className="text-2xl font-black text-emerald-900">{vmsStats.total_visitors_today}</div></div>
-                                <div className="p-4 bg-yellow-50 rounded-xl"><div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div><div className="text-2xl font-black text-slate-900">{(timePeriod === 'today' ? electricityStats.total_units_today : electricityStats.total_units_month).toLocaleString()}</div></div>
-                                <div className="p-4 bg-purple-50 rounded-xl"><div className="text-xs font-bold text-purple-600 mb-1">Vendors</div><div className="text-2xl font-black text-purple-900">{vendorStats.total_vendors}</div></div>
+                                <div className="p-4 bg-emerald-50 rounded-xl">
+                                    <div className="text-xs font-bold text-emerald-600 mb-1">Visitors ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div>
+                                    <div className="text-2xl font-black text-emerald-900">{vmsStats.total_visitors}</div>
+                                </div>
+                                <div className="p-4 bg-yellow-50 rounded-xl"><div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div><div className="text-2xl font-black text-slate-900">{(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}</div></div>
+                                <div className="p-4 bg-purple-50 rounded-xl">
+                                    <div className="text-xs font-bold text-purple-600 mb-1">Vendor Revenue ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div>
+                                    <div className="text-2xl font-black text-purple-900">₹{vendorStats.total_revenue.toLocaleString()}</div>
+                                </div>
                             </div>
                         </div>
                     </div>

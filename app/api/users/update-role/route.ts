@@ -113,7 +113,6 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        console.log(`Role change request: user=${userId}, oldRole=${oldRole}, oldRoleSource=${oldRoleSource}, newRole=${newRole}, propertyId=${propertyId}, orgId=${organizationId}`);
 
         // 2. Detect cross-level promotion: property-level → org-level
         const isPromotionToOrg = isNewRoleOrgLevel && oldRoleSource === 'property' && organizationId;
@@ -172,7 +171,6 @@ export async function POST(request: NextRequest) {
                 }
             }
 
-            console.log(`User ${userId} promoted from property-level (${oldRole}) to org-level (${newRole})`);
 
         } else if (isDemotionToProperty) {
             // CROSS-LEVEL DEMOTION: org_super_admin → property-level role
@@ -248,7 +246,6 @@ export async function POST(request: NextRequest) {
                 throw orgDeactivateError;
             }
 
-            console.log(`User ${userId} demoted from org-level (${oldRole}) to property-level (${newRole}) at property ${targetPropertyId}`);
 
         } else if (propertyId) {
             // Same-level property role change (e.g., staff → mst)
@@ -277,7 +274,6 @@ export async function POST(request: NextRequest) {
         // 3. Synchronize resolver_stats and mst_skills
         if (isOldResolver && !isNewResolver) {
             // Role changed from resolver to non-resolver -> Remove entries
-            console.log(`User ${userId} changed role from ${oldRole} to ${newRole}. Removing resolver stats.`);
 
             if (propertyId) {
                 await adminClient.from('resolver_stats').delete().eq('user_id', userId).eq('property_id', propertyId);
@@ -291,7 +287,6 @@ export async function POST(request: NextRequest) {
 
         } else if (isNewResolver) {
             // Role is now a resolver -> Add or Update skills/stats
-            console.log(`Synchronizing resolver skills for user ${userId} with role ${newRole}. Skills: ${skills.join(', ')}`);
 
             // Clear existing skills to overwrite
             await adminClient.from('mst_skills').delete().eq('user_id', userId);
@@ -340,7 +335,6 @@ export async function POST(request: NextRequest) {
                             if (statsError) console.error('Failed to insert resolver stats:', statsError);
                         }
                     } else {
-                        console.log(`User ${userId} (Role: ${newRole}) does not have any resolver-eligible skills. Entry in resolver_stats removed/not created.`);
                     }
                 }
             } else if (!isOldResolver) {

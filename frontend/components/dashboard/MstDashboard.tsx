@@ -197,8 +197,12 @@ const MstDashboard = () => {
     useEffect(() => {
         // Trigger restoration when data is loaded OR when cached data exists
         if (!isLoading && (incomingTickets.length > 0 || completedTickets.length > 0)) {
-            const ticketId = sessionStorage.getItem("lastTicketId");
-            const savedScrollY = sessionStorage.getItem("scrollY");
+            let ticketId: string | null = null;
+            let savedScrollY: string | null = null;
+            try {
+                ticketId = sessionStorage.getItem("lastTicketId");
+                savedScrollY = sessionStorage.getItem("scrollY");
+            } catch {}
 
             if (ticketId || savedScrollY) {
                 const scrollContainer = document.getElementById('main-scroll-container');
@@ -222,8 +226,10 @@ const MstDashboard = () => {
                             });
                             
                             // Successful restoration
-                            sessionStorage.removeItem("lastTicketId");
-                            sessionStorage.removeItem("scrollY");
+                            try {
+                                sessionStorage.removeItem("lastTicketId");
+                                sessionStorage.removeItem("scrollY");
+                            } catch {}
                             
                             if (container instanceof HTMLElement) {
                                 setTimeout(() => { container.style.scrollBehavior = ''; }, 100);
@@ -241,8 +247,10 @@ const MstDashboard = () => {
                             // Still growing...
                         } else {
                             container.scrollTo({ top: targetY, behavior: 'auto' });
-                            sessionStorage.removeItem("scrollY");
-                            sessionStorage.removeItem("lastTicketId");
+                            try {
+                                sessionStorage.removeItem("scrollY");
+                                sessionStorage.removeItem("lastTicketId");
+                            } catch {}
                             
                             if (container instanceof HTMLElement) {
                                 setTimeout(() => { container.style.scrollBehavior = ''; }, 100);
@@ -1143,8 +1151,10 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
                                         // Standardized Scroll Saving
                                         const scrollContainer = document.getElementById('main-scroll-container');
                                         const scrollPos = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
-                                        sessionStorage.setItem(`mstScrollY-${propertyId}`, scrollPos.toString());
-                                        sessionStorage.setItem(`mstLastTicketId-${propertyId}`, ticket.id);
+                                        try {
+                                            sessionStorage.setItem(`mstScrollY-${propertyId}`, scrollPos.toString());
+                                            sessionStorage.setItem(`mstLastTicketId-${propertyId}`, ticket.id);
+                                        } catch {}
                                         onTicketClick?.(ticket.id);
                                     }}
                                     onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}
@@ -1426,8 +1436,10 @@ const RequestsTab = ({
                                             // Standardized Scroll Saving
                                             const scrollContainer = document.getElementById('main-scroll-container');
                                             const scrollPos = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
-                                            sessionStorage.setItem('scrollY', scrollPos.toString());
-                                            sessionStorage.setItem('lastTicketId', ticket.id);
+                                            try {
+                                                sessionStorage.setItem('scrollY', scrollPos.toString());
+                                                sessionStorage.setItem('lastTicketId', ticket.id);
+                                            } catch {}
                                             onTicketClick?.(ticket.id);
                                         }}
                                         onEdit={onEditClick ? (e) => onEditClick(e, ticket) : undefined}

@@ -93,12 +93,13 @@ export async function GET(request: NextRequest) {
         const skillGroup = searchParams.get('skillGroup');
         const period = searchParams.get('period');
 
+        const materialsRequired = searchParams.get('materialsRequired');
+        const floorNumber = searchParams.get('floorNumber') || searchParams.get('floor_number') || searchParams.get('floor');
+
         // Use admin client for org-wide queries to bypass RLS row restrictions
         const queryClient = (organizationId && !propertyId) ? createAdminClient() : supabase;
 
-        let query = queryClient
-            .from('tickets')
-            .select(`
+        let selectStr = `
                 id, ticket_number, title, status, priority, created_at, internal, raised_by, assigned_to,
                 resolved_at,
                 category:issue_categories(id, code, name),
@@ -107,8 +108,14 @@ export async function GET(request: NextRequest) {
                 assignee:users!assigned_to(id, full_name, email, user_photo_url),
                 organization:organizations(id, name, code),
                 property:properties(id, name, code),
-                material_requests(id)
-            `, { count: 'exact' })
+                photo_before_url,
+                ticket_escalation_logs(id, escalated_at, from_employee:users!from_employee_id(full_name, user_photo_url), to_employee:users!to_employee_id(full_name, user_photo_url)),
+                material_requests${materialsRequired === 'true' ? '!inner' : ''}(id)
+            `;
+
+        let query = queryClient
+            .from('tickets')
+            .select(selectStr, { count: 'exact' })
             .order('created_at', { ascending: false })
             .range(
                 offsetParam ? parseInt(offsetParam) : 0,
@@ -129,7 +136,14 @@ export async function GET(request: NextRequest) {
         }
         if (assignedTo) query = query.eq('assigned_to', assignedTo);
         if (raisedBy) query = query.eq('raised_by', raisedBy);
-        if (slaBreached !== null && slaBreached !== undefined) query = query.eq('sla_breached', slaBreached === 'true');
+        if (slaBreached === 'true') {
+            // Include tickets where sla_deadline has passed OR sla_breached flag is explicitly set
+            query = query
+                .or(`sla_deadline.lt.${new Date().toISOString()},sla_breached.eq.true`)
+                .not('status', 'in', '("resolved","closed")');
+        } else if (slaBreached === 'false') {
+            query = query.or(`sla_deadline.gte.${new Date().toISOString()},sla_deadline.is.null,status.in.("resolved","closed")`);
+        }
         // Manual date range handling (ensuring IST boundaries)
         if (dateFrom) {
             // If it's a plain date (YYYY-MM-DD), treat as 00:00:00 IST
@@ -143,6 +157,13 @@ export async function GET(request: NextRequest) {
         }
         if (search) query = query.or(`ticket_number.ilike.%${search}%,title.ilike.%${search}%`);
         if (skillGroup && skillGroup !== 'all') query = query.eq('skill_group_code', skillGroup);
+        if (floorNumber !== null && floorNumber !== undefined && floorNumber !== 'all') {
+            if (floorNumber === 'unspecified') {
+                query = query.or('floor_number.is.null,floor_number.eq.""');
+            } else {
+                query = query.eq('floor_number', floorNumber);
+            }
+        }
 
         // Handle predefined periods (e.g., today)
         if (period === 'today') {
@@ -217,7 +238,10 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
         }
 
-        return NextResponse.json({ tickets: tickets || [], total: count ?? (tickets?.length ?? 0) });
+        return NextResponse.json({ 
+            tickets: tickets || [], 
+            total: (typeof count === 'number') ? count : (tickets?.length || 0)
+        });
     } catch (error) {
         console.error('Tickets API error:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -437,7 +461,6 @@ export async function POST(request: NextRequest) {
 
         // Trigger Web Push Notifications asynchronously
         try {
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] Ticket API Notifications for:', finalTicket.id);
             const { NotificationService } = await import('@/backend/services/NotificationService');
 
             // Trigger unified notification (handles both creation broadcast and auto-assignment)
@@ -447,7 +470,6 @@ export async function POST(request: NextRequest) {
 
             // If priority is critical, send an urgent alert to all property staff/admins
             if (finalTicket.priority === 'critical') {
-                console.log('>>>>>>>>>> [NOTIFICATION TEST] Critical ticket — triggering urgent staff alert');
                 NotificationService.afterCriticalTicketCreated(finalTicket.id).catch(err => {
                     console.error('>>>>>>>>>> [NOTIFICATION TEST] Critical notification error:', err);
                 });

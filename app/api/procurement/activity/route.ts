@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
 
         const adminSupabase = createAdminClient();
 
-        // Fetch latest activities with rich context
+        // Fetch latest activities with rich context — exclude 'deleted' actions
+        // (material requests deleted before reaching procurement should not be visible here)
         const { data: activities, error: logError } = await adminSupabase
             .from('procurement_activity_log')
             .select(`
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
                     property:properties(name)
                 )
             `)
+            .neq('action', 'deleted')
             .order('created_at', { ascending: false })
             .limit(10);
 
@@ -42,6 +44,7 @@ export async function GET(request: NextRequest) {
                         property:properties(name)
                     )
                 `)
+                .neq('action', 'deleted')
                 .order('created_at', { ascending: false })
                 .limit(10);
             

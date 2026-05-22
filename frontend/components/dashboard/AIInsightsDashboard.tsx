@@ -5,7 +5,7 @@ import {
     Brain,
     Zap,
     Clock,
-    DollarSign,
+    IndianRupee,
     Activity,
     AlertCircle,
     ChevronRight,
@@ -122,9 +122,9 @@ export default function AIInsightsDashboard({ isDark = true }: { isDark?: boolea
                 />
                 <MetricCard
                     title="Estimated Cost"
-                    value={`$${stats?.estimated_cost_usd?.toFixed(4) || '0.0000'}`}
-                    subValue="Llama 3.3 70B Versatile"
-                    icon={<DollarSign className="w-5 h-5" />}
+                    value={`₹${(stats?.estimated_cost_usd * 83).toFixed(2) || '0.00'}`}
+                    subValue="Converted from USD (1$ = ₹83)"
+                    icon={<IndianRupee className="w-5 h-5" />}
                     color="text-success"
                     isDark={isDark}
                 />

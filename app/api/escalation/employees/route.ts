@@ -96,6 +96,7 @@ export async function GET(request: NextRequest) {
           email: u.email || '',
           phone: u.phone || '',
           membership_role: m.role,
+          property_id: (m as any).property_id || null,
           department: u.metadata?.department || null,
           status: 'active' as const,
         };

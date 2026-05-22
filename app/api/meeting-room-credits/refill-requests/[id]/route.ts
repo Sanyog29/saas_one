@@ -39,15 +39,40 @@ export async function PATCH(
             return NextResponse.json({ error: 'Request has already been reviewed' }, { status: 409 });
         }
 
-        // Verify caller is admin of the property
+        // 1. Check Property Level
         const { data: membership } = await supabaseAdmin
             .from('property_memberships')
             .select('role')
             .eq('property_id', refillReq.property_id)
             .eq('user_id', user.id)
-            .single();
+            .maybeSingle();
 
-        if (!['property_admin', 'staff', 'org_admin'].includes(membership?.role || '')) {
+        let canReview = ['property_admin', 'staff', 'org_admin'].includes(membership?.role || '');
+
+        // 2. Check System/Org Level
+        if (!canReview) {
+            const [profileRes, propertyRes] = await Promise.all([
+                supabaseAdmin.from('users').select('is_master_admin').eq('id', user.id).single(),
+                supabaseAdmin.from('properties').select('organization_id').eq('id', refillReq.property_id).single()
+            ]);
+
+            if (profileRes.data?.is_master_admin) {
+                canReview = true;
+            } else if (propertyRes.data?.organization_id) {
+                const { data: orgMember } = await supabaseAdmin
+                    .from('organization_memberships')
+                    .select('role')
+                    .eq('organization_id', propertyRes.data.organization_id)
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                
+                if (['org_super_admin', 'org_admin'].includes(orgMember?.role || '')) {
+                    canReview = true;
+                }
+            }
+        }
+
+        if (!canReview) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

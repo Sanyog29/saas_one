@@ -14,6 +14,7 @@ interface TicketData {
     created_at: string;
     resolved_at: string | null;
     internal: boolean;
+    floor_number: string | null;
 }
 
 interface MonthStats {
@@ -110,7 +111,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
             try {
                 const { data: tickets, error: ticketsError } = await supabase
                     .from('tickets')
-                    .select('id, category, status, created_at, resolved_at, internal, issue_category:category_id(name)')
+                    .select('id, category, status, created_at, resolved_at, internal, floor_number, issue_category:category_id(name)')
                     .eq('property_id', propertyId)
                     .order('created_at', { ascending: false });
 
@@ -129,6 +130,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
                     created_at: t.created_at,
                     resolved_at: t.resolved_at ?? null,
                     internal: t.internal ?? false,
+                    floor_number: t.floor_number ?? null,
                 }));
 
                 setRawTickets(normalised);
@@ -209,6 +211,72 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
             return ym >= start && ym <= end;
         });
 
+        // Floor vs Categories
+        const floorCats: Record<string, Record<string, number>> = {};
+        const isSSPlaza = property?.name?.toLowerCase().includes('ss plaza');
+        
+        // Helper to format floor display names
+        const formatFloorName = (fStr: string | null) => {
+            if (!fStr) return 'Unspecified';
+            if (fStr === '0') return 'Ground';
+            if (fStr === '-1') return 'B1';
+            if (fStr === '-2') return 'B2';
+            if (fStr === '4' && isSSPlaza) return 'Cafeteria';
+            return `F${fStr}`;
+        };
+
+        // 1. Initialize all floors ever mentioned for this property (all-time) so they appear on X-axis
+        tickets.forEach(t => {
+            const fStr = t.floor_number !== null && t.floor_number !== undefined && t.floor_number !== '' ? String(t.floor_number) : null;
+            const floor = formatFloorName(fStr);
+            if (!floorCats[floor]) floorCats[floor] = {};
+        });
+
+        // 2. Populate categories only for tickets in the current period
+        periodTickets.forEach(t => {
+            const fStr = t.floor_number !== null && t.floor_number !== undefined && t.floor_number !== '' ? String(t.floor_number) : null;
+            const floor = formatFloorName(fStr);
+            const cat = t.category || 'Other';
+            if (!floorCats[floor]) floorCats[floor] = {};
+            floorCats[floor][cat] = (floorCats[floor][cat] || 0) + 1;
+        });
+
+        const floors = Object.keys(floorCats).sort((a, b) => {
+            if (a === 'Unspecified') return 1;
+            if (b === 'Unspecified') return -1;
+            
+            const getVal = (val: string) => {
+                if (val === 'B2') return -2;
+                if (val === 'B1') return -1;
+                if (val === 'Ground') return 0;
+                if (val === 'Cafeteria') return 4;
+                return parseInt(val.replace('F', ''));
+            };
+            
+            return getVal(a) - getVal(b);
+        });
+
+        const allCats = new Set<string>();
+        floors.forEach(f => Object.keys(floorCats[f]).forEach(c => allCats.add(c)));
+        const catTotals = Array.from(allCats).map(c => ({
+            name: c,
+            total: floors.reduce((sum, f) => sum + (floorCats[f][c] || 0), 0)
+        })).sort((a, b) => b.total - a.total).slice(0, 5); 
+        
+        const top5CatNames = catTotals.map(c => c.name);
+        const floorChartData = {
+            labels: floors,
+            datasets: top5CatNames.map((cat, i) => {
+                const colors = ['#3B82F6', '#22C55E', '#F97316', '#8B5CF6', '#EAB308'];
+                return {
+                    label: cat,
+                    data: floors.map(f => floorCats[f][cat] || 0),
+                    backgroundColor: colors[i % colors.length],
+                    stack: 'Stack 0',
+                };
+            })
+        };
+
         setDashboardData({
             property,
             allTimeTotal,
@@ -220,6 +288,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
             periodTopCategories,
             latestStats,
             firstStats,
+            floorChartData,
             sparklines: {
                 allTime: getDailyTrend(tickets),
                 period: getDailyTrend(periodTickets),
@@ -337,6 +406,27 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
 
             renderCategoryChart(`${idPrefix}-periodCatChart`, `Top Categories · Full Period (${label})`, dashboardData.periodTopCategories);
             renderCategoryChart(`${idPrefix}-latestCatChart`, `Top Categories · ${dashboardData.latestStats?.label}`, dashboardData.latestStats?.topCategories || []);
+
+            // Floor vs Category Chart
+            const floorCanvas = safeCanvas(`${idPrefix}-floorCatChart`);
+            if (floorCanvas && dashboardData.floorChartData) {
+                chartInstances.push(new Chart(floorCanvas, {
+                    type: 'bar',
+                    data: dashboardData.floorChartData,
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: true, position: 'right', labels: { boxWidth: 8, font: { size: 8 } } },
+                            title: { display: false },
+                            datalabels: { display: false } // Too cluttered for stacked bars
+                        },
+                        scales: {
+                            x: { stacked: true, grid: { display: false }, border: { display: false }, ticks: { font: { size: 9, weight: 'bold' }, color: '#000' } },
+                            y: { stacked: true, grid: { color: '#f1f5f9' }, border: { display: false }, ticks: { font: { size: 9, weight: 'bold' }, color: '#000' } }
+                        }
+                    }
+                }));
+            }
 
             // Sparklines
             const renderSparkline = (canvasId: string, data: number[], color: string) => {
@@ -673,39 +763,8 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
                         <div className="p-2 flex-1 relative"><canvas id={`${idPrefix}-latestCatChart`}></canvas></div>
                     </div>
                     <div className="bg-white border border-[#e2e8f0] rounded-sm shadow-sm overflow-hidden flex flex-col" style={{ height: '210px' }}>
-                        <div className="bg-[#f8fafc] border-b border-[#e2e8f0] px-3 py-2 text-[#1e3a8a] text-[12px] font-bold">Key Accountability Insights</div>
-                        <div className="p-4 flex-1 overflow-auto">
-                            <ul className="space-y-2 text-[11px] text-[#475569]">
-                                <li className="flex gap-2 items-start leading-[1.3]">
-                                    <span className="w-[5px] h-[5px] rounded-full bg-[#22c55e] mt-1 flex-shrink-0"></span>
-                                    <div>Period closure rate: <span className="font-bold text-[#1e3a8a]">{periodRateStr}</span> across {monthCount} month{monthCount !== 1 ? 's' : ''}</div>
-                                </li>
-                                <li className="flex gap-2 items-start leading-[1.3]">
-                                    <span className="w-[5px] h-[5px] rounded-full bg-[#1e3a8a] mt-1 flex-shrink-0"></span>
-                                    <div>Best month: <span className="font-bold text-[#1e3a8a]">{bestMonth?.shortLabel} ({bestMonth?.rate.toFixed(1)}%)</span></div>
-                                </li>
-                                {monthsStats.filter((m: MonthStats) => m.rate < 95).length > 0 && (
-                                    <li className="flex gap-2 items-start leading-[1.3]">
-                                        <span className="w-[5px] h-[5px] rounded-full bg-[#eab308] mt-1 flex-shrink-0"></span>
-                                        <div><span className="font-bold text-[#d97706]">{monthsStats.filter((m: MonthStats) => m.rate < 95).map((m: MonthStats) => m.shortLabel).join(', ')}</span> below 95% target</div>
-                                    </li>
-                                )}
-                                <li className="flex gap-2 items-start leading-[1.3]">
-                                    <span className="w-[5px] h-[5px] rounded-full bg-[#ef4444] mt-1 flex-shrink-0"></span>
-                                    <div><span className="font-bold text-[#ef4444]">{latestStats?.open} open tickets</span> in {latestStats?.shortLabel} need resolution</div>
-                                </li>
-                                <li className="flex gap-2 items-start leading-[1.3]">
-                                    <span className="w-[5px] h-[5px] rounded-full bg-[#3b82f6] mt-1 flex-shrink-0"></span>
-                                    <div><span className="font-bold text-[#1e3a8a]">{topPeriodCat.name}</span> top category ({topPeriodCat.count} tickets in period)</div>
-                                </li>
-                                {monthCount >= 2 && (
-                                    <li className="flex gap-2 items-start leading-[1.3]">
-                                        <span className="w-[5px] h-[5px] rounded-full bg-[#22c55e] mt-1 flex-shrink-0"></span>
-                                        <div>{latestStats?.shortLabel} vs {firstStats?.shortLabel}: <span className="font-bold text-[#1e3a8a]">{volChange > 0 ? '+' : ''}{volChange.toFixed(0)}% volume change</span></div>
-                                    </li>
-                                )}
-                            </ul>
-                        </div>
+                        <div className="bg-[#f8fafc] border-b border-[#e2e8f0] px-3 py-2 text-[#1e3a8a] text-[12px] font-bold">Floor vs Categories · {label}</div>
+                        <div className="p-3 flex-1 relative"><canvas id={`${idPrefix}-floorCatChart`}></canvas></div>
                     </div>
                 </div>
 

@@ -20,11 +20,9 @@ export async function POST(request: NextRequest) {
     const sessionId = body.session_id;
 
     if (!sessionId) {
-        console.log('[SessionHeartbeat] No session_id provided, skipping');
         return NextResponse.json({ error: 'session_id required' }, { status: 400 });
     }
 
-    // console.log('[SessionHeartbeat] Heartbeat for session:', sessionId);
 
     try {
         // Update last_activity for this session
@@ -39,7 +37,6 @@ export async function POST(request: NextRequest) {
 
         if (updateError) {
             // Session might not exist or already closed
-            console.log('[SessionHeartbeat] Session not found or closed:', updateError.message);
             return NextResponse.json({
                 success: false,
                 should_restart: true,

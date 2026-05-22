@@ -37,7 +37,7 @@ type DateFilter = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
 const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }) => {
     const [visitors, setVisitors] = useState<VisitorLog[]>([]);
     const [properties, setProperties] = useState<Property[]>([]);
-    const [stats, setStats] = useState({ total_today: 0, checked_in: 0, checked_out: 0 });
+    const [stats, setStats] = useState({ total_visitors: 0, checked_in: 0, checked_out: 0 });
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'checked_in' | 'checked_out'>('all');
@@ -59,7 +59,7 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
 
             if (res.ok) {
                 setVisitors(data.visitors || []);
-                setStats(data.stats || { total_today: 0, checked_in: 0, checked_out: 0 });
+                setStats(data.stats || { total_visitors: 0, checked_in: 0, checked_out: 0 });
                 if (data.properties?.length) setProperties(data.properties);
             }
         } catch (err) {
@@ -174,8 +174,10 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
                             <Users className="w-6 h-6 text-primary" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Today</p>
-                            <p className="text-3xl font-black text-slate-900">{stats.total_today}</p>
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                {dateFilter === 'today' ? 'Total Today' : dateFilter === 'yesterday' ? 'Total Yesterday' : dateFilter === 'week' ? 'Total This Week' : dateFilter === 'month' ? 'Total This Month' : 'Total Visitors'}
+                            </p>
+                            <p className="text-3xl font-black text-slate-900">{stats.total_visitors}</p>
                         </div>
                     </div>
                 </motion.div>

@@ -20,8 +20,8 @@ interface TicketData {
     location: string | null;
     reportedDate: string;
     closedDate: string | null;
-    spocName: string;
-    spocEmail: string;
+    contactPersonName: string;
+    contactPersonEmail: string;
     assigneeName: string;
     beforePhoto: string | null;
     afterPhoto: string | null;
@@ -219,7 +219,7 @@ export default function RequestsReportPage() {
         const propertyPart = (reportData?.property.name || 'Property')
             .trim().replace(/\s+/g, '_');
         const statusPart = reportFilter === 'open' ? 'Open_WIP_Ticket'
-            : reportFilter === 'pending_validation' ? 'Pending_Validation'
+            : reportFilter === 'pending_validation' ? 'Needs_Review'
             : reportFilter === 'internal' ? 'Internal'
             : 'All_Tickets';
         const periodPart = dateMode === 'custom' && customStart && customEnd
@@ -244,11 +244,11 @@ export default function RequestsReportPage() {
 
     const handleExportCSV = () => {
         if (!reportData) return;
-        const headers = ['ticket id', 'title', 'description', 'category', 'floor', 'location', 'status', 'priority', 'spoc', 'assignee', 'reported date', 'closure date'];
+        const headers = ['ticket id', 'title', 'description', 'category', 'floor', 'location', 'status', 'priority', 'contact person', 'assignee', 'reported date', 'closure date'];
         const rows = filteredTickets.map(t => [
             t.ticketNumberDisplay, t.title, t.description?.replace(/,/g, ';') || '',
             t.category, t.floorLabel, t.location || '-', t.status, t.priority,
-            t.spocName, t.assigneeName, formatDate(t.reportedDate), formatDate(t.closedDate),
+            t.contactPersonName, t.assigneeName, formatDate(t.reportedDate), formatDate(t.closedDate),
         ]);
         const csvContent = [headers.join(','), ...rows.map(row => row.map(cell => `"${cell}"`).join(','))].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -475,7 +475,7 @@ export default function RequestsReportPage() {
             doc.setFontSize(8.5);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(170, 137, 95);
-            doc.text('SPOC', 20, yDetails + 10); doc.text('ASSIGNED TO', 110, yDetails + 10);
+            doc.text('CONTACT PERSON', 20, yDetails + 10); doc.text('ASSIGNED TO', 110, yDetails + 10);
             doc.text('FLOOR', 20, yDetails + 22); doc.text('LOCATION', 110, yDetails + 22);
             doc.text('REPORTED DATE', 20, yDetails + 34); doc.text('CLOSURE DATE', 110, yDetails + 34);
             doc.text('REPORTED TIME', 20, yDetails + 46); doc.text('CLOSURE TIME', 110, yDetails + 46);
@@ -483,7 +483,7 @@ export default function RequestsReportPage() {
             doc.setFontSize(10.5);
             doc.setTextColor(50, 50, 50);
             doc.setFont('helvetica', 'normal');
-            doc.text(ticket.spocName || '-', 20, yDetails + 16); doc.text(ticket.assigneeName || '-', 110, yDetails + 16);
+            doc.text(ticket.contactPersonName || '-', 20, yDetails + 16); doc.text(ticket.assigneeName || '-', 110, yDetails + 16);
             doc.text(ticket.floorLabel || '-', 20, yDetails + 28); doc.text((ticket.location || '-').slice(0, 38), 110, yDetails + 28);
             doc.text(formatDate(ticket.reportedDate), 20, yDetails + 40); doc.text(formatDate(ticket.closedDate), 110, yDetails + 40);
             doc.text(formatTime(ticket.reportedDate), 20, yDetails + 52); doc.text(formatTime(ticket.closedDate), 110, yDetails + 52);
@@ -765,7 +765,7 @@ export default function RequestsReportPage() {
             doc.setFontSize(8.5);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(170, 137, 95);
-            doc.text('SPOC', 20, yDetails + 10); doc.text('ASSIGNED TO', 110, yDetails + 10);
+            doc.text('CONTACT PERSON', 20, yDetails + 10); doc.text('ASSIGNED TO', 110, yDetails + 10);
             doc.text('FLOOR', 20, yDetails + 22); doc.text('LOCATION', 110, yDetails + 22);
             doc.text('REPORTED DATE', 20, yDetails + 34); doc.text('CLOSURE DATE', 110, yDetails + 34);
             doc.text('REPORTED TIME', 20, yDetails + 46); doc.text('CLOSURE TIME', 110, yDetails + 46);
@@ -773,7 +773,7 @@ export default function RequestsReportPage() {
             doc.setFontSize(10.5);
             doc.setTextColor(50, 50, 50);
             doc.setFont('helvetica', 'normal');
-            doc.text(ticket.spocName || '-', 20, yDetails + 16); doc.text(ticket.assigneeName || '-', 110, yDetails + 16);
+            doc.text(ticket.contactPersonName || '-', 20, yDetails + 16); doc.text(ticket.assigneeName || '-', 110, yDetails + 16);
             doc.text(ticket.floorLabel || '-', 20, yDetails + 28); doc.text((ticket.location || '-').slice(0, 38), 110, yDetails + 28);
             doc.text(formatDate(ticket.reportedDate), 20, yDetails + 40); doc.text(formatDate(ticket.closedDate), 110, yDetails + 40);
             doc.text(formatTime(ticket.reportedDate), 20, yDetails + 52); doc.text(formatTime(ticket.closedDate), 110, yDetails + 52);
@@ -1693,7 +1693,7 @@ export default function RequestsReportPage() {
                                                             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg mb-5">
                                                                 <div>
                                                                     <span className="block text-[#AA895F] font-bold text-[10px] uppercase tracking-wider mb-1">SPOC</span>
-                                                                    <span className="text-gray-800 text-sm">{ticket.spocName}</span>
+                                                                    <span className="text-gray-800 text-sm">{ticket.contactPersonName}</span>
                                                                 </div>
                                                                 <div>
                                                                     <span className="block text-[#AA895F] font-bold text-[10px] uppercase tracking-wider mb-1">Assigned To</span>

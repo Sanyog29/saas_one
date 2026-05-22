@@ -13,6 +13,7 @@ export interface NotificationPayload {
     title: string;
     message: string;
     deepLink: string;
+    priority?: "LOW" | "NORMAL" | "HIGH" | "CRITICAL";
     /** Pre-built WhatsApp payload — skips ticket DB fetch inside send() entirely */
     whatsapp?: {
         message: string;
@@ -28,7 +29,6 @@ export interface Recipient {
 
 export class NotificationService {
     static async afterTicketCreated(ticketId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketCreated starting for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -55,20 +55,9 @@ export class NotificationService {
 
             const isCreatorTenant = creatorMembership?.role?.toUpperCase() === 'TENANT';
 
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] Ticket Detail:', {
-                id: ticket.id,
-                title: ticket.title,
-                assigneeId,
-                creatorId,
-                creatorRole: creatorMembership?.role || 'NONE',
-                isCreatorTenant,
-                propertyId: ticket.property_id
-            });
 
             // 1. Resolve recipients with roles
             const prospectiveRecipients = await this.getRelevantRecipientsWithRoles(ticket.property_id);
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] Total prospective recipients found:', prospectiveRecipients.length);
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] Members Raw:', JSON.stringify(prospectiveRecipients));
 
             // Filter recipients based on user requirements:
             // "Tenant only receive the notification about the ticket created by himself and other tenant, not created by others"
@@ -79,12 +68,10 @@ export class NotificationService {
                 if (isRecipientTenant) {
                     // Internal tickets: never notify tenants
                     if (isInternal) {
-                        console.log(`>>>>>>>>>> [NOTIFICATION TEST] Skipping tenant ${r.userId} — ticket is internal`);
                         return false;
                     }
                     // "Tenant only receive the notification about the ticket created by himself"
                     const shouldNotify = r.userId === creatorId;
-                    console.log(`>>>>>>>>>> [NOTIFICATION TEST] Tenant recipient check for ${r.userId}: ${shouldNotify} (Is Creator: ${r.userId === creatorId})`);
                     return shouldNotify;
                 }
                 return true; // Staff/Admin/MST see everything
@@ -102,10 +89,8 @@ export class NotificationService {
                         recipients.push(String(m.user_id));
                     }
                 });
-                console.log('>>>>>>>>>> [NOTIFICATION TEST] org_super_admin recipients added:', orgAdmins?.length || 0);
             }
 
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] Final recipients after filtering:', recipients);
             const APP_URL = (process.env.APP_URL || '').replace(/\/$/, '');
 
             // 2. Pre-build WhatsApp payload ONCE — poll for media up to 3x (ticket creation
@@ -131,8 +116,6 @@ export class NotificationService {
 
             // 3. Broadcast Logic
             if (assigneeId) {
-                console.log('>>>>>>>>>> [NOTIFICATION TEST] Flow: Created & Assigned');
-                console.log('>>>>>>>>>> [NOTIFICATION TEST] Dispatching ASSIGNED to assignee:', assigneeId);
                 await this.send({
                     userId: assigneeId,
                     ticketId: ticket.id,
@@ -150,7 +133,6 @@ export class NotificationService {
                 });
 
                 const others = recipients.filter((id: string) => id !== assigneeId);
-                console.log(`>>>>>>>>>> [NOTIFICATION TEST] Dispatching CREATED to ${others.length} others.`);
                 for (const userId of others) {
                     const isWhatsAppTicket = ticket.classification_source === 'whatsapp';
                     const isCreator = userId === creatorId;
@@ -172,8 +154,6 @@ export class NotificationService {
                     });
                 }
             } else {
-                console.log('>>>>>>>>>> [NOTIFICATION TEST] Flow: Created (Unassigned)');
-                console.log(`>>>>>>>>>> [NOTIFICATION TEST] Dispatching CREATED to all ${recipients.length} recipients.`);
                 for (const userId of recipients) {
                     const isWhatsAppTicket = ticket.classification_source === 'whatsapp';
                     const isCreator = userId === creatorId;
@@ -205,7 +185,6 @@ export class NotificationService {
      * Sends WhatsApp messages to all recipients with the photo attached (no push/DB).
      */
     static async afterTicketPhotoUploaded(ticketId: string) {
-        console.log('>>>>>>>>>> [WHATSAPP] afterTicketPhotoUploaded for:', ticketId);
         try {
             const { data: ticket, error } = await supabaseAdmin
                 .from('tickets')
@@ -221,7 +200,6 @@ export class NotificationService {
             const photo = ticket.photo_before_url || ticket.photo_after_url;
             const video = ticket.video_before_url || ticket.video_after_url;
             if (!photo && !video) {
-                console.log('[NotificationService] afterTicketPhotoUploaded: no media yet, skipping');
                 return;
             }
 
@@ -258,7 +236,6 @@ export class NotificationService {
                 assigneeName ? `👷 Assigned to: *${assigneeName}*` : '',
             ].filter(Boolean).join('\n');
 
-            console.log('>>>>>>>>>> [WHATSAPP] Sending photo notification to', recipients.length, 'recipients');
 
             await WhatsAppService.sendToUsers(recipients, {
                 message,
@@ -275,7 +252,6 @@ export class NotificationService {
      * Triggered after a ticket is added to waitlist.
      */
     static async afterTicketWaitlisted(ticketId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketWaitlisted for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -297,7 +273,6 @@ export class NotificationService {
             const waBody = this.buildWhatsAppBody(ticket);
             const { mediaUrl: waMediaUrl, mediaType: waMediaType } = this.extractMedia(ticket);
 
-            console.log(`>>>>>>>>>> [NOTIFICATION TEST] Sending WAITLISTED notification to ${recipients.length} recipients.`);
             for (const userId of recipients) {
                 await this.send({
                     userId,
@@ -321,7 +296,6 @@ export class NotificationService {
      * Sends WhatsApp + push only to the new assignee.
      */
     static async afterTicketReassigned(ticketId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION] afterTicketReassigned for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -356,7 +330,6 @@ export class NotificationService {
     }
 
     static async afterTicketAssigned(ticketId: string, isAutoAssigned: boolean = false) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketAssigned for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -400,7 +373,6 @@ export class NotificationService {
 
             // 2. Notify Others
             const others = filteredRecipients.filter(id => id !== assigneeId);
-            console.log(`>>>>>>>>>> [NOTIFICATION TEST] Sending ASSIGNED notification to ${others.length} others.`);
             for (const userId of others) {
                 await this.send({
                     userId,
@@ -420,7 +392,6 @@ export class NotificationService {
     }
 
     static async afterTicketCompleted(ticketId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketCompleted for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -449,8 +420,6 @@ export class NotificationService {
             const waMediaUrl: string | undefined = afterPhoto || afterVideo || undefined;
             const waMediaType: 'image' | 'video' | undefined = afterPhoto ? 'image' : afterVideo ? 'video' : undefined;
 
-            console.log(`>>>>>>>>>> [NOTIFICATION TEST] Final COMPLETED recipients (${recipients.length}):`, recipients);
-            console.log(`>>>>>>>>>> [NOTIFICATION TEST] After media: photo=${afterPhoto}, video=${afterVideo}`);
             for (const userId of recipients) {
                 await this.send({
                     userId,
@@ -473,7 +442,6 @@ export class NotificationService {
      * Triggered when MST completes a ticket — notifies the tenant to validate.
      */
     static async afterTicketPendingValidation(ticketId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketPendingValidation for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -514,7 +482,6 @@ export class NotificationService {
      * Triggered when tenant validates (approves or rejects) a ticket.
      */
     static async afterTicketValidated(ticketId: string, approved: boolean) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterTicketValidated for:', ticketId, 'approved:', approved);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -568,7 +535,6 @@ export class NotificationService {
      * Sends an urgent alert to all property staff/admins/MST — not to tenants.
      */
     static async afterCriticalTicketCreated(ticketId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION] afterCriticalTicketCreated for:', ticketId);
         try {
             const { data: ticket, error: ticketError } = await supabaseAdmin
                 .from('tickets')
@@ -592,7 +558,6 @@ export class NotificationService {
                 .in('role', ['property_admin', 'staff', 'mst', 'security']);
 
             const recipientIds = (members || []).map(m => String(m.user_id));
-            console.log(`>>>>>>>>>> [NOTIFICATION] Sending CRITICAL alert to ${recipientIds.length} staff/admin recipients`);
 
             for (const userId of recipientIds) {
                 await this.send({
@@ -612,7 +577,6 @@ export class NotificationService {
     }
 
     static async afterRoomBooked(bookingId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] afterRoomBooked starting for:', bookingId);
         try {
             const { data: booking, error: bookingError } = await supabaseAdmin
                 .from('meeting_room_bookings')
@@ -671,8 +635,6 @@ export class NotificationService {
 
             const uniqueRecipients = Array.from(new Set(finalRecipients));
 
-            console.log(`>>>>>>>>>> [NOTIFICATION TEST] Found ${members?.length || 0} members, ${technicalUserIds.size} technical ones.`);
-            console.log(`>>>>>>>>>> [NOTIFICATION TEST] Sending BOOKING notification to ${uniqueRecipients.length} recipients.`);
 
             for (const userId of uniqueRecipients) {
                 await this.send({
@@ -690,17 +652,255 @@ export class NotificationService {
         }
     }
 
+
+    static async afterMaterialRequestCreated(requestId: string) {
+        try {
+            const { data: request, error } = await supabaseAdmin
+                .from('material_requests')
+                .select('*, requester:users!material_requests_requested_by_fkey(full_name), properties(name)')
+                .eq('id', requestId)
+                .single();
+
+            if (error || !request) return;
+
+            const recipientIds = new Set<string>();
+            if (request.target_approver_ids && request.target_approver_ids.length > 0) {
+                request.target_approver_ids.forEach((id: string) => recipientIds.add(String(id)));
+            } else if (request.target_approver_id) {
+                recipientIds.add(String(request.target_approver_id));
+            }
+
+            // Also find all property admins
+            const { data: propMembers } = await supabaseAdmin
+                .from('property_memberships')
+                .select('user_id, role')
+                .eq('property_id', request.property_id)
+                .in('role', ['property_admin', 'procurement']);
+            
+            (propMembers || []).forEach(m => recipientIds.add(String(m.user_id)));
+
+            // Procurement users are stored in organization_memberships, not property_memberships
+            if (request.organization_id) {
+                const { data: orgMembers } = await supabaseAdmin
+                    .from('organization_memberships')
+                    .select('user_id, role')
+                    .eq('organization_id', request.organization_id)
+                    .eq('role', 'procurement');
+                
+                (orgMembers || []).forEach(m => recipientIds.add(String(m.user_id)));
+            }
+
+            const amount = request.total_amount ? `(\u20b9${request.total_amount.toLocaleString()})` : '';
+
+            await this.sendToMany(Array.from(recipientIds), {
+                ticketId: request.ticket_id,
+                propertyId: request.property_id,
+                organizationId: request.organization_id,
+                type: 'MATERIAL_REQUEST_PENDING',
+                title: 'Material Request Pending Quotation 📥',
+                message: `${request.requester?.full_name || 'A team member'} has requested materials ${amount} for ${request.properties?.name || 'the property'}. Please add vendor quotation.`,
+                deepLink: `/procurement?tab=orders`,
+                priority: 'HIGH',
+            });
+        } catch (err) {
+            console.error('[NS] afterMaterialRequestCreated error:', err);
+        }
+    }
+
+    static async afterMaterialRequestQuoted(requestId: string) {
+        try {
+            const { data: request, error } = await supabaseAdmin
+                .from('material_requests')
+                .select('*, requester:users!material_requests_requested_by_fkey(full_name), properties(name)')
+                .eq('id', requestId)
+                .single();
+
+            if (error || !request) return;
+
+            const recipientIds = new Set<string>();
+            if (request.requested_by) recipientIds.add(String(request.requested_by));
+            if (request.assignee_uid) recipientIds.add(String(request.assignee_uid));
+
+            const amount = request.total_amount ? `(₹${request.total_amount.toLocaleString()})` : '';
+
+            await this.sendToMany(Array.from(recipientIds), {
+                ticketId: request.ticket_id,
+                propertyId: request.property_id,
+                organizationId: request.organization_id,
+                type: 'MATERIAL_REQUEST_QUOTED',
+                title: 'Quotation Added & Budget Deducted ✅',
+                message: `Procurement has added a quotation ${amount} for ${request.properties?.name || 'the property'}. Budget has been deducted.`,
+                deepLink: `/procurement?tab=orders`,
+                priority: 'NORMAL',
+            });
+        } catch (err) {
+            console.error('[NS] afterMaterialRequestQuoted error:', err);
+        }
+    }
+
+    static async afterMaterialRequestEscalated(requestId: string) {
+        try {
+            const { data: request, error } = await supabaseAdmin
+                .from('material_requests')
+                .select('*, requester:users!material_requests_requested_by_fkey(full_name), properties(name)')
+                .eq('id', requestId)
+                .single();
+
+            if (error || !request) return;
+
+            const recipientIds = new Set<string>();
+            if (request.target_approver_ids && request.target_approver_ids.length > 0) {
+                request.target_approver_ids.forEach((id: string) => recipientIds.add(String(id)));
+            } else if (request.target_approver_id) {
+                recipientIds.add(String(request.target_approver_id));
+            }
+
+            // Also find all property admins
+            const { data: propMembers } = await supabaseAdmin
+                .from('property_memberships')
+                .select('user_id, role')
+                .eq('property_id', request.property_id)
+                .in('role', ['property_admin', 'procurement']);
+            
+            (propMembers || []).forEach(m => recipientIds.add(String(m.user_id)));
+
+            // Procurement users are stored in organization_memberships, not property_memberships
+            if (request.organization_id) {
+                const { data: orgMembers } = await supabaseAdmin
+                    .from('organization_memberships')
+                    .select('user_id, role')
+                    .eq('organization_id', request.organization_id)
+                    .eq('role', 'procurement');
+                
+                (orgMembers || []).forEach(m => recipientIds.add(String(m.user_id)));
+            }
+
+            const amount = request.total_amount ? `(₹${request.total_amount.toLocaleString()})` : '';
+
+            // Also notify the original requester that their request has been escalated
+            if (request.requested_by) {
+                await this.send({
+                    userId: String(request.requested_by),
+                    ticketId: request.ticket_id,
+                    propertyId: request.property_id,
+                    organizationId: request.organization_id,
+                    type: 'MATERIAL_REQUEST_STATUS_CHANGE',
+                    title: 'Material Request Escalated ⏳',
+                    message: `Your material request ${amount} has been escalated to higher management for approval.`,
+                    deepLink: `/procurement?tab=orders`,
+                    priority: 'NORMAL',
+                });
+            }
+
+            // Notify the new target approver(s) and admins that a request was escalated to them for approval
+            await this.sendToMany(Array.from(recipientIds), {
+                ticketId: request.ticket_id,
+                propertyId: request.property_id,
+                organizationId: request.organization_id,
+                type: 'MATERIAL_REQUEST_PENDING',
+                title: 'Material Request Escalated — Approval Needed 📥',
+                message: `A material request from ${request.requester?.full_name || 'a team member'} ${amount} has been escalated to you for approval at ${request.properties?.name || 'the property'}. Please review and approve.`,
+                deepLink: `/procurement?tab=orders`,
+                priority: 'HIGH',
+            });
+        } catch (err) {
+            console.error('[NS] afterMaterialRequestEscalated error:', err);
+        }
+    }
+
+    static async afterMaterialRequestAssigned(requestId: string) {
+        try {
+            const { data: request, error } = await supabaseAdmin
+                .from('material_requests')
+                .select('*, requester:users!material_requests_requested_by_fkey(full_name), properties(name)')
+                .eq('id', requestId)
+                .single();
+
+            if (error || !request || !request.assignee_uid) return;
+
+            await this.send({
+                userId: String(request.assignee_uid),
+                ticketId: request.ticket_id,
+                propertyId: request.property_id,
+                organizationId: request.organization_id,
+                type: 'MATERIAL_REQUEST_ASSIGNED',
+                title: 'Material Request Approved — Action Required 📦',
+                message: `A material request from ${request.requester?.full_name || 'someone'} has been approved and assigned to you for ${request.properties?.name || 'the property'}. Please proceed with ordering.`,
+                deepLink: `/procurement?tab=orders`,
+                priority: 'HIGH',
+            });
+        } catch (err) {
+            console.error('[NS] afterMaterialRequestAssigned error:', err);
+        }
+    }
+
+    static async afterMaterialRequestStatusChanged(requestId: string, status: string) {
+        try {
+            const { data: request, error } = await supabaseAdmin
+                .from('material_requests')
+                .select('*, properties(name)')
+                .eq('id', requestId)
+                .single();
+
+            if (error || !request) return;
+
+            const recipientIds = new Set<string>();
+            if (request.requested_by) recipientIds.add(String(request.requested_by));
+            if (request.assignee_uid) recipientIds.add(String(request.assignee_uid));
+
+            // If ordered/delivered, notify all procurement users and property admins
+            if (['ordered', 'delivered'].includes(status)) {
+                // 1. Property-level Admins & Procurement
+                const { data: propMembers } = await supabaseAdmin
+                    .from('property_memberships')
+                    .select('user_id')
+                    .eq('property_id', request.property_id)
+                    .in('role', ['property_admin', 'procurement']);
+                
+                (propMembers || []).forEach(m => recipientIds.add(String(m.user_id)));
+
+                // 2. Organization-level Procurement
+                if (request.organization_id) {
+                    const { data: orgMembers } = await supabaseAdmin
+                        .from('organization_memberships')
+                        .select('user_id')
+                        .eq('organization_id', request.organization_id)
+                        .eq('role', 'procurement');
+                    
+                    (orgMembers || []).forEach(m => recipientIds.add(String(m.user_id)));
+                }
+            }
+
+            const statusMap: Record<string, string> = {
+                pending_quotation: 'Pending Quotation ⏳',
+                quoted: 'Quoted & Budget Deducted ✅',
+                approved: 'Approved ✅',
+                rejected: 'Rejected ❌',
+                ordered: 'Ordered 📦',
+                delivered: 'Delivered/Received 🚚',
+                cancelled: 'Cancelled 🚫'
+            };
+
+            const statusLabel = statusMap[status] || status.replace('_', ' ');
+
+            for (const userId of Array.from(recipientIds)) {
+                await this.send({
+                    userId,
+                    ticketId: request.ticket_id,
+                    propertyId: request.property_id,
+                    organizationId: request.organization_id,
+                    type: 'MATERIAL_REQUEST_STATUS_CHANGE',
+                    title: `Material Request ${statusLabel}`,
+                    message: `Material request for ${request.properties?.name || 'the property'} has been marked as ${statusLabel}.`,
+                    deepLink: `/procurement?tab=orders`
+                });
+            }
+        } catch (err) {
+            console.error('[NotificationService] afterMaterialRequestStatusChanged error:', err);
+        }
+    }
+
     private static async getRelevantRecipientsWithRoles(propertyId: string) {
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] getRelevantRecipientsWithRoles for:', propertyId);
-
-        // 1. Log ALL roles for this property to see what's actually in DB
-        const { data: allMembers } = await supabaseAdmin
-            .from('property_memberships')
-            .select('role')
-            .eq('property_id', propertyId);
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] ALL roles in property:', allMembers?.map(m => m.role) || 'NONE');
-
-        // 2. Fetch target roles
         const { data: members, error } = await supabaseAdmin
             .from('property_memberships')
             .select('user_id, role')
@@ -708,19 +908,12 @@ export class NotificationService {
             .in('role', ['mst', 'property_admin', 'security', 'staff', 'tenant']);
 
         if (error) console.error('[NotificationService] Recipients query error:', error);
-
-        const results = (members || []).map((m: { user_id: string; role: string }) => ({
+        return (members || []).map((m: { user_id: string; role: string }) => ({
             userId: String(m.user_id),
             role: String(m.role)
         }));
-
-        console.log('>>>>>>>>>> [NOTIFICATION TEST] Filtered Query Result:', JSON.stringify(results));
-        return results;
     }
 
-
-
-    /** Fetch assignee phone directly if the join didn't return it */
     private static async injectAssigneePhone(ticket: any): Promise<void> {
         if (!ticket?.assigned_to || ticket?.assignee?.phone) return;
         const { data } = await supabaseAdmin
@@ -733,7 +926,6 @@ export class NotificationService {
         }
     }
 
-    /** Build the shared ticket body lines for WhatsApp messages */
     private static buildWhatsAppBody(ticket: any): string {
         const priorityEmoji: Record<string, string> = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
         const statusEmoji: Record<string, string> = { open: '📬', assigned: '👷', in_progress: '⚙️', resolved: '✅', closed: '🔒', waitlist: '⏳', blocked: '🚫' };
@@ -748,7 +940,6 @@ export class NotificationService {
         ].filter(Boolean).join('\n');
     }
 
-    /** Extract media URL + type from a ticket row */
     private static extractMedia(ticket: any): { mediaUrl?: string; mediaType?: 'image' | 'video' } {
         const photo = ticket?.photo_before_url || ticket?.photo_after_url;
         const video = ticket?.video_before_url || ticket?.video_after_url;
@@ -757,14 +948,8 @@ export class NotificationService {
         return {};
     }
 
-    /**
-     * Core send logic: DB insert + Push dispatch
-     */
     static async send(payload: NotificationPayload) {
         try {
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] send() executing for user:', payload.userId);
-
-            // 1. Insert into notifications table
             const { data: notification, error: notifError } = await supabaseAdmin
                 .from('notifications')
                 .insert({
@@ -783,10 +968,7 @@ export class NotificationService {
                 .single();
 
             if (notifError) {
-                console.error('>>>>>>>>>> [NOTIFICATION TEST] !!! DATABASE INSERT FAILED !!!');
-                console.error('>>>>>>>>>> Error Details:', JSON.stringify(notifError));
-                console.error('>>>>>>>>>> Payload tried:', JSON.stringify(payload));
-                // Still attempt WhatsApp via queue even if DB insert fails
+                console.error('[NS] DB insert failed:', notifError.message);
                 WhatsAppQueueService.enqueue({
                     ticketId: payload.ticketId ?? '',
                     userIds: [payload.userId],
@@ -794,57 +976,28 @@ export class NotificationService {
                     mediaUrl: payload.whatsapp?.mediaUrl,
                     mediaType: payload.whatsapp?.mediaType,
                     eventType: payload.type,
-                }).catch(err => console.error('[NotificationService] WhatsApp fallback queue error:', err));
+                }).catch(err => console.error('[NS] WhatsApp fallback error:', err));
                 return;
             }
 
-            console.log('>>>>>>>>>> [NOTIFICATION TEST] DB Insert Success. Notification ID:', notification.id);
-            console.log('>>>>>>>>>> Verification: Checking if notification exists in DB...');
-
-            const { data: verif } = await supabaseAdmin
-                .from('notifications')
-                .select('id')
-                .eq('id', notification.id)
-                .single();
-
-            if (verif) {
-                console.log('>>>>>>>>>> [NOTIFICATION TEST] Verification CONFIRMED. Row exists.');
-            } else {
-                console.error('>>>>>>>>>> [NOTIFICATION TEST] Verification FAILED. Row not found immediately after insert!');
-            }
-
-            // 2. Fetch push tokens for user
-            const { data: allTokens } = await supabaseAdmin
+            const { data: tokenRows } = await supabaseAdmin
                 .from('push_tokens')
                 .select('token, browser, updated_at, is_active')
                 .eq('user_id', payload.userId)
+                .eq('is_active', true)
                 .order('updated_at', { ascending: false });
 
-            const activeTokens = allTokens?.filter(t => t.is_active) || [];
-            const inactiveCount = (allTokens?.length || 0) - activeTokens.length;
-
-            console.log(`[NotificationService] Tokens for ${payload.userId}: ${activeTokens.length} active, ${inactiveCount} inactive.`);
-
-            if (activeTokens.length > 0) {
+            if (tokenRows?.length) {
                 const seenBrowsers = new Set<string>();
-                for (const t of activeTokens) {
-                    // Deduplicate by browser instance to prevent double notifications on the same device
-                    // if browse is null, we treat it as unique (likely from a legacy or non-browser client)
+                for (const t of tokenRows) {
                     if (t.browser) {
-                        if (seenBrowsers.has(t.browser)) {
-                            console.log(`[NotificationService] Skipping duplicate token for browser: ${t.browser.substring(0, 30)}...`);
-                            continue;
-                        }
+                        if (seenBrowsers.has(t.browser)) continue;
                         seenBrowsers.add(t.browser);
                     }
-
-                    await this.dispatchPushNotification(t.token, notification);
+                    await this.dispatchPushNotification(t.token, notification, payload.priority);
                 }
-            } else {
-                console.log('[NotificationService] No active tokens for user, skipping push.');
             }
 
-            // 3. Send WhatsApp via queue — awaited so Vercel doesn't cut it off
             try {
                 let waMessage: string;
                 let waMediaUrl: string | undefined;
@@ -867,10 +1020,10 @@ export class NotificationService {
                         waMessage = `*${payload.title}*\n\n${waBody}${link}`;
                         ({ mediaUrl: waMediaUrl, mediaType: waMediaType } = this.extractMedia(ticket));
                     } else {
-                        waMessage = payload.message;
+                        waMessage = `*${payload.title}*\n\n${payload.message}`;
                     }
                 } else {
-                    waMessage = payload.message;
+                    waMessage = `*${payload.title}*\n\n${payload.message}`;
                 }
 
                 await WhatsAppQueueService.enqueue({
@@ -882,19 +1035,170 @@ export class NotificationService {
                     eventType: payload.type,
                 });
             } catch (err) {
-                console.error('[NotificationService] WhatsApp queue enqueue error:', err);
+                console.error('[NS] WhatsApp queue error:', err);
             }
-
         } catch (error) {
-            console.error('[NotificationService] Global send error:', error);
+            console.error('[NS] Global send error:', error);
         }
     }
 
-    /**
-     * Dispatch to FCM
-     */
-    private static async dispatchPushNotification(token: string, notification: any) {
-        // Log delivery attempt
+    static async sendToMany(userIds: string[], payload: Omit<NotificationPayload, 'userId'>) {
+        if (!userIds.length) return;
+        const unique = [...new Set(userIds)];
+        
+        const rows = unique.map(userId => ({
+            user_id: userId,
+            ticket_id: payload.ticketId || null,
+            booking_id: payload.bookingId || null,
+            property_id: payload.propertyId,
+            organization_id: payload.organizationId,
+            notification_type: payload.type,
+            title: payload.title,
+            message: payload.message,
+            deep_link: payload.deepLink,
+            is_read: false,
+        }));
+
+        const { data: inserted, error: insertErr } = await supabaseAdmin
+            .from('notifications')
+            .insert(rows)
+            .select();
+
+        if (insertErr) {
+            console.error('[NS] sendToMany DB insert failed:', insertErr.message);
+            // Fallback to WhatsApp so bulk notifications don't silently vanish
+            try {
+                const waMessage = payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`;
+                await WhatsAppQueueService.enqueue({
+                    ticketId: payload.ticketId ?? '',
+                    userIds: unique,
+                    message: waMessage,
+                    mediaUrl: payload.whatsapp?.mediaUrl,
+                    mediaType: payload.whatsapp?.mediaType,
+                    eventType: payload.type,
+                });
+            } catch (waErr) {
+                console.error('[NS] sendToMany WhatsApp fallback error:', waErr);
+            }
+            return;
+        }
+
+        const { data: tokenRows } = await supabaseAdmin
+            .from('push_tokens')
+            .select('user_id, token, browser, is_active')
+            .in('user_id', unique)
+            .eq('is_active', true);
+
+        const notifByUser: Record<string, any> = {};
+        for (const n of inserted || []) notifByUser[n.user_id] = n;
+
+        const seenPerUser: Record<string, Set<string>> = {};
+        for (const t of tokenRows || []) {
+            const uid = t.user_id;
+            if (!seenPerUser[uid]) seenPerUser[uid] = new Set();
+            if (t.browser && seenPerUser[uid].has(t.browser)) continue;
+            if (t.browser) seenPerUser[uid].add(t.browser);
+
+            const notif = notifByUser[uid];
+            if (notif) await this.dispatchPushNotification(t.token, notif, payload.priority);
+        }
+
+        try {
+            const waMessage = payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`;
+            await WhatsAppQueueService.enqueue({
+                ticketId: payload.ticketId ?? '',
+                userIds: unique,
+                message: waMessage,
+                mediaUrl: payload.whatsapp?.mediaUrl,
+                mediaType: payload.whatsapp?.mediaType,
+                eventType: payload.type,
+            });
+        } catch (err) {
+            console.error('[NS] sendToMany WhatsApp queue error:', err);
+        }
+    }
+
+    static async afterVisitorCheckedIn(visitorLogId: string, propertyId: string, organizationId?: string) {
+        try {
+            const { data: log } = await supabaseAdmin
+                .from('visitor_logs')
+                .select('*, host:users!whom_to_meet_uid(id, full_name)')
+                .eq('id', visitorLogId)
+                .single();
+
+            if (!log) return;
+
+            // Recipient IDs: Security + Property Admin + Host
+            const recipientIds = new Set<string>();
+
+            // 1. Get Security and Property Admins
+            const { data: members } = await supabaseAdmin
+                .from('property_memberships')
+                .select('user_id')
+                .eq('property_id', propertyId)
+                .in('role', ['property_admin', 'security']);
+
+            (members || []).forEach(m => recipientIds.add(String(m.user_id)));
+
+            // 2. Add Host (if UID exists)
+            if (log.whom_to_meet_uid) {
+                recipientIds.add(String(log.whom_to_meet_uid));
+            }
+
+            if (!recipientIds.size) return;
+
+            const hostLabel = log.host?.full_name || log.whom_to_meet || 'someone';
+
+            await this.sendToMany(Array.from(recipientIds), {
+                propertyId,
+                organizationId,
+                type: 'VISITOR_CHECKED_IN',
+                title: 'Visitor Arrived 🏢',
+                message: `${log.name} has checked in to meet ${hostLabel}.${log.coming_from ? ` Coming from: ${log.coming_from}` : ''}`,
+                deepLink: `/property-admin/visitors`,
+                priority: 'NORMAL',
+            });
+        } catch (err) {
+            console.error('[NS] afterVisitorCheckedIn error:', err);
+        }
+    }
+
+    static async afterTicketSLABreached(ticketId: string, slaMinutes: number) {
+        try {
+            const { data: ticket } = await supabaseAdmin
+                .from('tickets')
+                .select('id, title, ticket_number, property_id, organization_id, assigned_to, properties(name)')
+                .eq('id', ticketId)
+                .single();
+
+            if (!ticket) return;
+
+            const { data: members } = await supabaseAdmin
+                .from('property_memberships')
+                .select('user_id')
+                .eq('property_id', ticket.property_id)
+                .in('role', ['property_admin']);
+
+            const recipientIds = new Set<string>((members || []).map(m => String(m.user_id)));
+            if (ticket.assigned_to) recipientIds.add(String(ticket.assigned_to));
+
+            await this.sendToMany([...recipientIds], {
+                ticketId: ticket.id,
+                propertyId: ticket.property_id,
+                organizationId: ticket.organization_id,
+                type: 'SLA_BREACH',
+                title: '⚠️ SLA Breached',
+                message: `Ticket "${ticket.title}" (${ticket.ticket_number}) has exceeded its ${slaMinutes}-minute SLA at ${(ticket.properties as any)?.name}.`,
+                deepLink: `/tickets/${ticket.id}?via=sla`,
+                priority: 'CRITICAL',
+            });
+        } catch (err) {
+            console.error('[NS] afterTicketSLABreached error:', err);
+        }
+    }
+
+    private static async dispatchPushNotification(token: string, notification: any, priority: "LOW" | "NORMAL" | "HIGH" | "CRITICAL" = 'NORMAL') {
+        const fcmPriority: 'high' | 'normal' = (priority === 'CRITICAL' || priority === 'HIGH') ? 'high' : 'normal';
         const { data: delivery } = await supabaseAdmin
             .from('notification_delivery')
             .insert({
@@ -906,96 +1210,55 @@ export class NotificationService {
             .single();
 
         try {
-            console.log('[FCM] Dispatching to token:', token.substring(0, 10) + '...');
-            // Integrate with FCM Admin SDK
-            await firebaseAdmin.messaging().send({
-                token: token,
+            const message = {
+                token,
+                notification: {
+                    title: notification.title,
+                    body: notification.message,
+                },
                 data: {
-                    title: String(notification.title || ''),
-                    message: String(notification.message || ''),
-                    deep_link: String(notification.deep_link || ''),
-                    url: String(notification.deep_link || ''),
-                    notification_id: String(notification.id || '')
+                    notificationId: notification.id,
+                    type: notification.notification_type,
+                    deepLink: notification.deep_link || '',
+                    ticketId: notification.ticket_id || '',
+                    bookingId: notification.booking_id || '',
                 },
                 android: {
-                    priority: 'high',
+                    priority: fcmPriority,
                     notification: {
-                        icon: 'stock_ticker_update',
-                        color: '#2563eb',
-                        sound: 'default'
-                    }
-                },
-                webpush: {
-                    headers: {
-                        Urgency: 'high'
+                        channelId: priority === 'CRITICAL' ? 'emergency' : 'default',
+                        clickAction: 'FLUTTER_NOTIFICATION_CLICK',
                     },
-                    notification: {
-                        title: `Autopilot FMS | ${notification.title}`,
-                        body: notification.message,
-                        icon: '/autopilot-logo.png',
-                        badge: '/autopilot-logo.png',
-                        requireInteraction: true,
-                        tag: String(notification.id || 'autopilot-fms'),
-                        renotify: true,
-                        actions: [
-                            {
-                                action: 'view',
-                                title: 'View Request'
-                            }
-                        ]
-                    }
-                }
-            });
+                },
+                apns: {
+                    payload: {
+                        aps: {
+                            sound: priority === 'CRITICAL' ? 'emergency.caf' : 'default',
+                            'content-available': 1,
+                        },
+                    },
+                },
+            };
 
-            console.log(`[FCM] Sent push successfully to ${token.substring(0, 10)}...`);
-
-            // Mark as delivered
+            await firebaseAdmin.messaging().send(message);
             if (delivery) {
                 await supabaseAdmin
                     .from('notification_delivery')
-                    .update({
-                        delivery_status: 'DELIVERED',
-                        delivered_at: new Date().toISOString()
-                    })
+                    .update({ delivery_status: 'SENT' })
                     .eq('id', delivery.id);
             }
         } catch (error: any) {
-            // Check for stale/unregistered token FIRST before logging
-            const errorCode = error?.code || error?.errorInfo?.code || '';
-            const errorMessage = error?.message || '';
-            const isStale =
-                errorCode === 'messaging/registration-token-not-registered' ||
-                errorCode === 'messaging/unregistered' ||
-                errorCode === 'messaging/invalid-registration-token' ||
-                errorMessage.includes('NotRegistered') ||
-                errorMessage.includes('Requested entity was not found') ||
-                errorMessage.includes('not a valid FCM registration token');
-
-            if (isStale) {
-                // Known case — token expired/uninstalled, not a real error
-                console.warn('[FCM] Stale token detected, deactivating:', token.substring(0, 10) + '...');
-                await supabaseAdmin
-                    .from('push_tokens')
-                    .update({ is_active: false })
-                    .eq('token', token);
-            } else {
-                // Genuinely unexpected failure
-                console.error('[FCM] Push dispatch failed:', error);
-            }
-
+            console.error('[FCM] Push dispatch failed:', error);
             if (delivery) {
                 await supabaseAdmin
                     .from('notification_delivery')
-                    .update({ delivery_status: isStale ? 'STALE_TOKEN' : 'FAILED' })
+                    .update({ delivery_status: 'FAILED' })
                     .eq('id', delivery.id);
             }
         }
     }
 
-    /**
-     * Notify the SOP checklist completer when an admin rates one of their items.
-     */
-    static async afterSOPItemRated(
+static async afterSOPItemRated(
         completionId: string,
         _completionItemId: string,
         rating: 1 | 2 | 3,
@@ -1043,6 +1306,43 @@ export class NotificationService {
             });
         } catch (err) {
             console.error('[NotificationService] afterSOPItemRated error:', err);
+        }
+    }
+    static async afterSOPReminderTriggered(templateId: string, propertyId: string, organizationId?: string, assignedUserIds: string[] = []) {
+        try {
+            const { data: template } = await supabaseAdmin
+                .from('sop_templates')
+                .select('title')
+                .eq('id', templateId)
+                .single();
+
+            if (!template) return;
+
+            let recipientIds = [...assignedUserIds];
+
+            if (!recipientIds.length) {
+                // Find all staff, admins, mst in property
+                const { data: members } = await supabaseAdmin
+                    .from('property_memberships')
+                    .select('user_id')
+                    .eq('property_id', propertyId)
+                    .in('role', ['property_admin', 'staff', 'mst']);
+                recipientIds = (members || []).map(m => String(m.user_id));
+            }
+
+            if (!recipientIds.length) return;
+
+            await this.sendToMany(recipientIds, {
+                propertyId,
+                organizationId,
+                type: 'SOP_REMINDER',
+                title: 'Checklist Reminder 🕒',
+                message: `Checklist "${template.title}" is due in 30 minutes. Please ensure it is completed on time.`,
+                deepLink: `/properties/${propertyId}/sop`,
+                priority: 'HIGH',
+            });
+        } catch (err) {
+            console.error('[NS] afterSOPReminderTriggered error:', err);
         }
     }
 }

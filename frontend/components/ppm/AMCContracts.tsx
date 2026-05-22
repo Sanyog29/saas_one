@@ -191,7 +191,7 @@ export default function AMCContracts({ organizationId, propertyId, properties = 
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Delete this AMC contract? This cannot be undone.')) return;
+        if (!confirm('Delete this Annual Maintenance Contract? This cannot be undone.')) return;
         await fetch(`/api/amc/contracts/${id}`, { method: 'DELETE' });
         if (selectedContract === id) setSelectedContract(null);
         await fetchContracts();
@@ -220,8 +220,8 @@ export default function AMCContracts({ organizationId, propertyId, properties = 
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-black text-slate-900">AMC Contracts</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Annual Maintenance Contract management</p>
+                    <h2 className="text-xl font-black text-slate-900">Annual Maintenance Contracts</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Full contract lifecycle management</p>
                 </div>
                 <button
                     onClick={openAdd}
@@ -241,7 +241,7 @@ export default function AMCContracts({ organizationId, propertyId, properties = 
             {!isLoading && contracts.length === 0 && (
                 <div className="text-center py-20 text-slate-400">
                     <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm font-semibold">No AMC contracts found</p>
+                    <p className="text-sm font-semibold">No maintenance contracts found</p>
                     <p className="text-xs mt-1">Add your first contract to get started</p>
                 </div>
             )}
@@ -393,7 +393,7 @@ export default function AMCContracts({ organizationId, propertyId, properties = 
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-5 border-b border-slate-100 sticky top-0 bg-white z-10">
                             <div>
-                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{editingContract ? 'Edit' : 'New'} AMC Contract</p>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{editingContract ? 'Edit' : 'New'} Annual Maintenance Contract</p>
                                 <h3 className="text-lg font-black text-slate-900">{editingContract ? editingContract.system_name : 'Add Contract'}</h3>
                             </div>
                             <button onClick={() => setShowAddModal(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">

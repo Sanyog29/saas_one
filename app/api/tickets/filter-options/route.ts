@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         const LIMIT = 5000;
         let ticketQuery = queryClient
             .from('tickets')
-            .select('raised_by, assigned_to')
+            .select('raised_by, assigned_to, floor_number')
             .limit(LIMIT);
 
         if (propertyId) ticketQuery = ticketQuery.eq('property_id', propertyId);
@@ -41,6 +41,9 @@ export async function GET(request: NextRequest) {
 
         const creatorIds = [...new Set((ticketUsers || []).map((t: any) => t.raised_by).filter(Boolean))];
         const assigneeIds = [...new Set((ticketUsers || []).map((t: any) => t.assigned_to).filter(Boolean))];
+        const hasUnspecified = (ticketUsers || []).some((t: any) => t.floor_number === null || t.floor_number === undefined || t.floor_number === '');
+        const floors = [...new Set((ticketUsers || []).map((t: any) => t.floor_number).filter(v => v !== null && v !== undefined && v !== ''))]
+            .sort((a, b) => Number(a) - Number(b));
 
         // Fetch names in parallel
         const [creatorsResult, assigneesResult] = await Promise.all([
@@ -55,6 +58,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({
             creators: (creatorsResult.data || []).filter((u: any) => u.full_name),
             assignees: (assigneesResult.data || []).filter((u: any) => u.full_name),
+            floors: floors,
+            hasUnspecified: hasUnspecified
         });
     } catch (error) {
         console.error('filter-options error:', error);

@@ -13,13 +13,8 @@ export async function GET(
 ) {
     const { propertyId } = await params;
 
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
-
     const supabase = await createClient();
-    const { data: { user }, error: authError } = token 
-        ? await supabase.auth.getUser(token)
-        : await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
         console.error('[VMS API] Auth error:', authError?.message || 'No user found');
@@ -38,46 +33,20 @@ export async function GET(
         startDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         startDate.setHours(0, 0, 0, 0);
     }
-    // 'all' → no date filter
+    const periodFilter = startDate ? startDate.toISOString() : null;
 
-    // Paginate to bypass 1000-row cap
-    const PAGE_SIZE = 1000;
-    let allVisitors: any[] = [];
-    let from = 0;
-
-    while (true) {
-        let q = supabaseAdmin
-            .from('visitor_logs')
-            .select('id, status, checkin_time, checkout_time, category')
-            .eq('property_id', propertyId)
-            .range(from, from + PAGE_SIZE - 1);
-
-        if (startDate) q = q.gte('checkin_time', startDate.toISOString());
-
-        const { data: page, error } = await q;
-        if (error || !page || page.length === 0) break;
-        allVisitors = allVisitors.concat(page);
-        if (page.length < PAGE_SIZE) break;
-        from += PAGE_SIZE;
-    }
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const total = allVisitors.length;
-    const todayCount = allVisitors.filter(v => new Date(v.checkin_time) >= todayStart).length;
-
-    // Use checkout_time as the single source of truth.
-    // checkout_time is always set on checkout (force or regular), status string is unreliable.
-    const checkedIn = allVisitors.filter(v => !v.checkout_time).length;   // still inside
-    const checkedOut = allVisitors.filter(v => !!v.checkout_time).length; // left
+    // --- Optimized Aggregation using SQL-side counts ---
+    const [totalStatsRes, checkedInRes, checkedOutRes] = await Promise.all([
+        supabaseAdmin.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).gte('checkin_time', periodFilter || '1970-01-01'),
+        supabaseAdmin.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).gte('checkin_time', periodFilter || '1970-01-01').is('checkout_time', null),
+        supabaseAdmin.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).gte('checkin_time', periodFilter || '1970-01-01').not('checkout_time', 'is', null),
+    ]);
 
     return NextResponse.json({
         property_id: propertyId,
         period,
-        total_visitors: total,
-        visitors_today: todayCount,
-        checked_in: checkedIn,
-        checked_out: checkedOut,
+        total_visitors: totalStatsRes.count || 0,
+        checked_in: checkedInRes.count || 0,
+        checked_out: checkedOutRes.count || 0,
     });
 }

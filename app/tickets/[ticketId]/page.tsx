@@ -28,6 +28,8 @@ import {
   Navigation2,
   Building2,
   Plus,
+  Eye,
+  ShoppingBag,
   MoreHorizontal,
   Share2,
   AlertTriangle,
@@ -40,6 +42,8 @@ import {
   PackagePlus,
   Mic,
   ArrowRight,
+  Package,
+  ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { compressImage } from "@/frontend/utils/image-compression";
@@ -50,6 +54,9 @@ import MediaCaptureModal, {
 import VideoPreviewModal from "@/frontend/components/shared/VideoPreviewModal";
 import ShareModal from "@/frontend/components/shared/ShareModal";
 import { playTickleSound } from "@/frontend/utils/sounds";
+import ProcurementCatalogModal from "@/frontend/components/procurement/ProcurementCatalogModal";
+import ConfirmModal from "@/frontend/components/ui/ConfirmModal";
+import { Toast } from "@/frontend/components/ui/Toast";
 
 // Types
 interface Ticket {
@@ -150,6 +157,7 @@ export default function TicketDetailPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showMobileChat, setShowMobileChat] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [uploading, setUploading] = useState(false);
 
@@ -203,6 +211,9 @@ export default function TicketDetailPage() {
   const [activeCameraType, setActiveCameraType] = useState<
     "before" | "after" | null
   >(null);
+  const [materialRequests, setMaterialRequests] = useState<any[]>([]);
+  const [expandedMaterials, setExpandedMaterials] = useState<Set<string>>(new Set());
+  const [deleteRequestId, setDeleteRequestId] = useState<string | null>(null);
 
   function startPeek(url: string) {
     peekTimerRef.current = setTimeout(() => setPeekUrl(url), 350);
@@ -425,6 +436,7 @@ export default function TicketDetailPage() {
         fetchActivities(),
         fetchComments(),
         fetchEscalationLogs(),
+        fetchMaterialRequests(),
       ]);
     } catch (err: any) {
       // Supabase errors have non-enumerable props — extract them explicitly
@@ -487,6 +499,42 @@ export default function TicketDetailPage() {
       console.error("Material request error", e);
     } finally {
       setSubmittingMaterial(false);
+    }
+  };
+
+  const handleDeleteMaterialRequest = async (id: string, requesterId: string) => {
+    if (requesterId !== userId) {
+      showToast("Creator only can delete this request", "error");
+      return;
+    }
+
+    setDeleteRequestId(id);
+  };
+
+  const executeDeleteRequest = async () => {
+    if (!deleteRequestId) return;
+    
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/procurement/requests/${deleteRequestId}`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        setMaterialRequests((prev) => prev.filter((r) => r.id !== deleteRequestId));
+        showToast("Material request deleted", "success");
+        fetchActivities();
+        fetchComments();
+      } else {
+        const data = await res.json();
+        showToast(data.message || "Failed to delete request", "error");
+      }
+    } catch (err) {
+      console.error("Delete request error:", err);
+      showToast("Failed to delete request", "error");
+    } finally {
+      setIsDeleting(false);
+      setDeleteRequestId(null);
     }
   };
 
@@ -590,6 +638,18 @@ export default function TicketDetailPage() {
           setUserNameMap(newMap);
         }
       }
+    }
+  };
+
+  const fetchMaterialRequests = async () => {
+    try {
+      const res = await fetch(`/api/procurement/requests?ticketId=${ticketId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMaterialRequests(data || []);
+      }
+    } catch (err) {
+      console.error("Error fetching material requests:", err);
     }
   };
 
@@ -879,7 +939,27 @@ export default function TicketDetailPage() {
     }
   };
 
-  const handleEditSubmit = async () => {
+    const handleMaterialAction = async (requestId: string, status: string) => {
+        try {
+            const res = await fetch(`/api/procurement/requests/${requestId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (res.ok) {
+                fetchMaterialRequests();
+                showToast(`Order ${status.replace('_', ' ')}`, 'success');
+            } else {
+                const data = await res.json();
+                throw new Error(data.error || 'Action failed');
+            }
+        } catch (err: any) {
+            console.error(err);
+            showToast(err.message || 'Failed to update order status', 'error');
+        }
+    };
+
+    const handleEditSubmit = async () => {
     if (!editTitle.trim()) return;
     setIsUpdatingContent(true);
     try {
@@ -925,6 +1005,14 @@ export default function TicketDetailPage() {
   };
 
   const processFile = async (file: File, type: "before" | "after") => {
+    const updateField =
+      type === "before" ? "photo_before_url" : "photo_after_url";
+    const oldVal = ticket ? ticket[updateField] : null;
+
+    // Optimistic Update: Show local preview immediately
+    const tempUrl = URL.createObjectURL(file);
+    setTicket((prev) => (prev ? { ...prev, [updateField]: tempUrl } : null));
+
     setUploading(true);
     try {
       const compressedFile = await compressImage(file, {
@@ -944,8 +1032,6 @@ export default function TicketDetailPage() {
         data: { publicUrl },
       } = supabase.storage.from("ticket_photos").getPublicUrl(fileName);
 
-      const updateField =
-        type === "before" ? "photo_before_url" : "photo_after_url";
       const { error: dbError } = await supabase
         .from("tickets")
         .update({ [updateField]: publicUrl })
@@ -955,6 +1041,8 @@ export default function TicketDetailPage() {
 
       const takenAt = new Date(file.lastModified).toISOString();
       await logActivity(`photo_${type}_uploaded`, takenAt, publicUrl);
+
+      // Final update with actual public URL
       setTicket((prev) =>
         prev ? { ...prev, [updateField]: publicUrl } : null,
       );
@@ -963,14 +1051,25 @@ export default function TicketDetailPage() {
         "success",
       );
     } catch (err: any) {
+      // Revert to old value on error
+      setTicket((prev) => (prev ? { ...prev, [updateField]: oldVal } : null));
       console.error("Photo Upload Error:", err);
       showToast(err.message || "Failed to upload photo", "error");
     } finally {
       setUploading(false);
+      URL.revokeObjectURL(tempUrl);
     }
   };
 
   const processVideo = async (file: File, type: "before" | "after") => {
+    const updateField =
+      type === "before" ? "video_before_url" : "video_after_url";
+    const oldVal = ticket ? ticket[updateField] : null;
+
+    // Optimistic Update: Show local video preview immediately
+    const tempUrl = URL.createObjectURL(file);
+    setTicket((prev) => (prev ? { ...prev, [updateField]: tempUrl } : null));
+
     setUploading(true);
     try {
       const fileExt = file.name.split(".").pop() || "mp4";
@@ -986,8 +1085,6 @@ export default function TicketDetailPage() {
         data: { publicUrl },
       } = supabase.storage.from("ticket_videos").getPublicUrl(fileName);
 
-      const updateField =
-        type === "before" ? "video_before_url" : "video_after_url";
       const { error: dbError } = await supabase
         .from("tickets")
         .update({ [updateField]: publicUrl })
@@ -997,6 +1094,8 @@ export default function TicketDetailPage() {
 
       const takenAt = new Date(file.lastModified).toISOString();
       await logActivity(`video_${type}_uploaded`, takenAt, publicUrl);
+
+      // Final update with actual public URL
       setTicket((prev) =>
         prev ? { ...prev, [updateField]: publicUrl } : null,
       );
@@ -1005,10 +1104,13 @@ export default function TicketDetailPage() {
         "success",
       );
     } catch (err: any) {
+      // Revert to old value on error
+      setTicket((prev) => (prev ? { ...prev, [updateField]: oldVal } : null));
       console.error("Video Upload Error:", err);
       showToast(err.message || "Failed to upload video", "error");
     } finally {
       setUploading(false);
+      URL.revokeObjectURL(tempUrl);
     }
   };
 
@@ -1050,6 +1152,58 @@ export default function TicketDetailPage() {
     } catch (err: any) {
       console.error("Post Comment Error:", err);
       showToast(err.message || "Failed to post comment", "error");
+    }
+  };
+
+  const handleDeletePhoto = async (type: "before" | "after") => {
+    if (
+      !window.confirm(
+        `Are you sure you want to delete the ${type} photo/video?`,
+      )
+    )
+      return;
+
+    const field = type === "before" ? "photo_before_url" : "photo_after_url";
+    const videoField =
+      type === "before" ? "video_before_url" : "video_after_url";
+
+    // Optimistic Update
+    const oldVal = ticket ? ticket[field] : null;
+    const oldVideoVal = ticket ? ticket[videoField] : null;
+
+    setTicket((prev) =>
+      prev ? { ...prev, [field]: null, [videoField]: null } : null,
+    );
+
+    try {
+      const res = await fetch(`/api/tickets/${ticketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          [field]: null,
+          [videoField]: null,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to delete photo");
+      }
+
+      await logActivity(`${type}_photo_deleted`, null, null);
+      showToast(
+        `${type.charAt(0).toUpperCase() + type.slice(1)} attachment removed`,
+        "success",
+      );
+    } catch (err: any) {
+      // Revert on error
+      setTicket((prev) =>
+        prev
+          ? { ...prev, [field]: oldVal, [videoField]: oldVideoVal }
+          : null,
+      );
+      console.error(err);
+      showToast(err.message || "Failed to delete photo", "error");
     }
   };
 
@@ -1190,16 +1344,12 @@ export default function TicketDetailPage() {
     >
       {/* Toast Notification */}
       <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className={`fixed top-4 right-4 px-6 py-3 rounded-xl shadow-2xl z-50 font-bold text-sm text-white ${notification.type === "success" ? "bg-emerald-600" : "bg-rose-600"}`}
-          >
-            {notification.message}
-          </motion.div>
-        )}
+        <Toast
+          message={notification?.message || ""}
+          type={notification?.type === "success" ? "success" : "error"}
+          visible={!!notification}
+          onClose={() => setNotification(null)}
+        />
       </AnimatePresence>
 
       {/* Header */}
@@ -1207,145 +1357,169 @@ export default function TicketDetailPage() {
         className={`${isDark ? "bg-[#161b22] border-[#21262d]" : "bg-white border-slate-200"} border-b sticky top-0 z-30 shadow-xl backdrop-blur-md bg-opacity-80`}
       >
         <div className="max-w-5xl mx-auto px-4 lg:px-8 py-4">
-          <div className="flex items-center gap-4 mb-4">
-            <button
-              onClick={handleBack}
-              className={`p-2 -ml-2 ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-white" : "hover:bg-slate-100 text-slate-400 hover:text-slate-900"} rounded-lg transition-all`}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1">
-              <div className="flex flex-wrap items-center gap-2 mb-1">
-                {(ticket as any).property?.name && (
-                  <span
-                    className={`text-[10px] font-black ${isDark ? "text-primary bg-primary/10 border-primary/20" : "text-primary bg-primary/10 border-primary-light/20"} px-2 py-0.5 rounded border uppercase tracking-widest`}
-                  >
-                    {(ticket as any).property.name}
-                  </span>
-                )}
-                <span
-                  className={`font-mono text-[10px] font-black ${isDark ? "text-slate-500 bg-[#21262d] border-[#30363d]" : "text-slate-500 bg-slate-100 border-slate-200"} px-2 py-0.5 rounded border`}
-                >
-                  {ticket.ticket_number}
-                </span>
-                {(ticket as any).category &&
-                typeof (ticket as any).category === "string" ? (
-                  <span
-                    className={`px-2 py-0.5 ${isDark ? "bg-info/10 border-info/20 text-info" : "bg-info/10 border-info/20 text-info"} border rounded text-[9px] font-black uppercase tracking-widest`}
-                  >
-                    {((ticket as any).category as string).replace(/_/g, " ")}
-                  </span>
-                ) : (
-                  ticket.category?.name && (
-                    <span
-                      className={`px-2 py-0.5 ${isDark ? "bg-info/10 border-info/20 text-info" : "bg-info/10 border-info/20 text-info"} border rounded text-[9px] font-black uppercase tracking-widest`}
-                    >
-                      {ticket.category.name}
-                    </span>
-                  )
-                )}
-                <span
-                  className={`px-2 py-0.5 rounded border text-[9px] font-black uppercase tracking-widest ${
-                    ticket.priority === "urgent"
-                      ? isDark
-                        ? "bg-error/10 border-error/20 text-error"
-                        : "bg-error/5 border-error/20 text-error"
-                      : ticket.priority === "high"
-                        ? isDark
-                          ? "bg-warning/10 border-warning/20 text-warning"
-                          : "bg-warning/5 border-warning/20 text-warning"
-                        : isDark
-                          ? "bg-info/10 border-info/20 text-info"
-                          : "bg-info/5 border-info/20 text-info"
-                  }`}
-                >
-                  {ticket.priority} Priority
-                </span>
+          <div className="flex flex-col gap-4">
+            {/* Top Row: Back & Actions */}
+            <div className="flex items-center justify-between gap-4">
+              <button
+                onClick={handleBack}
+                className={`p-2 -ml-2 ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-white" : "hover:bg-slate-100 text-slate-400 hover:text-slate-900"} rounded-lg transition-all flex-shrink-0`}
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
 
-                {(ticket as any).classification_source === "llm" && (
-                  <span
-                    className={`flex items-center gap-1 px-2 py-0.5 ${isDark ? "bg-primary/20 border-primary/30 text-primary-light" : "bg-primary/10 border-primary/20 text-primary"} border rounded text-[9px] font-black uppercase tracking-widest shadow-sm animate-pulse`}
-                  >
-                    <Sparkles className="w-2.5 h-2.5" />
-                    AI-Assisted
-                  </span>
-                )}
-
-                {(ticket as any).secondary_category_code && (
-                  <span
-                    className={`px-2 py-0.5 ${isDark ? "bg-slate-800 border-slate-700 text-slate-400" : "bg-slate-100 border-slate-200 text-slate-500"} border rounded text-[9px] font-black uppercase tracking-widest`}
-                  >
-                    +{" "}
-                    {(ticket as any).secondary_category_code.replace(/_/g, " ")}
-                  </span>
-                )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowMobileChat(true)}
+                  className={`lg:hidden p-2 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-primary" : "hover:bg-primary/10 text-primary-light hover:text-primary"} relative`}
+                  title="Open Chat"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  {comments.length > 0 && (
+                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white dark:border-[#161b22]" />
+                  )}
+                </button>
               </div>
+            </div>
 
+            {/* Middle Row: Badges */}
+            <div className="flex flex-wrap items-center gap-2">
+              {(ticket as any).property?.name && (
+                <span
+                  className={`inline-flex items-center text-[10px] font-bold ${isDark ? "text-primary bg-primary/10 border-primary/20" : "text-primary bg-primary/10 border-primary-light/20"} px-3 py-0 rounded border uppercase tracking-widest leading-none h-6`}
+                >
+                  {(ticket as any).property.name}
+                </span>
+              )}
+              <span
+                className={`inline-flex items-center font-mono text-[10px] font-bold ${isDark ? "text-slate-500 bg-[#21262d] border-[#30363d]" : "text-slate-500 bg-slate-100 border-slate-200"} px-3 py-0 rounded border leading-none h-6`}
+              >
+                {ticket.ticket_number}
+              </span>
+              {(ticket as any).category &&
+              typeof (ticket as any).category === "string" ? (
+                <span
+                  className={`inline-flex items-center px-3 py-0 ${isDark ? "bg-info/10 border-info/20 text-info" : "bg-info/10 border-info/20 text-info"} border rounded text-[10px] font-bold uppercase tracking-widest leading-none h-6`}
+                >
+                  {((ticket as any).category as string).replace(/_/g, " ")}
+                </span>
+              ) : (
+                ticket.category?.name && (
+                  <span
+                    className={`inline-flex items-center px-3 py-0 ${isDark ? "bg-info/10 border-info/20 text-info" : "bg-info/10 border-info/20 text-info"} border rounded text-[10px] font-bold uppercase tracking-widest leading-none h-6`}
+                  >
+                    {ticket.category.name}
+                  </span>
+                )
+              )}
+              <span
+                className={`inline-flex items-center px-3 py-0 rounded border text-[10px] font-bold uppercase tracking-widest leading-none h-6 ${
+                  ticket.priority === "urgent"
+                    ? isDark
+                      ? "bg-error/10 border-error/20 text-error"
+                      : "bg-error/5 border-error/20 text-error"
+                    : ticket.priority === "high"
+                      ? isDark
+                        ? "bg-warning/10 border-warning/20 text-warning"
+                        : "bg-warning/5 border-warning/20 text-warning"
+                      : isDark
+                        ? "bg-info/10 border-info/20 text-info"
+                        : "bg-info/5 border-info/20 text-info"
+                }`}
+              >
+                {ticket.priority} Priority
+              </span>
+
+              {(ticket as any).classification_source === "llm" && (
+                <span
+                  className={`inline-flex items-center gap-1.5 px-3 py-0 ${isDark ? "bg-primary/20 border-primary/30 text-primary-light" : "bg-primary/10 border-primary/20 text-primary"} border rounded text-[10px] font-bold uppercase tracking-widest leading-none h-6 animate-pulse`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  AI-Assisted
+                </span>
+              )}
+
+              {materialRequests.length > 0 && (
+                <div
+                  role="button"
+                  onClick={() => document.getElementById('section-materials')?.scrollIntoView({ behavior: 'smooth' })}
+                  className={`inline-flex items-center gap-1.5 px-3 py-0 ${isDark ? "bg-amber-500/20 border-amber-500/30 text-amber-400" : "bg-amber-50 border-amber-200 text-amber-600"} border rounded text-[10px] font-bold uppercase tracking-widest hover:scale-105 transition-all h-6 leading-none cursor-pointer shadow-none`}
+                >
+                  <ShoppingBag className="w-3 h-3" />
+                  {materialRequests.length} Material Request{materialRequests.length > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Row: Title & Status */}
+            <div className="space-y-5">
               {(ticket as any).risk_flag && (
                 <div
-                  className={`mt-2 flex items-center gap-2 px-3 py-2 ${isDark ? "bg-error/20 border-error/30 text-error" : "bg-error/5 border-error/20 text-error"} border rounded-xl text-xs font-bold animate-bounce-slow`}
+                  className={`flex items-center gap-2 px-3 py-2 ${isDark ? "bg-error/20 border-error/30 text-error" : "bg-error/5 border-error/20 text-error"} border rounded-xl text-xs font-bold`}
                 >
                   <AlertTriangle className="w-4 h-4" />
                   <span className="uppercase tracking-wide">
-                    Critical Risk Detected: {(ticket as any).risk_flag}
+                    Critical Risk: {(ticket as any).risk_flag}
                   </span>
                 </div>
               )}
 
-              <div className="flex items-center gap-3">
-                <h1
-                  className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-900"} leading-tight ${(ticket as any).risk_flag ? "mt-3" : ""}`}
-                >
-                  {ticket.title}
-                </h1>
-                {canEditContent && (
-                  <button
-                    onClick={() => {
-                      setEditTitle(ticket.title);
-                      setEditDescription(ticket.description);
-                      setIsEditing(true);
-                    }}
-                    className={`p-1.5 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-white" : "hover:bg-slate-100 text-slate-400 hover:text-slate-600"}`}
-                    title="Edit Request"
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <h1
+                    className={`text-xl sm:text-2xl font-black ${isDark ? "text-white" : "text-slate-900"} leading-tight`}
                   >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                )}
-                {canDelete && (
+                    {ticket.title}
+                  </h1>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
                   <button
-                    onClick={handleDelete}
-                    disabled={isDeleting}
-                    className={`p-1.5 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-rose-500/50 hover:text-rose-500" : "hover:bg-rose-50 text-rose-400 hover:text-rose-600"}`}
-                    title="Delete Request"
+                    onClick={() => setShareOpen(true)}
+                    className={`p-2 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-blue-400" : "hover:bg-blue-50 text-slate-400 hover:text-blue-600"}`}
+                    title="Share Ticket"
                   >
-                    {isDeleting ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
+                    <Share2 className="w-4 h-4" />
                   </button>
-                )}
-                <button
-                  onClick={() => setShareOpen(true)}
-                  className={`p-1.5 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-blue-400" : "hover:bg-blue-50 text-slate-400 hover:text-blue-600"}`}
-                  title="Share Ticket"
-                >
-                  <Share2 className="w-4 h-4" />
-                </button>
+                  {canEditContent && (
+                    <button
+                      onClick={() => {
+                        setEditTitle(ticket.title);
+                        setEditDescription(ticket.description);
+                        setIsEditing(true);
+                      }}
+                      className={`p-2 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-white" : "hover:bg-slate-100 text-slate-400 hover:text-slate-600"}`}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      onClick={handleDelete}
+                      disabled={isDeleting}
+                      className={`p-2 rounded-lg transition-all ${isDark ? "hover:bg-[#21262d] text-rose-500/50 hover:text-rose-500" : "hover:bg-rose-50 text-rose-400 hover:text-rose-600"}`}
+                    >
+                      {isDeleting ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {(ticket as any).llm_reasoning && (
                 <p
-                  className={`mt-2 text-[11px] font-medium leading-relaxed ${isDark ? "text-slate-400" : "text-slate-500"} italic flex items-start gap-2`}
+                  className={`text-[11px] font-medium leading-relaxed ${isDark ? "text-slate-400" : "text-slate-500"} italic flex items-start gap-2`}
                 >
                   <Brain className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-primary" />
                   "{(ticket as any).llm_reasoning}"
                 </p>
               )}
             </div>
-            <div className="text-right hidden sm:block">
+          </div>
+            <div className="text-right mt-2 sm:mt-0">
               <div
-                className={`text-[10px] font-black uppercase tracking-widest mb-1.5 px-3 py-1 rounded-full border inline-block ${
+                className={`text-[10px] font-black uppercase tracking-widest mb-1.5 px-4 py-1.5 rounded-full border inline-block ${
                   ticket.status === "closed" || ticket.status === "resolved"
                     ? isDark
                       ? "bg-success/10 border-success/20 text-success"
@@ -1368,19 +1542,19 @@ export default function TicketDetailPage() {
                 }`}
               >
                 {ticket.status === "closed" || ticket.status === "resolved"
-                  ? "COMPLETE"
+                  ? "DONE"
                   : ticket.status === "pending_validation"
-                    ? "AWAITING APPROVAL"
+                    ? "WAITING FOR CHECK"
                     : ticket.status.replace("_", " ")}
               </div>
               {ticket.sla_deadline && ticket.status !== "closed" && (
                 <div className="flex items-center justify-end mt-1">
                   {ticket.sla_breached ? (
                     <div className="flex flex-col items-end gap-0.5">
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500 border border-rose-600 rounded-lg animate-pulse">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500 border border-rose-600 rounded-lg animate-pulse">
                         <AlertTriangle className="w-3 h-3 text-white" />
                         <span className="text-[10px] font-black text-white uppercase tracking-widest">
-                          SLA Breached
+                          Service Level Agreement Breached
                         </span>
                       </div>
                       <span
@@ -1410,10 +1584,11 @@ export default function TicketDetailPage() {
                 </div>
               )}
             </div>
-          </div>
+
+
 
           {/* Action Bar */}
-          <div className="flex flex-wrap items-center gap-3 pt-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-3 pt-2">
             {/* MST Actions */}
             {/* Claim button: Only show if NOT assigned to anyone */}
             {userRole === "staff" &&
@@ -1421,7 +1596,7 @@ export default function TicketDetailPage() {
               !ticket.assigned_to && (
                 <button
                   onClick={() => handleClaim()}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-primary-dark transition-all shadow-lg shadow-primary/20"
+                  className="flex items-center justify-center gap-2 px-3 py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-primary-dark transition-all shadow-lg shadow-primary/20 col-span-2 sm:col-span-1"
                 >
                   <User className="w-4 h-4" /> Claim Request
                 </button>
@@ -1431,7 +1606,7 @@ export default function TicketDetailPage() {
               ["assigned", "open", "waitlist"].includes(ticket.status) && (
                 <button
                   onClick={() => handleStatusChange("in_progress")}
-                  className="flex items-center gap-2 px-4 py-2 bg-white text-black rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200"
+                  className="flex items-center justify-center gap-2 px-3 py-3 bg-white text-black rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all border border-slate-200 col-span-2 sm:col-span-1"
                 >
                   <PlayCircle className="w-4 h-4" /> Start Work
                 </button>
@@ -1440,7 +1615,7 @@ export default function TicketDetailPage() {
             {(userRole === "mst" || userRole === "staff") && (
               <button
                 onClick={() => setShowAssignModal(true)}
-                className={`flex items-center gap-2 px-4 py-2 ${isDark ? "bg-[#21262d] border-[#30363d] text-slate-300 hover:bg-[#30363d]" : "bg-slate-100 border-slate-100 text-slate-600 hover:bg-slate-200"} border rounded-xl text-xs font-black uppercase tracking-widest transition-all`}
+                className={`flex items-center justify-center gap-2 px-3 py-3 ${isDark ? "bg-[#21262d] border-[#30363d] text-slate-300 hover:bg-[#30363d]" : "bg-slate-100 border-slate-100 text-slate-600 hover:bg-slate-200"} border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all`}
               >
                 <User className="w-4 h-4" /> Reassign
               </button>
@@ -1449,7 +1624,7 @@ export default function TicketDetailPage() {
             {isAssignedToMe && ticket.status === "in_progress" && (
               <button
                 onClick={handleComplete}
-                className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-primary-dark transition-all shadow-lg"
+                className="flex items-center justify-center gap-2 px-3 py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-primary-dark transition-all shadow-lg col-span-2 sm:col-span-1"
               >
                 <CheckCircle2 className="w-4 h-4" /> Complete Task
               </button>
@@ -1488,14 +1663,14 @@ export default function TicketDetailPage() {
               <>
                 <button
                   onClick={() => setShowAssignModal(true)}
-                  className={`flex items-center gap-2 px-4 py-2 ${isDark ? "bg-[#21262d] border-[#30363d] text-slate-300 hover:bg-[#30363d]" : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"} border rounded-xl text-xs font-black uppercase tracking-widest transition-all`}
+                  className={`flex items-center justify-center gap-2 px-3 py-3 ${isDark ? "bg-[#21262d] border-[#30363d] text-slate-300 hover:bg-[#30363d]" : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"} border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all`}
                 >
                   <User className="w-4 h-4" /> Reassign
                 </button>
                 {ticket.status !== "closed" && (
                   <button
                     onClick={() => handleStatusChange("closed")}
-                    className="flex items-center gap-2 px-4 py-2 bg-error/10 border border-error/20 text-error rounded-xl text-xs font-black uppercase tracking-widest hover:bg-error/20 transition-all"
+                    className="flex items-center justify-center gap-2 px-3 py-3 bg-error/10 border border-error/20 text-error rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-error/20 transition-all"
                   >
                     <XCircle className="w-4 h-4" /> Force Close
                   </button>
@@ -1504,12 +1679,68 @@ export default function TicketDetailPage() {
                   onClick={() =>
                     router.push(`/property/${ticket.property_id}/flow-map`)
                   }
-                  className={`flex items-center gap-2 px-4 py-2 ${isDark ? "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20" : "bg-primary/5 border-primary/20 text-primary hover:bg-primary/10"} border rounded-xl text-xs font-black uppercase tracking-widest transition-all`}
+                  className={`flex items-center justify-center gap-2 px-3 py-3 ${isDark ? "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20" : "bg-primary/5 border-primary/20 text-primary hover:bg-primary/10"} border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all`}
                 >
                   <Activity className="w-4 h-4" /> Flow Map
                 </button>
               </>
             )}
+
+            {/* Material Request Button — available for all accounts except tenants */}
+            {userRole !== "tenant" && (
+              <button
+                onClick={() => setShowMaterialModal(true)}
+                className={`flex items-center justify-center gap-2 px-3 py-3 ${isDark ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20" : "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100"} border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all`}
+              >
+                <PackagePlus className="w-4 h-4" /> Material Request
+              </button>
+            )}
+      </div>
+
+          {/* Quick Navigation Bar */}
+          <div className="flex items-center gap-6 mt-4 pb-2 overflow-x-auto no-scrollbar border-t border-slate-100 dark:border-[#21262d] pt-4">
+            <button
+              onClick={() =>
+                document
+                  .getElementById("section-details")
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" })
+              }
+              className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500 hover:text-primary" : "text-slate-400 hover:text-primary"} transition-colors whitespace-nowrap`}
+            >
+              <Paperclip className="w-3.5 h-3.5" /> Details
+            </button>
+            <button
+              onClick={() =>
+                document
+                  .getElementById("section-photos")
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" })
+              }
+              className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500 hover:text-primary" : "text-slate-400 hover:text-primary"} transition-colors whitespace-nowrap`}
+            >
+              <Camera className="w-3.5 h-3.5" /> Photos
+            </button>
+            {materialRequests.length > 0 && (
+              <button
+                onClick={() =>
+                  document
+                    .getElementById("section-materials")
+                    ?.scrollIntoView({ behavior: "smooth", block: "center" })
+                }
+                className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500 hover:text-primary" : "text-slate-400 hover:text-primary"} transition-colors whitespace-nowrap`}
+              >
+                <ShoppingBag className="w-3.5 h-3.5" /> Materials
+              </button>
+            )}
+            <button
+              onClick={() =>
+                document
+                  .getElementById("section-timeline")
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" })
+              }
+              className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500 hover:text-primary" : "text-slate-400 hover:text-primary"} transition-colors whitespace-nowrap`}
+            >
+              <History className="w-3.5 h-3.5" /> Timeline
+            </button>
           </div>
         </div>
       </div>
@@ -1520,6 +1751,7 @@ export default function TicketDetailPage() {
           <div className="lg:col-span-2 space-y-8">
             {/* Request Description */}
             <div
+              id="section-details"
               className={`${isDark ? "bg-[#161b22] border-[#21262d]" : "bg-white border-slate-100"} p-6 rounded-3xl border shadow-sm`}
             >
               <h3
@@ -1559,7 +1791,7 @@ export default function TicketDetailPage() {
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span
-                        className={`px-1.5 py-0.5 ${isDark ? "bg-info/10 text-info" : "bg-info/5 text-info"} text-[9px] font-black uppercase tracking-wider rounded`}
+                        className={`px-3 py-1 ${isDark ? "bg-info/10 text-info" : "bg-info/5 text-info"} text-[9px] font-black uppercase tracking-wider rounded`}
                       >
                         {creatorRole}
                       </span>
@@ -1679,6 +1911,503 @@ export default function TicketDetailPage() {
               </div>
             </div>
 
+
+            {/* 2. Before / After Photos */}
+            <div
+              id="section-photos"
+              className={`${isDark ? "bg-[#161b22] border-[#21262d]" : "bg-white border-slate-100"} p-6 rounded-3xl border shadow-sm`}
+            >
+              <h3
+                className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"} mb-6 flex items-center gap-2`}
+              >
+                <Camera className="w-4 h-4 text-primary" />
+                Site Documentation
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-4">
+                {/* Before Photo */}
+                <div className="space-y-3">
+                  <div
+                    className={`text-[10px] sm:text-xs font-black ${isDark ? "text-slate-500" : "text-slate-400"} uppercase tracking-widest flex items-center justify-between gap-4 flex-wrap`}
+                  >
+                    <span className="whitespace-nowrap">Before Work</span>
+                    {(ticket.photo_before_url || ticket.video_before_url) && canManagePhotos && (
+                      <span className="text-[9px] sm:text-[10px] text-primary/60 italic font-medium whitespace-nowrap">
+                        Click to change
+                      </span>
+                    )}
+                  </div>
+                  {ticket.photo_before_url || ticket.video_before_url ? (
+                    <div
+                      className={`relative aspect-video rounded-xl overflow-hidden ${isDark ? "bg-[#0d1117] border-[#30363d]" : "bg-slate-50 border-slate-100"} border group`}
+                    >
+                      {ticket.video_before_url ? (
+                        <>
+                          {/* Video poster — tap to open VideoPreviewModal */}
+                          <div
+                            className="absolute inset-0 bg-black flex items-center justify-center cursor-pointer"
+                            onClick={() => {
+                              setPreviewVideoUrl(ticket.video_before_url!);
+                              setPreviewVideoTitle("Before Work — Video");
+                            }}
+                          >
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center hover:bg-white/30 transition-colors">
+                                <PlayCircle className="w-8 h-8 text-white" />
+                              </div>
+                              <span className="text-white/60 text-[9px] font-bold uppercase tracking-widest">
+                                Tap to play
+                              </span>
+                            </div>
+                            <span className="absolute top-2 left-3 text-white/50 text-[9px] font-bold uppercase tracking-widest bg-black/50 px-2 py-0.5 rounded">
+                              Video
+                            </span>
+                          </div>
+                          {/* Upload controls — appear on hover */}
+                          {canManagePhotos && (
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                              <div className="flex items-center gap-3">
+                                <label
+                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl cursor-pointer hover:bg-primary text-white transition-all shadow-lg`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Paperclip className="w-4 h-4" />
+                                  <input
+                                    type="file"
+                                    accept="image/*,video/*"
+                                    className="hidden"
+                                    onChange={(e) =>
+                                      handleFileUpload(e, "before")
+                                    }
+                                  />
+                                </label>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openCamera("before");
+                                  }}
+                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl hover:bg-primary text-white transition-all shadow-lg`}
+                                >
+                                  <Camera className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePhoto("before");
+                                  }}
+                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-rose-500/20" : "bg-rose-500/20 backdrop-blur-md"} rounded-xl hover:bg-rose-600 text-white transition-all shadow-lg`}
+                                  title="Delete Video"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <img
+                            src={ticket.photo_before_url}
+                            alt="Before"
+                            className="w-full h-full object-cover cursor-zoom-in select-none"
+                            onClick={() =>
+                              ticket.photo_before_url &&
+                              setLightboxUrl(ticket.photo_before_url)
+                            }
+                            onMouseDown={() =>
+                              ticket.photo_before_url &&
+                              startPeek(ticket.photo_before_url)
+                            }
+                            onMouseUp={endPeek}
+                            onMouseLeave={endPeek}
+                            onTouchStart={() =>
+                              ticket.photo_before_url &&
+                              startPeek(ticket.photo_before_url)
+                            }
+                            onTouchEnd={endPeek}
+                            onContextMenu={(e) => e.preventDefault()}
+                            draggable={false}
+                          />
+                          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity gap-3">
+                            <button
+                              onClick={() =>
+                                ticket.photo_before_url &&
+                                setLightboxUrl(ticket.photo_before_url)
+                              }
+                              className={`text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 ${isDark ? "bg-[#161b22]" : "bg-white/10 backdrop-blur-md"} rounded-2xl hover:bg-primary transition-colors shadow-lg`}
+                            >
+                              View Full
+                            </button>
+                            {canManagePhotos && (
+                              <div className="flex items-center gap-4">
+                                <label
+                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-primary text-white transition-all shadow-lg`}
+                                >
+                                  <Paperclip className="w-5 h-5" />
+                                  <input
+                                    type="file"
+                                    accept="image/*,video/*"
+                                    className="hidden"
+                                    onChange={(e) =>
+                                      handleFileUpload(e, "before")
+                                    }
+                                  />
+                                </label>
+                                <button
+                                  onClick={() => openCamera("before")}
+                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-primary text-white transition-all shadow-lg`}
+                                >
+                                  <Camera className="w-5 h-5" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePhoto("before");
+                                  }}
+                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-rose-500/20" : "bg-rose-500/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-rose-600 text-white transition-all shadow-lg`}
+                                  title="Delete Photo"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Timestamp Overlay */}
+                      {(() => {
+                        const act = activities.find(
+                          (a: any) =>
+                            a.action === "photo_before_uploaded" ||
+                            a.action === "video_before_uploaded" ||
+                            (a.action === "photo_upload" &&
+                              a.new_value?.includes("before")) ||
+                            (a.action === "video_upload" &&
+                              a.new_value?.includes("before")),
+                        );
+                        const ts = act?.old_value || act?.created_at;
+                        if (!ts) return null;
+                        return (
+                          <div
+                            className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold font-mono border border-white/30 backdrop-blur-sm pointer-events-none z-20 shadow-lg"
+                            key="ts-before"
+                          >
+                            {new Date(ts)
+                              .toLocaleString("en-GB", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false,
+                              })
+                              .replace(",", "")}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div
+                      className={`flex flex-col items-center justify-center aspect-video rounded-xl border-2 border-dashed ${isDark ? "border-[#30363d] bg-[#0d1117]" : "border-slate-200 bg-slate-50"} transition-all gap-2 p-4`}
+                    >
+                      <span
+                        className={`text-[10px] font-black ${isDark ? "text-slate-600" : "text-slate-400"} uppercase tracking-widest mb-2`}
+                      >
+                        Add Attachment
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center gap-6">
+                          <label
+                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
+                          >
+                            <div
+                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
+                            >
+                              <Paperclip
+                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
+                              />
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
+                            >
+                              Gallery
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={!canManagePhotos}
+                              onChange={(e) => handleFileUpload(e, "before")}
+                            />
+                          </label>
+
+                          <button
+                            onClick={() => openCamera("before")}
+                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
+                          >
+                            <div
+                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
+                            >
+                              <Camera
+                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
+                              />
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
+                            >
+                              Camera
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* After Photo */}
+                <div className="space-y-3">
+                  <div
+                    className={`text-[10px] sm:text-xs font-black ${isDark ? "text-slate-500" : "text-slate-400"} uppercase tracking-widest flex items-center justify-between gap-4 flex-wrap`}
+                  >
+                    <span className="whitespace-nowrap">After Work</span>
+                    {(ticket.photo_after_url || ticket.video_after_url) && canManagePhotos && (
+                      <span className="text-[9px] sm:text-[10px] text-emerald-500/60 italic font-medium whitespace-nowrap">
+                        Click to change
+                      </span>
+                    )}
+                  </div>
+                  {ticket.photo_after_url || ticket.video_after_url ? (
+                    <div
+                      className={`relative aspect-video rounded-xl overflow-hidden ${isDark ? "bg-[#0d1117] border-[#30363d]" : "bg-slate-50 border-slate-100"} border group`}
+                    >
+                      {ticket.video_after_url ? (
+                        <>
+                          {/* Video poster — tap to open VideoPreviewModal */}
+                          <div
+                            className="absolute inset-0 bg-black flex items-center justify-center cursor-pointer"
+                            onClick={() => {
+                              setPreviewVideoUrl(ticket.video_after_url!);
+                              setPreviewVideoTitle("After Work — Video");
+                            }}
+                          >
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center hover:bg-white/30 transition-colors">
+                                <PlayCircle className="w-8 h-8 text-white" />
+                              </div>
+                              <span className="text-white/60 text-[9px] font-bold uppercase tracking-widest">
+                                Tap to play
+                              </span>
+                            </div>
+                            <span className="absolute top-2 left-3 text-white/50 text-[9px] font-bold uppercase tracking-widest bg-black/50 px-2 py-0.5 rounded">
+                              Video
+                            </span>
+                          </div>
+                          {/* Upload controls — appear on hover */}
+                          {canManagePhotos && (
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                              <div className="flex items-center gap-3">
+                                <label
+                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl cursor-pointer hover:bg-emerald-500 text-white transition-all shadow-lg`}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Paperclip className="w-4 h-4" />
+                                  <input
+                                    type="file"
+                                    accept="image/*,video/*"
+                                    className="hidden"
+                                    onChange={(e) =>
+                                      handleFileUpload(e, "after")
+                                    }
+                                  />
+                                </label>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openCamera("after");
+                                  }}
+                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl hover:bg-emerald-500 text-white transition-all shadow-lg`}
+                                >
+                                  <Camera className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePhoto("after");
+                                  }}
+                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-rose-500/20" : "bg-rose-500/20 backdrop-blur-md"} rounded-xl hover:bg-rose-600 text-white transition-all shadow-lg`}
+                                  title="Delete Video"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <img
+                            src={ticket.photo_after_url}
+                            alt="After"
+                            className="w-full h-full object-cover cursor-zoom-in select-none"
+                            onClick={() =>
+                              ticket.photo_after_url &&
+                              setLightboxUrl(ticket.photo_after_url)
+                            }
+                            onMouseDown={() =>
+                              ticket.photo_after_url &&
+                              startPeek(ticket.photo_after_url)
+                            }
+                            onMouseUp={endPeek}
+                            onMouseLeave={endPeek}
+                            onTouchStart={() =>
+                              ticket.photo_after_url &&
+                              startPeek(ticket.photo_after_url)
+                            }
+                            onTouchEnd={endPeek}
+                            onContextMenu={(e) => e.preventDefault()}
+                            draggable={false}
+                          />
+                          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity gap-3">
+                            <button
+                              onClick={() =>
+                                ticket.photo_after_url &&
+                                setLightboxUrl(ticket.photo_after_url)
+                              }
+                              className={`text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 ${isDark ? "bg-[#161b22]" : "bg-white/10 backdrop-blur-md"} rounded-2xl hover:bg-emerald-500 transition-colors shadow-lg`}
+                            >
+                              View Full
+                            </button>
+                            {canManagePhotos && (
+                              <div className="flex items-center gap-4">
+                                <label
+                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-emerald-500 text-white transition-all shadow-lg`}
+                                >
+                                  <Paperclip className="w-5 h-5" />
+                                  <input
+                                    type="file"
+                                    accept="image/*,video/*"
+                                    className="hidden"
+                                    onChange={(e) =>
+                                      handleFileUpload(e, "after")
+                                    }
+                                  />
+                                </label>
+                                <button
+                                  onClick={() => openCamera("after")}
+                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-emerald-500 text-white transition-all shadow-lg`}
+                                >
+                                  <Camera className="w-5 h-5" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePhoto("after");
+                                  }}
+                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-rose-500/20" : "bg-rose-500/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-rose-600 text-white transition-all shadow-lg`}
+                                  title="Delete Photo"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Timestamp Overlay */}
+                      {(() => {
+                        const act = activities.find(
+                          (a: any) =>
+                            a.action === "photo_after_uploaded" ||
+                            a.action === "video_after_uploaded" ||
+                            (a.action === "photo_upload" &&
+                              a.new_value?.includes("after")) ||
+                            (a.action === "video_upload" &&
+                              a.new_value?.includes("after")),
+                        );
+                        const ts = act?.old_value || act?.created_at;
+                        if (!ts) return null;
+                        return (
+                          <div
+                            className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold font-mono border border-white/30 backdrop-blur-sm pointer-events-none z-20 shadow-lg"
+                            key="ts-after"
+                          >
+                            {new Date(ts)
+                              .toLocaleString("en-GB", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false,
+                              })
+                              .replace(",", "")}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div
+                      className={`flex flex-col items-center justify-center aspect-video rounded-xl border-2 border-dashed ${isDark ? "border-[#30363d] bg-[#0d1117]" : "border-slate-200 bg-slate-50"} transition-all gap-2 p-4`}
+                    >
+                      <span
+                        className={`text-[10px] font-black ${isDark ? "text-slate-600" : "text-slate-400"} uppercase tracking-widest mb-2`}
+                      >
+                        Add Attachment
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center gap-6">
+                          <label
+                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
+                          >
+                            <div
+                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
+                            >
+                              <Paperclip
+                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
+                              />
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
+                            >
+                              Gallery
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={!canManagePhotos}
+                              onChange={(e) => handleFileUpload(e, "after")}
+                            />
+                          </label>
+
+                          <button
+                            onClick={() => openCamera("after")}
+                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
+                          >
+                            <div
+                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
+                            >
+                              <Camera
+                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
+                              />
+                            </div>
+                            <span
+                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
+                            >
+                              Camera
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Escalation Timeline */}
             {escalationLogs.length > 0 && (
               <div
@@ -1698,12 +2427,12 @@ export default function TicketDetailPage() {
                       <h2
                         className={`text-lg font-semibold ${isDark ? "text-red-400" : "text-red-700"}`}
                       >
-                        Escalation Timeline
+                        Urgency Timeline
                       </h2>
                       <p
                         className={`text-xs ${isDark ? "text-gray-400" : "text-gray-500"}`}
                       >
-                        {escalationLogs.length} escalation
+                        {escalationLogs.length} manager check
                         {escalationLogs.length > 1 ? "s" : ""} recorded
                       </p>
                     </div>
@@ -1874,463 +2603,265 @@ export default function TicketDetailPage() {
               </div>
             )}
 
-            {/* 2. Before / After Photos */}
-            <div
-              className={`${isDark ? "bg-[#161b22] border-[#21262d]" : "bg-white border-slate-100"} p-6 rounded-3xl border shadow-sm`}
-            >
-              <h3
-                className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"} mb-6 flex items-center gap-2`}
+            {/* Material Request Timeline */}
+            {materialRequests.length > 0 && (
+              <div
+                id="section-materials"
+                className={`${isDark ? "bg-[#161b22] border-[#21262d]" : "bg-white border-slate-100"} p-6 rounded-3xl border shadow-sm relative overflow-hidden`}
               >
-                <Camera className="w-4 h-4 text-primary" />
-                Site Documentation
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 sm:gap-4">
-                {/* Before Photo */}
-                <div className="space-y-3">
-                  <div
-                    className={`text-[10px] sm:text-xs font-black ${isDark ? "text-slate-500" : "text-slate-400"} uppercase tracking-widest flex items-center justify-between gap-4 flex-wrap`}
-                  >
-                    <span className="whitespace-nowrap">Before Work</span>
-                    {ticket.photo_before_url && canManagePhotos && (
-                      <span className="text-[9px] sm:text-[10px] text-primary/60 italic font-medium whitespace-nowrap">
-                        Click to change
-                      </span>
-                    )}
-                  </div>
-                  {ticket.photo_before_url || ticket.video_before_url ? (
-                    <div
-                      className={`relative aspect-video rounded-xl overflow-hidden ${isDark ? "bg-[#0d1117] border-[#30363d]" : "bg-slate-50 border-slate-100"} border group`}
-                    >
-                      {ticket.video_before_url ? (
-                        <>
-                          {/* Video poster — tap to open VideoPreviewModal */}
-                          <div
-                            className="absolute inset-0 bg-black flex items-center justify-center cursor-pointer"
-                            onClick={() => {
-                              setPreviewVideoUrl(ticket.video_before_url!);
-                              setPreviewVideoTitle("Before Work — Video");
-                            }}
-                          >
-                            <div className="flex flex-col items-center gap-2">
-                              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center hover:bg-white/30 transition-colors">
-                                <PlayCircle className="w-8 h-8 text-white" />
-                              </div>
-                              <span className="text-white/60 text-[9px] font-bold uppercase tracking-widest">
-                                Tap to play
-                              </span>
-                            </div>
-                            <span className="absolute top-2 left-3 text-white/50 text-[9px] font-bold uppercase tracking-widest bg-black/50 px-2 py-0.5 rounded">
-                              Video
-                            </span>
-                          </div>
-                          {/* Upload controls — appear on hover */}
-                          {canManagePhotos && (
-                            <div className="absolute bottom-3 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                              <div className="flex items-center gap-3">
-                                <label
-                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl cursor-pointer hover:bg-primary text-white transition-all shadow-lg`}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Paperclip className="w-4 h-4" />
-                                  <input
-                                    type="file"
-                                    accept="image/*,video/*"
-                                    className="hidden"
-                                    onChange={(e) =>
-                                      handleFileUpload(e, "before")
-                                    }
-                                  />
-                                </label>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openCamera("before");
-                                  }}
-                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl hover:bg-primary text-white transition-all shadow-lg`}
-                                >
-                                  <Camera className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <img
-                            src={ticket.photo_before_url}
-                            alt="Before"
-                            className="w-full h-full object-cover cursor-zoom-in select-none"
-                            onClick={() =>
-                              ticket.photo_before_url &&
-                              setLightboxUrl(ticket.photo_before_url)
-                            }
-                            onMouseDown={() =>
-                              ticket.photo_before_url &&
-                              startPeek(ticket.photo_before_url)
-                            }
-                            onMouseUp={endPeek}
-                            onMouseLeave={endPeek}
-                            onTouchStart={() =>
-                              ticket.photo_before_url &&
-                              startPeek(ticket.photo_before_url)
-                            }
-                            onTouchEnd={endPeek}
-                            onContextMenu={(e) => e.preventDefault()}
-                            draggable={false}
-                          />
-                          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity gap-3">
-                            <button
-                              onClick={() =>
-                                ticket.photo_before_url &&
-                                setLightboxUrl(ticket.photo_before_url)
-                              }
-                              className={`text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 ${isDark ? "bg-[#161b22]" : "bg-white/10 backdrop-blur-md"} rounded-2xl hover:bg-primary transition-colors shadow-lg`}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
+                <h3
+                  className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"} mb-8 flex items-center gap-2`}
+                >
+                  <ShoppingBag className="w-4 h-4 text-primary" />
+                  Material Timeline
+                </h3>
+                <div className="space-y-10">
+                  {materialRequests.map((req) => (
+                    <div key={req.id} className="relative pl-12">
+                      {/* Vertical connector */}
+                      <div className="absolute left-[15px] top-8 bottom-[-40px] w-0.5 bg-slate-100 dark:bg-[#30363d] last:hidden" />
+
+                      <div
+                        className={`absolute left-0 top-0 w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-lg z-10 transition-transform hover:scale-110 ${
+                          req.status === "pending_quotation" || req.status === "pending_approval"
+                            ? "bg-amber-500"
+                            : req.status === "quoted" || req.status === "approved"
+                              ? "bg-blue-500"
+                              : req.status === "ordered"
+                                ? "bg-indigo-500"
+                                : req.status === "delivered"
+                                  ? "bg-emerald-500"
+                                  : req.status === "rejected"
+                                    ? "bg-rose-500"
+                                    : "bg-slate-500"
+                        }`}
+                      >
+                        {req.status === "delivered" ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : req.status === "rejected" ? (
+                          <XCircle className="w-4 h-4" />
+                        ) : (
+                          <Clock className="w-4 h-4" />
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <p
+                              className={`text-sm font-black ${isDark ? "text-white" : "text-slate-900"} tracking-tight`}
                             >
-                              View Full
-                            </button>
-                            {canManagePhotos && (
-                              <div className="flex items-center gap-4">
-                                <label
-                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-primary text-white transition-all shadow-lg`}
-                                >
-                                  <Paperclip className="w-5 h-5" />
-                                  <input
-                                    type="file"
-                                    accept="image/*,video/*"
-                                    className="hidden"
-                                    onChange={(e) =>
-                                      handleFileUpload(e, "before")
-                                    }
-                                  />
-                                </label>
-                                <button
-                                  onClick={() => openCamera("before")}
-                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-primary text-white transition-all shadow-lg`}
-                                >
-                                  <Camera className="w-5 h-5" />
-                                </button>
-                              </div>
+                              Order #{req.id.slice(0, 8).toUpperCase()}
+                            </p>
+                            <p
+                              className={`text-[10px] ${isDark ? "text-slate-500" : "text-slate-400"} font-bold uppercase tracking-widest mt-1`}
+                            >
+                              Requested by {req.requester?.full_name}
+                              {req.service_description && ` • ${req.service_description.slice(0, 40)}${req.service_description.length > 40 ? '...' : ''}`}
+                              {req.status === "pending_quotation" && ` • Awaiting quotation`}
+                              {req.status === "pending_approval" && (
+                                req.target_approver_names?.length > 0 
+                                  ? ` • Pending from ${req.target_approver_names.join(' or ')}` 
+                                  : req.target_approver?.full_name 
+                                    ? ` • Pending from ${req.target_approver.full_name}` 
+                                    : ''
+                              )}
+                              {req.status === "quoted" && req.vendor_name && ` • Vendor: ${req.vendor_name}`}
+                              {req.status === "approved" && req.approver?.full_name && ` • Approved by ${req.approver.full_name}`}
+                              {req.status === "rejected" && req.rejecter?.full_name && ` • Rejected by ${req.rejecter.full_name}`}
+                              {req.status === "ordered" && req.assignee?.full_name && ` • Ordered by ${req.assignee.full_name}`}
+                              {req.status === "delivered" && req.assignee?.full_name && ` • Delivered by ${req.assignee.full_name}`}
+                              {` • `}{(userRole === 'admin' || userRole === 'procurement') && req.total_amount !== null ? `₹${req.total_amount.toLocaleString()}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${
+                                req.status === "pending_quotation" || req.status === "pending_approval"
+                                  ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                                  : req.status === "quoted" || req.status === "approved"
+                                    ? "bg-blue-500/10 border-blue-500/20 text-blue-500"
+                                    : req.status === "ordered"
+                                      ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-500"
+                                      : req.status === "delivered"
+                                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+                                        : req.status === "rejected"
+                                          ? "bg-rose-500/10 border-rose-500/20 text-rose-500"
+                                          : "bg-slate-500/10 border-slate-500/20 text-slate-500"
+                              }`}
+                            >
+                              {req.status === 'pending_quotation' ? 'Pending Quotation' : req.status.replace("_", " ")}
+                            </span>
+
+                            {/* Delete Option (if pending quotation/approval or rejected) */}
+                            {(req.status === 'pending_quotation' || req.status === 'pending_approval' || req.status === 'rejected') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteMaterialRequest(req.id, req.requested_by);
+                                }}
+                                className={`p-1.5 rounded-lg transition-all ${isDark ? "hover:bg-rose-500/10 text-slate-500 hover:text-rose-500" : "hover:bg-rose-50 text-slate-400 hover:text-rose-500"}`}
+                                title="Delete Request"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             )}
                           </div>
-                        </>
-                      )}
-
-                      {/* Timestamp Overlay */}
-                      {(() => {
-                        const act = activities.find(
-                          (a: any) =>
-                            a.action === "photo_before_uploaded" ||
-                            a.action === "video_before_uploaded" ||
-                            (a.action === "photo_upload" &&
-                              a.new_value?.includes("before")) ||
-                            (a.action === "video_upload" &&
-                              a.new_value?.includes("before")),
-                        );
-                        const ts = act?.old_value || act?.created_at;
-                        if (!ts) return null;
-                        return (
-                          <div
-                            className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold font-mono border border-white/30 backdrop-blur-sm pointer-events-none z-20 shadow-lg"
-                            key="ts-before"
-                          >
-                            {new Date(ts)
-                              .toLocaleString("en-GB", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                second: "2-digit",
-                                hour12: false,
-                              })
-                              .replace(",", "")}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div
-                      className={`flex flex-col items-center justify-center aspect-video rounded-xl border-2 border-dashed ${isDark ? "border-[#30363d] bg-[#0d1117]" : "border-slate-200 bg-slate-50"} transition-all gap-2 p-4`}
-                    >
-                      <span
-                        className={`text-[10px] font-black ${isDark ? "text-slate-600" : "text-slate-400"} uppercase tracking-widest mb-2`}
-                      >
-                        Add Attachment
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center gap-6">
-                          <label
-                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
-                          >
-                            <div
-                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
-                            >
-                              <Paperclip
-                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
-                              />
-                            </div>
-                            <span
-                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
-                            >
-                              Gallery
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={!canManagePhotos}
-                              onChange={(e) => handleFileUpload(e, "before")}
-                            />
-                          </label>
-
-                          <button
-                            onClick={() => openCamera("before")}
-                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
-                          >
-                            <div
-                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
-                            >
-                              <Camera
-                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
-                              />
-                            </div>
-                            <span
-                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-primary transition-colors`}
-                            >
-                              Camera
-                            </span>
-                          </button>
                         </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
 
-                {/* After Photo */}
-                <div className="space-y-3">
-                  <div
-                    className={`text-[10px] sm:text-xs font-black ${isDark ? "text-slate-500" : "text-slate-400"} uppercase tracking-widest flex items-center justify-between gap-4 flex-wrap`}
-                  >
-                    <span className="whitespace-nowrap">After Work</span>
-                    {ticket.photo_after_url && canManagePhotos && (
-                      <span className="text-[9px] sm:text-[10px] text-emerald-500/60 italic font-medium whitespace-nowrap">
-                        Click to change
-                      </span>
-                    )}
-                  </div>
-                  {ticket.photo_after_url || ticket.video_after_url ? (
-                    <div
-                      className={`relative aspect-video rounded-xl overflow-hidden ${isDark ? "bg-[#0d1117] border-[#30363d]" : "bg-slate-50 border-slate-100"} border group`}
-                    >
-                      {ticket.video_after_url ? (
-                        <>
-                          {/* Video poster — tap to open VideoPreviewModal */}
-                          <div
-                            className="absolute inset-0 bg-black flex items-center justify-center cursor-pointer"
-                            onClick={() => {
-                              setPreviewVideoUrl(ticket.video_after_url!);
-                              setPreviewVideoTitle("After Work — Video");
-                            }}
-                          >
-                            <div className="flex flex-col items-center gap-2">
-                              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center hover:bg-white/30 transition-colors">
-                                <PlayCircle className="w-8 h-8 text-white" />
+                        {/* Visual Progress Steps */}
+                        <div className="flex items-center gap-1.5">
+                          {[
+                            req.status === "pending_approval" ? "pending_approval" : "pending_quotation",
+                            req.status === "pending_approval" || req.status === "approved" ? "approved" : "quoted",
+                            "ordered",
+                            "delivered",
+                          ].map((s, idx, arr) => {
+                            const statusMap: Record<string, number> = {
+                              pending_quotation: 0,
+                              pending_approval: 0,
+                              quoted: 1,
+                              approved: 1,
+                              ordered: 2,
+                              delivered: 3,
+                              rejected: -1,
+                              cancelled: -1
+                            };
+                            const currentIdx = statusMap[req.status] ?? -1;
+                            const stepIdx = arr.indexOf(s);
+                            const isActive = stepIdx <= currentIdx && currentIdx >= 0;
+                            const isCurrent = stepIdx === currentIdx;
+                            const labelMap: Record<string, string> = {
+                              pending_quotation: 'Requested',
+                              pending_approval: 'Pending',
+                              quoted: 'Quoted',
+                              approved: 'Approved',
+                              ordered: 'Ordered',
+                              delivered: 'Delivered'
+                            };
+                            return (
+                              <div
+                                key={s}
+                                className="flex-1 flex flex-col gap-1.5"
+                              >
+                                <div
+                                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                                    isActive
+                                      ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]"
+                                      : isDark
+                                        ? "bg-[#21262d]"
+                                        : "bg-slate-100"
+                                  } ${isCurrent ? "animate-pulse" : ""}`}
+                                />
+                                <span
+                                  className={`text-[8px] font-black uppercase tracking-tighter text-center transition-colors ${
+                                    isActive
+                                      ? "text-emerald-500"
+                                      : isDark
+                                        ? "text-slate-600"
+                                        : "text-slate-300"
+                                  }`}
+                                >
+                                  {labelMap[s] || s.split("_")[0]}
+                                </span>
                               </div>
-                              <span className="text-white/60 text-[9px] font-bold uppercase tracking-widest">
-                                Tap to play
-                              </span>
-                            </div>
-                            <span className="absolute top-2 left-3 text-white/50 text-[9px] font-bold uppercase tracking-widest bg-black/50 px-2 py-0.5 rounded">
-                              Video
-                            </span>
+                            );
+                          })}
+                        </div>
+
+                        {/* Vendor Info */}
+                        {(req.vendor_name || req.vendor_contact) && (
+                          <div className={`p-3 rounded-xl border ${isDark ? 'bg-[#21262d] border-[#30363d]' : 'bg-slate-50 border-slate-100'} mt-2`}>
+                            <p className={`text-[9px] font-black uppercase tracking-widest mb-1.5 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Vendor Details</p>
+                            {req.vendor_name && <p className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{req.vendor_name}</p>}
+                            {req.vendor_contact && <p className={`text-[10px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{req.vendor_contact}</p>}
+                            {req.vendor_email && <p className={`text-[10px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{req.vendor_email}</p>}
                           </div>
-                          {/* Upload controls — appear on hover */}
-                          {canManagePhotos && (
-                            <div className="absolute bottom-3 left-0 right-0 flex justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                              <div className="flex items-center gap-3">
-                                <label
-                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl cursor-pointer hover:bg-emerald-500 text-white transition-all shadow-lg`}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Paperclip className="w-4 h-4" />
-                                  <input
-                                    type="file"
-                                    accept="image/*,video/*"
-                                    className="hidden"
-                                    onChange={(e) =>
-                                      handleFileUpload(e, "after")
-                                    }
-                                  />
-                                </label>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openCamera("after");
-                                  }}
-                                  className={`flex items-center justify-center w-12 h-12 ${isDark ? "bg-[#21262d]" : "bg-black/60 backdrop-blur-md"} rounded-xl hover:bg-emerald-500 text-white transition-all shadow-lg`}
-                                >
-                                  <Camera className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <img
-                            src={ticket.photo_after_url}
-                            alt="After"
-                            className="w-full h-full object-cover cursor-zoom-in select-none"
-                            onClick={() =>
-                              ticket.photo_after_url &&
-                              setLightboxUrl(ticket.photo_after_url)
-                            }
-                            onMouseDown={() =>
-                              ticket.photo_after_url &&
-                              startPeek(ticket.photo_after_url)
-                            }
-                            onMouseUp={endPeek}
-                            onMouseLeave={endPeek}
-                            onTouchStart={() =>
-                              ticket.photo_after_url &&
-                              startPeek(ticket.photo_after_url)
-                            }
-                            onTouchEnd={endPeek}
-                            onContextMenu={(e) => e.preventDefault()}
-                            draggable={false}
+                        )}
+                      </div>
+
+                      {/* Expandable Items Section */}
+                      <div className="mt-4">
+                        <button
+                          onClick={() => {
+                            const newSet = new Set(expandedMaterials);
+                            if (newSet.has(req.id)) newSet.delete(req.id);
+                            else newSet.add(req.id);
+                            setExpandedMaterials(newSet);
+                          }}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                            expandedMaterials.has(req.id)
+                              ? "bg-slate-900 text-white"
+                              : isDark
+                                ? "bg-[#21262d] text-slate-400 hover:text-white"
+                                : "bg-slate-50 text-slate-500 hover:bg-slate-100"
+                          }`}
+                        >
+                          <Package className="w-3.5 h-3.5" />
+                          {expandedMaterials.has(req.id)
+                            ? "Hide Items"
+                            : `View ${req.items?.length || 0} Items`}
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 transition-transform duration-300 ${expandedMaterials.has(req.id) ? "rotate-180" : ""}`}
                           />
-                          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity gap-3">
-                            <button
-                              onClick={() =>
-                                ticket.photo_after_url &&
-                                setLightboxUrl(ticket.photo_after_url)
-                              }
-                              className={`text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 ${isDark ? "bg-[#161b22]" : "bg-white/10 backdrop-blur-md"} rounded-2xl hover:bg-emerald-500 transition-colors shadow-lg`}
-                            >
-                              View Full
-                            </button>
-                            {canManagePhotos && (
-                              <div className="flex items-center gap-4">
-                                <label
-                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-emerald-500 text-white transition-all shadow-lg`}
-                                >
-                                  <Paperclip className="w-5 h-5" />
-                                  <input
-                                    type="file"
-                                    accept="image/*,video/*"
-                                    className="hidden"
-                                    onChange={(e) =>
-                                      handleFileUpload(e, "after")
-                                    }
-                                  />
-                                </label>
-                                <button
-                                  onClick={() => openCamera("after")}
-                                  className={`flex items-center justify-center w-14 h-14 ${isDark ? "bg-[#21262d]" : "bg-white/20 backdrop-blur-md"} rounded-2xl cursor-pointer hover:bg-emerald-500 text-white transition-all shadow-lg`}
-                                >
-                                  <Camera className="w-5 h-5" />
-                                </button>
+                        </button>
+
+                        {expandedMaterials.has(req.id) && (
+                          <div className="mt-4 space-y-3 pl-2 border-l-2 border-slate-100 dark:border-[#21262d] animate-in slide-in-from-top-2 duration-300">
+                            {req.items?.map((item: any, idx: number) => (
+                              <div
+                                key={idx}
+                                className="flex items-center justify-between gap-4 group"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-[#21262d] flex items-center justify-center border border-slate-100 dark:border-[#30363d] overflow-hidden">
+                                    <img
+                                      src={
+                                        item.photo_url ||
+                                        `https://placehold.co/100x100?text=${encodeURIComponent(item.name?.[0] || 'I')}`
+                                      }
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        target.onerror = null;
+                                        target.src = `https://placehold.co/100x100?text=${encodeURIComponent(item.name?.[0] || 'I')}`;
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p
+                                      className={`text-[11px] font-bold ${isDark ? "text-slate-200" : "text-slate-700"} truncate`}
+                                    >
+                                      {item.name}
+                                    </p>
+                                    <p
+                                      className={`text-[9px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"} uppercase tracking-tight`}
+                                    >
+                                      Qty: {item.quantity}{" "}
+                                      {item.unit || "units"}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className={`text-[10px] font-black ${(userRole === 'admin' || userRole === 'procurement') && isDark ? "text-emerald-400" : (userRole === 'admin' || userRole === 'procurement') ? "text-emerald-600" : ""}`}>
+                                    {(userRole === 'admin' || userRole === 'procurement') && item.total_price !== null ? `₹${item.total_price.toLocaleString()}` : ''}
+                                  </p>
+                                </div>
                               </div>
-                            )}
+                            ))}
                           </div>
-                        </>
-                      )}
-
-                      {/* Timestamp Overlay */}
-                      {(() => {
-                        const act = activities.find(
-                          (a: any) =>
-                            a.action === "photo_after_uploaded" ||
-                            a.action === "video_after_uploaded" ||
-                            (a.action === "photo_upload" &&
-                              a.new_value?.includes("after")) ||
-                            (a.action === "video_upload" &&
-                              a.new_value?.includes("after")),
-                        );
-                        const ts = act?.old_value || act?.created_at;
-                        if (!ts) return null;
-                        return (
-                          <div
-                            className="absolute bottom-2 left-2 px-1.5 py-0.5 bg-black/80 rounded text-[9px] text-white font-bold font-mono border border-white/30 backdrop-blur-sm pointer-events-none z-20 shadow-lg"
-                            key="ts-after"
-                          >
-                            {new Date(ts)
-                              .toLocaleString("en-GB", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                second: "2-digit",
-                                hour12: false,
-                              })
-                              .replace(",", "")}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <div
-                      className={`flex flex-col items-center justify-center aspect-video rounded-xl border-2 border-dashed ${isDark ? "border-[#30363d] bg-[#0d1117]" : "border-slate-200 bg-slate-50"} transition-all gap-2 p-4`}
-                    >
-                      <span
-                        className={`text-[10px] font-black ${isDark ? "text-slate-600" : "text-slate-400"} uppercase tracking-widest mb-2`}
-                      >
-                        Add Attachment
-                      </span>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center gap-6">
-                          <label
-                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
-                          >
-                            <div
-                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
-                            >
-                              <Paperclip
-                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
-                              />
-                            </div>
-                            <span
-                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
-                            >
-                              Gallery
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={!canManagePhotos}
-                              onChange={(e) => handleFileUpload(e, "after")}
-                            />
-                          </label>
-
-                          <button
-                            onClick={() => openCamera("after")}
-                            className={`cursor-pointer flex flex-col items-center gap-2 group`}
-                          >
-                            <div
-                              className={`w-14 h-14 flex items-center justify-center rounded-2xl ${isDark ? "bg-[#161b22] group-hover:bg-[#21262d] border-[#30363d]" : "bg-white group-hover:bg-slate-50 border-slate-200"} border-2 shadow-sm transition-all group-hover:scale-105`}
-                            >
-                              <Camera
-                                className={`w-6 h-6 ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
-                              />
-                            </div>
-                            <span
-                              className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-500" : "text-slate-400"} group-hover:text-emerald-500 transition-colors`}
-                            >
-                              Camera
-                            </span>
-                          </button>
-                        </div>
+                        )}
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* 3. Activity Timeline (Progress) */}
             <div
+              id="section-timeline"
               className={`${isDark ? "bg-[#161b22] border-[#21262d]" : "bg-white border-slate-100"} p-6 rounded-3xl border shadow-sm`}
             >
               <h3
@@ -2364,47 +2895,64 @@ export default function TicketDetailPage() {
                   </p>
                 </div>
 
-                {/* Reassignment & Assignment History */}
+                {/* Procurement & Assignment History */}
                 {activities
                   .filter(
-                    (a) => a.action === "reassigned" || a.action === "assigned",
+                    (a) => 
+                      a.action === "reassigned" || 
+                      a.action === "assigned" || 
+                      a.action.startsWith("procurement_"),
                   )
                   .sort(
                     (a, b) =>
                       (parseDate(a.created_at)?.getTime() || 0) -
                       (parseDate(b.created_at)?.getTime() || 0),
                   )
-                  .map((act) => (
-                    <div key={act.id} className="relative pl-12">
-                      <div
-                        className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white ring-4 ${isDark ? "ring-[#161b22]" : "ring-white"} shadow-primary/20 shadow-lg`}
-                      >
-                        <User className="w-4 h-4" />
+                  .map((act) => {
+                    const isProcurement = act.action.startsWith("procurement_");
+                    return (
+                      <div key={act.id} className="relative pl-12">
+                        <div
+                          className={`absolute left-0 top-0 mt-0.5 z-10 w-8 h-8 rounded-full ${isProcurement ? "bg-emerald-500" : "bg-primary"} flex items-center justify-center text-white ring-4 ${isDark ? "ring-[#161b22]" : "ring-white"} shadow-lg`}
+                        >
+                          {isProcurement ? <ShoppingBag className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                        </div>
+                        <p
+                          className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500" : "text-slate-400"} mb-1`}
+                        >
+                          {parseDate(act.created_at)?.toLocaleString()}
+                        </p>
+                        <p
+                          className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-900"}`}
+                        >
+                          {isProcurement 
+                            ? (act.action === "procurement_requested" ? "Material Requested" : "Procurement Update") 
+                            : "Assignment Update"}
+                        </p>
+                        <p
+                          className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}
+                        >
+                          {isProcurement ? (
+                            <>
+                              <span className="font-bold">{act.user?.full_name || "System"}</span>{" "}
+                              {act.action === "procurement_requested" ? "created a material request" : act.action.replace("procurement_", "").replace(/_/g, " ") + " the request"}
+                              {act.new_value && !act.new_value.startsWith("http") && (
+                                <span className="ml-1 text-emerald-500 font-bold">: {act.new_value.replace(/\.?\s*Quoted Price:\s*[\d.]+/gi, '').replace(/\.?\s*Vendor:\s*N\/A/gi, '')}</span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              Assigned to{" "}
+                              <span className="text-success font-bold">
+                                {userNameMap[act.new_value!] || act.new_value}
+                              </span>{" "}
+                              by <span className="font-bold">{act.user?.full_name || "System"}</span>
+                            </>
+                          )}
+                        </p>
                       </div>
-                      <p
-                        className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500" : "text-slate-400"} mb-1`}
-                      >
-                        {parseDate(act.created_at)?.toLocaleString()}
-                      </p>
-                      <p
-                        className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-900"}`}
-                      >
-                        {act.action === "assigned"
-                          ? "Initial Assignment"
-                          : "Route Changed"}
-                      </p>
-                      <p
-                        className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}
-                      >
-                        {act.new_value && userNameMap[act.new_value] && (
-                          <span className="font-bold text-primary mr-1">
-                            Assigned to {userNameMap[act.new_value]}
-                          </span>
-                        )}
-                        Executed by {act.user?.full_name || "System"}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                 {/* 3. Work Started */}
                 <div className="relative pl-12">
@@ -2539,7 +3087,7 @@ export default function TicketDetailPage() {
                             <p
                               className={`text-sm font-bold ${isDark ? "text-slate-700" : "text-slate-300"}`}
                             >
-                              Client Validation
+                              Client Check
                             </p>
                           </div>
                         </>
@@ -2579,7 +3127,7 @@ export default function TicketDetailPage() {
                               <p
                                 className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}
                               >
-                                Sent to client for validation
+                                Sent to client to check
                               </p>
                             )}
                           </div>
@@ -2657,7 +3205,7 @@ export default function TicketDetailPage() {
                           <p
                             className={`text-sm font-bold ${isDark ? "text-slate-700" : "text-slate-300"}`}
                           >
-                            Client Validation
+                            Client Check
                           </p>
                           <p
                             className={`text-xs ${isDark ? "text-slate-600" : "text-slate-300"}`}
@@ -2712,34 +3260,74 @@ export default function TicketDetailPage() {
                   Internal Trace Log
                 </h4>
                 <div className="space-y-4">
-                  {activities.map((act) => (
-                    <div
-                      key={act.id}
-                      className="flex justify-between items-start gap-4 opacity-75"
-                    >
+                  {activities.map((act) => {
+                    const isAssignment = act.action === "reassigned" || act.action === "assigned";
+                    return (
                       <div
-                        className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}
+                        key={act.id}
+                        className="flex justify-between items-start gap-4 opacity-75"
                       >
-                        <p
-                          className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"} leading-relaxed`}
+                        <div
+                          className={`text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}
                         >
-                          <span
-                            className={`font-bold ${isDark ? "text-white" : "text-slate-900"}`}
+                          <p
+                            className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-600"} leading-relaxed`}
                           >
-                            {act.user?.full_name || "System"}:
-                          </span>{" "}
-                          <span
-                            className={`${act.action === "force_closed" ? "text-rose-500 font-black uppercase tracking-tighter" : ""}`}
-                          >
-                            {act.action.replace(/_/g, " ")}
-                          </span>
-                          {act.new_value && (
-                            <span className="text-success font-bold ml-1">
-                              → {userNameMap[act.new_value] || act.new_value}
-                            </span>
-                          )}
-                        </p>
-                      </div>
+                            {isAssignment ? (
+                              <>
+                                <span className={`font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                                  {act.user?.full_name || "System"}
+                                </span>{" "}
+                                assigned this to{" "}
+                                <span className="text-success font-bold">
+                                  {userNameMap[act.new_value!] || act.new_value}
+                                </span>
+                              </>
+                             ) : act.action.startsWith("procurement_") ? (
+                                <>
+                                  <span className={`font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                                    {act.user?.full_name || "System"}:
+                                  </span>{" "}
+                                  <span className="text-emerald-500 font-bold">
+                                    {act.action === "procurement_requested" ? "material request created" : act.action.replace("procurement_", "").replace(/_/g, " ")}
+                                  </span>
+                                  {act.new_value && (
+                                    <span className={`ml-1 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
+                                      {act.new_value.startsWith("http") ? (
+                                        <a 
+                                          href={act.new_value} 
+                                          target="_blank" 
+                                          rel="noopener noreferrer" 
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-500/10 text-blue-500 rounded-md hover:bg-blue-500/20 transition-colors font-bold"
+                                        >
+                                          <Eye className="w-3 h-3" />
+                                          View Attachment
+                                        </a>
+                                      ) : (
+                                        <>: {act.new_value.replace(/\.?\s*Quoted Price:\s*[\d.]+/gi, '').replace(/\.?\s*Vendor:\s*N\/A/gi, '')}</>
+                                      )}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className={`font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+                                    {act.user?.full_name || "System"}:
+                                  </span>{" "}
+                                  <span
+                                    className={`${act.action === "force_closed" ? "text-rose-500 font-black uppercase tracking-tighter" : ""}`}
+                                  >
+                                    {act.action.replace(/_/g, " ")}
+                                  </span>
+                                  {act.new_value && (
+                                    <span className="text-success font-bold ml-1">
+                                      → {userNameMap[act.new_value] || act.new_value}
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                          </p>
+                        </div>
                       <span
                         className={`text-[9px] ${isDark ? "text-slate-600" : "text-slate-400"} font-bold uppercase whitespace-nowrap`}
                       >
@@ -2748,9 +3336,10 @@ export default function TicketDetailPage() {
                           minute: "2-digit",
                         })}
                       </span>
-                    </div>
-                  ))}
-                </div>
+                        </div>
+                      );
+                    })}
+                  </div>
               </div>
             </div>
           </div>
@@ -2978,176 +3567,15 @@ export default function TicketDetailPage() {
 
         {/* MODALS */}
         <AnimatePresence>
-          {showMaterialModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowMaterialModal(false)}
-                className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-              />
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className={`${isDark ? "bg-[#161b22] border-[#30363d] text-white" : "bg-white border-slate-200 text-slate-900"} border rounded-[2.5rem] w-full max-w-2xl p-8 relative z-10 shadow-2xl overflow-hidden`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <h2
-                    className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-900"} italic flex items-center gap-3`}
-                  >
-                    <PackagePlus className="w-6 h-6 text-emerald-500" /> Request
-                    Materials
-                  </h2>
-                  <button
-                    onClick={() => setShowMaterialModal(false)}
-                    className={`p-2 rounded-xl transition-all ${isDark ? "hover:bg-[#21262d] text-slate-500 hover:text-white" : "hover:bg-slate-100 text-slate-400 hover:text-slate-900"}`}
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                <p
-                  className={`${isDark ? "text-slate-500" : "text-slate-400"} text-sm mb-6 italic`}
-                >
-                  Requisition materials from the inventory forces.
-                </p>
-
-                <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-                  <div>
-                    <label
-                      className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500" : "text-slate-400"} mb-2 block`}
-                    >
-                      Assign To Procurement
-                    </label>
-                    <select
-                      value={selectedProcurementId}
-                      onChange={(e) => setSelectedProcurementId(e.target.value)}
-                      className={`w-full ${isDark ? "bg-[#0d1117] border-[#30363d] text-white" : "bg-slate-50 border-slate-200 text-slate-900"} px-4 py-4 rounded-2xl border-2 focus:border-emerald-500 focus:outline-none transition-all font-bold appearance-none`}
-                    >
-                      <option value="">-- Select Member --</option>
-                      {procurementUsers.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.full_name} ({u.email})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label
-                        className={`text-[10px] font-black uppercase tracking-widest ${isDark ? "text-slate-500" : "text-slate-400"} block`}
-                      >
-                        Items
-                      </label>
-                      <button
-                        onClick={() =>
-                          setMaterialItems([
-                            ...materialItems,
-                            { name: "", quantity: 1, notes: "" },
-                          ])
-                        }
-                        className="text-xs font-bold text-emerald-500 hover:text-emerald-400"
-                      >
-                        + Add Item
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      {materialItems.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className={`p-4 border border-dashed rounded-2xl ${isDark ? "border-[#30363d] bg-[#0d1117]" : "border-slate-200 bg-slate-50"} flex items-start gap-4`}
-                        >
-                          <div className="flex-1 space-y-3">
-                            <input
-                              type="text"
-                              placeholder="Item Name / Code"
-                              value={item.name}
-                              onChange={(e) => {
-                                const n = [...materialItems];
-                                n[idx].name = e.target.value;
-                                setMaterialItems(n);
-                              }}
-                              className={`w-full ${isDark ? "bg-[#161b22] border-[#30363d] text-white" : "bg-white border-slate-200 text-slate-900"} px-4 py-3 rounded-xl border focus:border-emerald-500 focus:outline-none transition-all font-bold text-sm`}
-                            />
-                            <div className="flex gap-3">
-                              <div className="w-24">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  placeholder="Qty"
-                                  value={item.quantity}
-                                  onChange={(e) => {
-                                    const n = [...materialItems];
-                                    n[idx].quantity =
-                                      parseInt(e.target.value) || 1;
-                                    setMaterialItems(n);
-                                  }}
-                                  className={`w-full ${isDark ? "bg-[#161b22] border-[#30363d] text-white" : "bg-white border-slate-200 text-slate-900"} px-4 py-3 rounded-xl border focus:border-emerald-500 focus:outline-none transition-all font-bold text-sm`}
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <input
-                                  type="text"
-                                  placeholder="Notes (Optional)"
-                                  value={item.notes}
-                                  onChange={(e) => {
-                                    const n = [...materialItems];
-                                    n[idx].notes = e.target.value;
-                                    setMaterialItems(n);
-                                  }}
-                                  className={`w-full ${isDark ? "bg-[#161b22] border-[#30363d] text-white" : "bg-white border-slate-200 text-slate-900"} px-4 py-3 rounded-xl border focus:border-emerald-500 focus:outline-none transition-all font-medium text-sm`}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                          {materialItems.length > 1 && (
-                            <button
-                              onClick={() => {
-                                const n = materialItems.filter(
-                                  (_, i) => i !== idx,
-                                );
-                                setMaterialItems(n);
-                              }}
-                              className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-xl transition-colors mt-1"
-                            >
-                              <X className="w-5 h-5" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 mt-8">
-                  <button
-                    onClick={() => setShowMaterialModal(false)}
-                    className={`flex-1 py-4 ${isDark ? "bg-[#21262d] text-slate-400" : "bg-slate-100 text-slate-500"} rounded-2xl font-black text-xs uppercase tracking-widest hover:text-white transition-all`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSubmitMaterial}
-                    disabled={
-                      submittingMaterial ||
-                      !selectedProcurementId ||
-                      materialItems.some((i) => !i.name)
-                    }
-                    className={`flex-1 py-4 bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-500/20 rounded-2xl font-black text-xs uppercase tracking-widest transition-all disabled:opacity-50 shadow-xl flex items-center justify-center gap-2`}
-                  >
-                    {submittingMaterial ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <PackagePlus className="w-4 h-4" />
-                    )}
-                    Submit Request
-                  </button>
-                </div>
-              </motion.div>
-            </div>
+          {showMaterialModal && ticket && (
+            <ProcurementCatalogModal
+              isOpen={showMaterialModal}
+              onClose={() => setShowMaterialModal(false)}
+              ticketId={ticket.id}
+              propertyId={ticket.property_id}
+              organizationId={(ticket.property as any)?.organization_id || ""}
+              isProcurementUser={userRole === 'procurement' || userRole === 'admin'}
+            />
           )}
 
           {showAssignModal && (
@@ -3444,16 +3872,177 @@ export default function TicketDetailPage() {
               </motion.div>
             </motion.div>
           )}
-        </AnimatePresence>
-      </div>
 
-      <ShareModal
-        isOpen={shareOpen}
-        onClose={() => setShareOpen(false)}
-        ticketId={typeof ticketId === "string" ? ticketId : ""}
-        ticketNumber={ticket.ticket_number}
-        title={ticket.title}
-      />
+          {showMobileChat && (
+            <div className="fixed inset-0 z-[110] flex flex-col lg:hidden">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowMobileChat(false)}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              />
+              <motion.div
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                className={`relative flex-1 mt-12 ${isDark ? "bg-[#0b141a]" : "bg-[#efe7de]"} rounded-t-[32px] overflow-hidden flex flex-col shadow-2xl`}
+                style={isDark ? { backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay', backgroundColor: '#0b141a' } : { backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundBlendMode: 'overlay', backgroundColor: '#efe7de' }}
+              >
+                {/* Mobile Chat Header */}
+                <div className={`p-4 border-b flex items-center justify-between ${isDark ? "bg-[#202c33] border-[#202c33]" : "bg-[#f0f2f5] border-slate-200"}`}>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setShowMobileChat(false)}
+                      className={`p-2 rounded-full ${isDark ? "hover:bg-slate-700 text-slate-400" : "hover:bg-slate-200 text-slate-500"} transition-colors`}
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                    <div>
+                      <h3 className={`text-sm font-bold ${isDark ? "text-slate-100" : "text-slate-900"}`}>
+                        Ticket Thread
+                      </h3>
+                      <p className={`text-[10px] ${isDark ? "text-emerald-400" : "text-emerald-600"} font-bold uppercase tracking-widest`}>
+                        Online
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobile Chat Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                  {comments.length === 0 && (
+                    <div className="text-center py-20 opacity-50">
+                      <div className={`inline-block px-4 py-1 rounded-lg ${isDark ? "bg-[#182229] text-amber-200/50" : "bg-white text-slate-500"} text-[10px] font-bold uppercase tracking-wider`}>
+                        No messages yet
+                      </div>
+                    </div>
+                  )}
+                  {comments.map((comment) => {
+                    if (comment.is_internal && userRole === "tenant") return null;
+                    const isMe = comment.user_id === userId;
+                    
+                    const formatName = (name: string) => {
+                      if (!name) return "System";
+                      return name.toLowerCase().split(' ').map(s => s.charAt(0).toUpperCase() + s.substring(1)).join(' ');
+                    };
+
+                    const getParticipantColor = (name: string) => {
+                      const colors = [
+                        'text-[#ff5252]', 'text-[#2196f3]', 'text-[#4caf50]', 
+                        'text-[#ff9800]', 'text-[#9c27b0]', 'text-[#00bcd4]', 
+                        'text-[#e91e63]', 'text-[#673ab7]', 'text-[#3f51b5]',
+                        'text-[#8bc34a]', 'text-[#ffc107]', 'text-[#ff5722]'
+                      ];
+                      let hash = 0;
+                      for (let i = 0; i < name.length; i++) {
+                        hash = name.charCodeAt(i) + ((hash << 5) - hash);
+                      }
+                      return colors[Math.abs(hash) % colors.length];
+                    };
+
+                    const isSystemMessage = 
+                      comment.comment.includes("Material requested") || 
+                      comment.comment.includes("Material Request Status Updated") ||
+                      comment.comment.includes("Ticket Status Updated") ||
+                      comment.comment.startsWith("STATUS CHANGE:") ||
+                      comment.user?.full_name?.toLowerCase() === "system";
+
+                    if (isSystemMessage) {
+                      return (
+                        <div key={comment.id} className="w-full flex justify-center py-1">
+                          <div className={`px-3 py-1 rounded-lg text-center shadow-sm text-[11px] font-bold uppercase tracking-tighter ${
+                            isDark ? "bg-[#182229] text-amber-200/70 border border-white/5" : "bg-white/80 backdrop-blur-sm text-slate-500 border border-slate-200"
+                          }`}>
+                            {comment.comment}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={comment.id}
+                        className={`w-full flex ${isMe ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`relative max-w-[85%] px-3 py-1.5 rounded-[12px] shadow-sm flex flex-col ${
+                            isMe
+                              ? `bg-[#dcf8c6] dark:bg-[#005c4b] text-slate-800 dark:text-slate-100 rounded-tr-none`
+                              : isDark
+                                ? "bg-[#202c33] text-slate-200 rounded-tl-none"
+                                : "bg-white text-slate-800 rounded-tl-none border border-slate-200/50"
+                          }`}
+                        >
+                          <span className={`text-[11px] font-bold mb-0.5 ${isMe ? (isDark ? "text-emerald-400" : "text-emerald-600") : getParticipantColor(comment.user?.full_name || "Unknown")}`}>
+                            {isMe ? "You" : formatName(comment.user?.full_name || "Unknown")}
+                          </span>
+                          
+                          <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+                            <p className={`text-[14px] font-medium grow leading-relaxed ${isMe ? "text-slate-900 dark:text-white" : isDark ? "text-slate-100" : "text-slate-900"}`}>
+                              {comment.comment}
+                            </p>
+                            <div className={`text-[9px] font-medium ml-auto flex items-center gap-1 shrink-0 ${isMe ? "text-slate-700 dark:text-slate-300" : "text-slate-500"}`}>
+                              {parseDate(comment.created_at)?.toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Mobile Chat Input */}
+                <div className={`p-4 ${isDark ? "bg-[#202c33]" : "bg-[#f0f2f5]"}`}>
+                  <div className="flex items-center gap-2 w-full">
+                    <div className={`flex-1 min-w-0 flex items-center gap-2 px-3 py-1 ${isDark ? "bg-[#2a3942]" : "bg-white"} rounded-[24px] shadow-sm min-h-[48px]`}>
+                      <input
+                        type="text"
+                        value={commentText}
+                        onChange={handleCommentChange}
+                        onKeyDown={(e) => e.key === "Enter" && handlePostComment()}
+                        placeholder="Type a message"
+                        className={`flex-1 min-w-0 bg-transparent px-1 py-1 text-[15px] font-medium focus:outline-none placeholder:text-slate-400 ${isDark ? "text-white" : "text-black"}`}
+                      />
+                    </div>
+                    <button
+                      onClick={handlePostComment}
+                      disabled={!commentText.trim()}
+                      className={`w-11 h-11 flex-none rounded-full flex items-center justify-center shadow-lg transition-all bg-primary text-white ${!commentText.trim() && "opacity-50"}`}
+                    >
+                      <ArrowRight className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <ShareModal
+          isOpen={shareOpen}
+          onClose={() => setShareOpen(false)}
+          ticketId={typeof ticketId === "string" ? ticketId : ""}
+          ticketNumber={ticket.ticket_number}
+          title={ticket.title}
+        />
+
+        <ConfirmModal
+          isOpen={!!deleteRequestId}
+          onClose={() => setDeleteRequestId(null)}
+          onConfirm={executeDeleteRequest}
+          title="Delete Material Request"
+          message="Are you sure you want to delete this material request? This action cannot be undone."
+          confirmText="Yes, Delete"
+          cancelText="Keep Request"
+          type="danger"
+          isLoading={isDeleting}
+        />
+      </div>
     </div>
   );
 }

@@ -25,10 +25,10 @@ const securityHeaders = {
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "img-src 'self' data: blob: https://xvucakstcmtfoanmgcql.supabase.co",
-        "media-src 'self' blob: https://xvucakstcmtfoanmgcql.supabase.co",
+        `img-src 'self' data: blob: ${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', 'https://') || 'https://*.supabase.co'} https://images.unsplash.com https://loremflickr.com https://placehold.co https://*.githubusercontent.com`,
+        `media-src 'self' blob: ${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', 'https://') || 'https://*.supabase.co'}`,
         "font-src 'self' data: https://fonts.gstatic.com",
-        "connect-src 'self' http://localhost:3000 ws://localhost:3000 https://xvucakstcmtfoanmgcql.supabase.co wss://xvucakstcmtfoanmgcql.supabase.co https://www.gstatic.com https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://*.firebaseio.com",
+        `connect-src 'self' http://localhost:3000 ws://localhost:3000 ${process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://*.supabase.co'} ${process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', 'wss://') || 'wss://*.supabase.co'} https://www.gstatic.com https://firebaseinstallations.googleapis.com https://fcmregistrations.googleapis.com https://*.firebaseio.com`,
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",
@@ -106,6 +106,11 @@ export async function proxy(request: NextRequest) {
 
     // Redirect to login if user is not authenticated on a protected route
     if (!isPublicRoute && !user) {
+        if (pathname.startsWith('/api')) {
+            console.warn('Middleware: Unauthorized API request, but NOT redirecting:', pathname);
+            return response; // Let the API handle its own 401
+        }
+        console.log('Middleware: Redirecting to login from:', pathname);
         const loginUrl = new URL('/login', request.url)
         loginUrl.searchParams.set('redirect', pathname)
         return NextResponse.redirect(loginUrl)

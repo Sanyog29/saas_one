@@ -49,7 +49,7 @@ export default function EnhancedClassificationBadge({
         <motion.span
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-purple-500/10 text-purple-400 text-xs rounded-full border border-purple-500/20"
+            className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/10 text-purple-400 text-xs rounded-full border border-purple-500/20"
             title="This ticket benefited from intelligent assistance"
         >
             <Sparkles className="w-3 h-3" />

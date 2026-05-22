@@ -20,7 +20,7 @@ export default function MasterPage() {
         }
 
         if (!isLoading && user && !isMasterAdmin) {
-            router.push('/organizations');
+            router.push('/login');
         }
     }, [user, isMasterAdmin, isLoading, router]);
 

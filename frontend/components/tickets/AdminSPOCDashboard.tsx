@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
 import Skeleton from '@/frontend/components/ui/Skeleton';
+import ConfirmModal from '@/frontend/components/ui/ConfirmModal';
+import { Toast } from '@/frontend/components/ui/Toast';
 
 interface Ticket {
     id: string;
@@ -82,9 +84,17 @@ export default function AdminSPOCDashboard({
     const [statusFilter, setStatusFilter] = useState(initialStatusFilter || 'all');
     const [timePeriod, setTimePeriod] = useState<'today' | 'all'>('all');
     const [showPropDropdown, setShowPropDropdown] = useState(false);
+    const [ticketToDelete, setTicketToDelete] = useState<string | null>(null);
+    const [notification, setNotification] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [floorFilter, setFloorFilter] = useState('all');
+
+    const showToast = (message: string, type: 'success' | 'error') => {
+        setNotification({ message, type });
+    };
 
     const { getCachedData, setCachedData } = useDataCache();
-    const cacheKey = `spoc-dashboard-${propertyId}-${statusFilter}`;
+    const cacheKey = `spoc-dashboard-${propertyId}-${statusFilter}-${floorFilter}`;
 
     const [tickets, setTickets] = useState<Ticket[]>(() => getCachedData(cacheKey)?.tickets || []);
     const [resolvers, setResolvers] = useState<Resolver[]>(() => getCachedData(cacheKey)?.resolvers || []);
@@ -117,8 +127,9 @@ export default function AdminSPOCDashboard({
             if (timePeriod === 'today') {
                 params.append('period', 'today');
             }
-
-            console.log('[AdminSPOCDashboard] Fetching with params:', params.toString());
+            if (floorFilter !== 'all') {
+                params.append('floorNumber', floorFilter);
+            }
 
             const fetchWithLog = async (url: string, name: string) => {
                 try {
@@ -190,7 +201,7 @@ export default function AdminSPOCDashboard({
         } finally {
             setLoading(false);
         }
-    }, [propertyId, organizationId, statusFilter, timePeriod]);
+    }, [propertyId, organizationId, statusFilter, timePeriod, floorFilter]);
 
     useEffect(() => {
         fetchData();
@@ -199,7 +210,7 @@ export default function AdminSPOCDashboard({
     }, [fetchData]);
 
     const getSLAStatus = (deadline: string | null, breached: boolean) => {
-        if (breached) return { text: 'SLA BREACHED', color: 'text-red-400 bg-red-500/20', urgent: true };
+        if (breached) return { text: 'LATE', color: 'text-red-400 bg-red-500/20', urgent: true };
         if (!deadline) return null;
 
         // Ensure deadline is parsed correctly even if it lacks 'Z'
@@ -207,7 +218,7 @@ export default function AdminSPOCDashboard({
         const diffMs = deadlineDate.getTime() - Date.now();
         const diffMins = Math.floor(diffMs / 60000);
 
-        if (diffMins < 0) return { text: 'SLA BREACHED', color: 'text-red-400 bg-red-500/20', urgent: true };
+        if (diffMins < 0) return { text: 'LATE', color: 'text-red-400 bg-red-500/20', urgent: true };
         if (diffMins < 30) return { text: `${diffMins}m left`, color: 'text-red-400 bg-red-500/20', urgent: true };
         if (diffMins < 60) return { text: `${diffMins}m left`, color: 'text-orange-400 bg-orange-500/20', urgent: true };
 
@@ -276,14 +287,28 @@ export default function AdminSPOCDashboard({
         }
     };
 
-    const handleDeleteTicket = async (e: React.MouseEvent, ticketId: string) => {
+    const handleDeleteTicket = (e: React.MouseEvent, ticketId: string) => {
         e.stopPropagation();
-        if (!confirm('Are you sure you want to delete this ticket? This action is permanent.')) return;
+        setTicketToDelete(ticketId);
+    };
+
+    const executeDeleteTicket = async () => {
+        if (!ticketToDelete) return;
+        setIsDeleting(true);
         try {
-            const response = await fetch(`/api/tickets/${ticketId}`, { method: 'DELETE' });
-            if (response.ok) fetchData();
+            const response = await fetch(`/api/tickets/${ticketToDelete}`, { method: 'DELETE' });
+            if (response.ok) {
+                showToast('Ticket deleted successfully', 'success');
+                fetchData();
+            } else {
+                showToast('Failed to delete ticket', 'error');
+            }
         } catch (error) {
             console.error('Error deleting ticket:', error);
+            showToast('Error deleting ticket', 'error');
+        } finally {
+            setIsDeleting(false);
+            setTicketToDelete(null);
         }
     };
 
@@ -300,6 +325,24 @@ export default function AdminSPOCDashboard({
 
     return (
         <div className="min-h-full bg-transparent text-slate-900">
+            <Toast 
+                message={notification?.message || ''} 
+                type={notification?.type || 'info'} 
+                visible={!!notification} 
+                onClose={() => setNotification(null)} 
+            />
+
+            <ConfirmModal 
+                isOpen={!!ticketToDelete}
+                onClose={() => setTicketToDelete(null)}
+                onConfirm={executeDeleteTicket}
+                title="Delete Ticket"
+                message="Are you sure you want to delete this ticket? This action is permanent and cannot be undone."
+                confirmText="Yes, Delete"
+                cancelText="Keep Ticket"
+                type="danger"
+                isLoading={isDeleting}
+            />
 
             {/* ── DESKTOP HEADER (hidden on mobile) ── */}
             <div className="hidden lg:flex items-center justify-between px-5 pt-5 mb-5">
@@ -382,7 +425,22 @@ export default function AdminSPOCDashboard({
                         <option value="open,assigned,in_progress,blocked">Open</option>
                         <option value="resolved,closed">Completed</option>
                         <option value="waitlist">Waitlist</option>
-                        <option value="client_raised">Client Raised</option>
+                        <option value="client_raised">Raised by Customer</option>
+                    </select>
+                    <select
+                        value={floorFilter}
+                        onChange={(e) => setFloorFilter(e.target.value)}
+                        className="h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                    >
+                        <option value="all">All Floors</option>
+                        {tickets.some(t => t.floor_number === null || t.floor_number === undefined || String(t.floor_number) === '') && (
+                            <option value="unspecified">Unspecified</option>
+                        )}
+                        {[...new Set(tickets.map(t => t.floor_number).filter(v => v !== null && v !== undefined && String(v) !== ''))].sort((a, b) => Number(a) - Number(b)).map(f => (
+                            <option key={`floor-${f}`} value={String(f)}>
+                                {f === 0 ? 'Ground Floor' : f === -1 ? 'Basement 1' : f === -2 ? 'Basement 2' : `Floor ${f}`}
+                            </option>
+                        ))}
                     </select>
                 </div>
             </div>
@@ -446,7 +504,26 @@ export default function AdminSPOCDashboard({
                         <option value="open,assigned,in_progress,blocked">Open</option>
                         <option value="resolved,closed">Completed</option>
                         <option value="waitlist">Waitlist</option>
-                        <option value="client_raised">Client Raised</option>
+                        <option value="client_raised">Raised by Customer</option>
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                </div>
+                {/* Floor filter pill (mobile) */}
+                <div className="flex-1 relative">
+                    <select
+                        value={floorFilter}
+                        onChange={(e) => setFloorFilter(e.target.value)}
+                        className="w-full appearance-none bg-white border border-slate-200 rounded-full pl-3 pr-8 h-9 text-xs font-bold text-slate-700 focus:outline-none"
+                    >
+                        <option value="all">All Floors</option>
+                        {tickets.some(t => t.floor_number === null || t.floor_number === undefined || String(t.floor_number) === '') && (
+                            <option value="unspecified">Unspecified</option>
+                        )}
+                        {[...new Set(tickets.map(t => t.floor_number).filter(v => v !== null && v !== undefined && String(v) !== ''))].sort((a, b) => Number(a) - Number(b)).map(f => (
+                            <option key={`floor-mob-${f}`} value={String(f)}>
+                                {f === 0 ? 'Grd' : f === -1 ? 'B1' : f === -2 ? 'B2' : `F${f}`}
+                            </option>
+                        ))}
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                 </div>
@@ -702,8 +779,9 @@ export default function AdminSPOCDashboard({
                                 Override
                             </button>
                             <button
-                                onClick={() => router.push('/reports/tickets')}
-                                className="py-3 bg-purple-50 text-purple-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-100 transition-colors flex items-center justify-center gap-1"
+                                onClick={() => propertyId ? router.push(`/property/${propertyId}/reports/requests`) : router.push('/reports')}
+                                disabled={!propertyId}
+                                className="py-3 bg-purple-50 text-purple-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-100 transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Reports ✨
                             </button>

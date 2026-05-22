@@ -19,7 +19,7 @@ const SignOutModal = ({ isOpen, onClose, onConfirm }: SignOutModalProps) => {
         setIsLoggingOut(true);
         try {
             await onConfirm();
-            router.replace('/login');
+            window.location.replace('/login');
         } catch (error) {
             console.error('Sign out failed:', error);
             setIsLoggingOut(false);

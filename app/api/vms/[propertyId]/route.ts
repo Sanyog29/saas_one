@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/frontend/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { NotificationService } from '@/backend/services/NotificationService';
+import { getISTDateBounds } from '@/backend/utils/timezone';
 
 // Create admin client for operations that need to bypass RLS
 const getAdminClient = () => createAdminClient(
@@ -68,6 +70,13 @@ export async function POST(
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
+        // Fire notification: security + host person
+        NotificationService.afterVisitorCheckedIn(
+            visitor.id,
+            propertyId,
+            property.organization_id
+        ).catch(err => console.error('[VMS] Notification error:', err));
+
         return NextResponse.json({
             success: true,
             visitor_id: visitorId,
@@ -90,78 +99,88 @@ export async function GET(
     const { searchParams } = new URL(request.url);
 
     const status = searchParams.get('status'); // 'checked_in' | 'checked_out' | 'all'
-    const date = searchParams.get('date'); // 'today' | 'week' | specific date
+    const date = searchParams.get('date'); // 'today' | 'week' | 'month' | specific date
     const search = searchParams.get('search'); // Visitor ID or name
 
-    let query = supabaseAdmin
+    // Helper to apply common filters (date & search) to any query
+    const applyCommonFilters = (q: any) => {
+        let filteredQ = q;
+
+        // Apply date filter
+        if (date) {
+            let filterType = date;
+            let customStr = undefined;
+            if (!['today', 'yesterday', 'week', 'month'].includes(date)) {
+                filterType = 'custom';
+                customStr = date;
+            }
+            const bounds = getISTDateBounds(filterType as any, customStr);
+            filteredQ = filteredQ.gte('checkin_time', bounds.start).lte('checkin_time', bounds.end);
+        }
+
+        // Apply search filter
+        if (search) {
+            filteredQ = filteredQ.or(`visitor_id.ilike.%${search}%,name.ilike.%${search}%`);
+        }
+
+        return filteredQ;
+    };
+
+    // 1. Fetch visitors list
+    let listQuery = supabaseAdmin
         .from('visitor_logs')
         .select('*')
         .eq('property_id', propertyId)
         .order('checkin_time', { ascending: false });
 
-    // Apply status filter
+    // Apply status filter to list query only
     if (status && status !== 'all') {
-        query = query.eq('status', status);
+        listQuery = listQuery.eq('status', status);
     }
 
-    // Apply date filter
-    if (date === 'today') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        query = query.gte('checkin_time', today.toISOString());
-    } else if (date === 'week') {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        query = query.gte('checkin_time', weekAgo.toISOString());
-    } else if (date) {
-        const startDate = new Date(date);
-        startDate.setHours(0, 0, 0, 0);
-        const endDate = new Date(date);
-        endDate.setHours(23, 59, 59, 999);
-        query = query.gte('checkin_time', startDate.toISOString()).lte('checkin_time', endDate.toISOString());
-    }
+    // Apply common filters (date & search) to list query
+    listQuery = applyCommonFilters(listQuery);
 
-    // Apply search filter
-    if (search) {
-        query = query.or(`visitor_id.ilike.%${search}%,name.ilike.%${search}%`);
-    }
-
-    const { data, error } = await query.limit(100);
+    const { data, error } = await listQuery.limit(100);
 
     if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Calculate accurate stats for today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // 2. Fetch stats with exact same filters dynamically applied!
+    const statsTotalQuery = supabaseAdmin
+        .from('visitor_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', propertyId);
 
-    const [{ count: totalToday }, { count: checkedIn }, { count: checkedOut }] = await Promise.all([
-        supabaseAdmin
-            .from('visitor_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('property_id', propertyId)
-            .gte('checkin_time', today.toISOString()),
-        supabaseAdmin
-            .from('visitor_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('property_id', propertyId)
-            .eq('status', 'checked_in')
-            .gte('checkin_time', today.toISOString()),
-        supabaseAdmin
-            .from('visitor_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('property_id', propertyId)
-            .eq('status', 'checked_out')
-            .gte('checkin_time', today.toISOString())
+    const statsInQuery = supabaseAdmin
+        .from('visitor_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', propertyId)
+        .eq('status', 'checked_in');
+
+    const statsOutQuery = supabaseAdmin
+        .from('visitor_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('property_id', propertyId)
+        .eq('status', 'checked_out');
+
+    const [
+        { count: totalCount },
+        { count: checkedInCount },
+        { count: checkedOutCount }
+    ] = await Promise.all([
+        applyCommonFilters(statsTotalQuery),
+        applyCommonFilters(statsInQuery),
+        applyCommonFilters(statsOutQuery)
     ]);
 
     return NextResponse.json({
         visitors: data,
         stats: {
-            total_today: totalToday || 0,
-            checked_in: checkedIn || 0,
-            checked_out: checkedOut || 0,
+            total_today: totalCount || 0,
+            checked_in: checkedInCount || 0,
+            checked_out: checkedOutCount || 0,
         },
     });
 }

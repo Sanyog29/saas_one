@@ -112,12 +112,20 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        // Fetch organization_id from property
+        const { data: property } = await supabase
+            .from('properties')
+            .select('organization_id')
+            .eq('id', propertyId)
+            .single();
+
         const { data: room, error: insertError } = await supabase
             .from('meeting_rooms')
             .insert({
                 name,
                 photo_url,
                 property_id: propertyId,
+                organization_id: property?.organization_id,
                 location,
                 capacity,
                 size,

@@ -50,73 +50,44 @@ export async function GET(
     }
 
     const periodFilter = startDate ? startDate.toISOString() : null;
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayISO = todayStart.toISOString();
+    const todayISO = new Date().toISOString().split('T')[0];
 
-    // Use parallel SQL-side count queries instead of fetching all rows
-    const [totalRes, checkedInRes, checkedOutRes] = await Promise.all([
-        // Total visitors in period
-        supabase.from('visitor_logs').select('id', { count: 'exact', head: true })
-            .in('property_id', propertyIds)
-            .gte('checkin_time', periodFilter || '1970-01-01'),
-        // Currently checked in (no checkout_time and not checked_out status)
-        supabase.from('visitor_logs').select('id', { count: 'exact', head: true })
-            .in('property_id', propertyIds)
-            .is('checkout_time', null)
-            .neq('status', 'checked_out')
-            .gte('checkin_time', periodFilter || '1970-01-01'),
-        // Checked out
-        supabase.from('visitor_logs').select('id', { count: 'exact', head: true })
-            .in('property_id', propertyIds)
-            .not('checkout_time', 'is', null)
-            .gte('checkin_time', periodFilter || '1970-01-01'),
+    // --- Optimized Aggregation using SQL-side counts ---
+    // 1. Total Stats for the Org
+    const [totalStatsRes, checkedInRes, checkedOutRes, todayStatsRes] = await Promise.all([
+        supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('checkin_time', periodFilter || '1970-01-01'),
+        supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('checkin_time', periodFilter || '1970-01-01').is('checkout_time', null),
+        supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('checkin_time', periodFilter || '1970-01-01').not('checkout_time', 'is', null),
+        supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('checkin_time', todayISO),
     ]);
 
-    // Per-property breakdown: use a single lightweight query
-    // Only fetch property_id, status, checkout_time for grouping — limited to today for "today" count
-    const { data: propVisitorData } = await supabase
-        .from('visitor_logs')
-        .select('property_id, status, checkout_time, checkin_time')
-        .in('property_id', propertyIds)
-        .gte('checkin_time', periodFilter || '1970-01-01')
-        .limit(5000); // Cap to prevent memory issues on large orgs
-
-    const propStats: Record<string, { total: number; checked_in: number; checked_out: number; today: number }> = {};
-    for (const pid of propertyIds) {
-        propStats[pid] = { total: 0, checked_in: 0, checked_out: 0, today: 0 };
-    }
-
-    (propVisitorData || []).forEach((v: any) => {
-        const ps = propStats[v.property_id];
-        if (!ps) return;
-        ps.total++;
-        if (!v.checkout_time && v.status !== 'checked_out') ps.checked_in++;
-        else ps.checked_out++;
-        if (v.checkin_time >= todayISO) ps.today++;
-    });
-
-    const propertyBreakdown = (properties || []).map((prop: any) => {
-        const stats = propStats[prop.id] || { total: 0, checked_in: 0, checked_out: 0, today: 0 };
+    // 2. Property breakdown
+    const propertyBreakdown = await Promise.all(propertyIds.map(async (id) => {
+        const [pTotal, pToday, pIn, pOut] = await Promise.all([
+            supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', id).gte('checkin_time', periodFilter || '1970-01-01'),
+            supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', id).gte('checkin_time', todayISO),
+            supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', id).gte('checkin_time', periodFilter || '1970-01-01').is('checkout_time', null),
+            supabase.from('visitor_logs').select('id', { count: 'exact', head: true }).eq('property_id', id).gte('checkin_time', periodFilter || '1970-01-01').not('checkout_time', 'is', null),
+        ]);
+        const prop = properties?.find(p => p.id === id);
         return {
-            property_id: prop.id,
-            property_name: prop.name,
-            property_code: prop.code,
-            today: stats.today,
-            checked_in: stats.checked_in,
-            checked_out: stats.checked_out,
-            total: stats.total,
+            property_id: id,
+            property_name: prop?.name,
+            property_code: prop?.code,
+            total: pTotal.count || 0,
+            today: pToday.count || 0,
+            checked_in: pIn.count || 0,
+            checked_out: pOut.count || 0
         };
-    });
-
-    propertyBreakdown.sort((a: any, b: any) => b.today - a.today);
+    }));
 
     return NextResponse.json({
         organization_id: orgId,
         period,
-        total_visitors: totalRes.count || 0,
+        total_visitors: totalStatsRes.count || 0,
         total_checked_in: checkedInRes.count || 0,
         total_checked_out: checkedOutRes.count || 0,
-        properties: propertyBreakdown,
+        total_today: todayStatsRes.count || 0,
+        properties: propertyBreakdown
     });
 }

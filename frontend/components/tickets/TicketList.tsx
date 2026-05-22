@@ -48,7 +48,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 
 function getSLAStatus(deadline: string | null, breached: boolean) {
-    if (breached) return { text: 'SLA Breached', color: 'text-red-400' };
+    if (breached) return { text: 'Late', color: 'text-red-400' };
     if (!deadline) return null;
 
     // Ensure deadline is parsed correctly even if it lacks 'Z'
@@ -57,7 +57,7 @@ function getSLAStatus(deadline: string | null, breached: boolean) {
     const diffMs = sla.getTime() - now.getTime();
     const diffMins = Math.floor(diffMs / 60000);
 
-    if (diffMins < 0) return { text: 'SLA Breached', color: 'text-red-400' };
+    if (diffMins < 0) return { text: 'Late', color: 'text-red-400' };
     if (diffMins < 30) return { text: `${diffMins}m left`, color: 'text-red-400' };
     if (diffMins < 60) return { text: `${diffMins}m left`, color: 'text-orange-400' };
 
@@ -136,7 +136,8 @@ export default function TicketList({
     return (
         <div className="space-y-3">
             {tickets.map((ticket) => {
-                const slaStatus = getSLAStatus(ticket.sla_deadline, ticket.sla_breached);
+                // Show SLA status unless the ticket is pending validation and was completed on time
+                const slaStatus = (ticket.status === 'pending_validation' && !ticket.sla_breached) ? null : getSLAStatus(ticket.sla_deadline, ticket.sla_breached);
 
                 return (
                     <div
@@ -162,7 +163,7 @@ export default function TicketList({
                                     {ticket.current_escalation_level ? (
                                         <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded flex items-center gap-1 border border-red-500/30">
                                             <AlertTriangle className="w-3 h-3" />
-                                            L{ticket.current_escalation_level} Escalation
+                                            Level {ticket.current_escalation_level} Urgency
                                         </span>
                                     ) : null}
                                 </div>

@@ -5,9 +5,9 @@ import type { Html5Qrcode as Html5QrcodeType, Html5QrcodeSupportedFormats as For
 import { X, AlertCircle, Loader2, Camera, ImagePlus, Keyboard, CheckCircle2, QrCode } from 'lucide-react';
 
 export type QRScanResult =
-    | { type: 'checklist'; templateId: string }
     | { type: 'stock'; itemId: string; raw: string }
     | { type: 'barcode'; value: string }
+    | { type: 'checklist'; templateId: string; raw: string }
     | { type: 'unknown'; raw: string };
 
 interface UniversalQRScannerModalProps {
@@ -19,12 +19,14 @@ interface UniversalQRScannerModalProps {
 type ScanMode = 'camera' | 'gallery' | 'manual';
 
 function detectQRType(decoded: string): QRScanResult {
-    const checklistMatch = decoded.match(/\/checklist\/([a-zA-Z0-9_-]+)/);
-    if (checklistMatch) return { type: 'checklist', templateId: checklistMatch[1] };
-
     try {
         const parsed = JSON.parse(decoded);
         if (parsed?.item_id) return { type: 'stock', itemId: parsed.item_id, raw: decoded };
+        if (parsed?.template_id) return { type: 'checklist', templateId: parsed.template_id, raw: decoded };
+        if (parsed?.type === 'checklist') {
+            const tid = parsed.template_id || parsed.templateId || parsed.id;
+            if (tid) return { type: 'checklist', templateId: tid, raw: decoded };
+        }
     } catch { /* not JSON */ }
 
     if (!decoded.startsWith('http') && decoded.length > 2) return { type: 'barcode', value: decoded };
@@ -90,7 +92,6 @@ export default function UniversalQRScannerModal({
 
         const result = detectQRType(decoded);
         const label =
-            result.type === 'checklist' ? 'Checklist detected — opening...' :
             result.type === 'stock' ? 'Stock item detected — opening...' :
             result.type === 'barcode' ? `Barcode: ${result.value}` :
             'QR scanned — opening...';

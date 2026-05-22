@@ -71,6 +71,7 @@
     "node_modules",
     "src",
     "supabase",
-    "scripts"
+    "scripts",
+    "scratch"
   ]
 }

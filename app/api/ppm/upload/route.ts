@@ -76,7 +76,6 @@ export async function POST(request: NextRequest) {
                 const plannedDate = parseExcelDate(rawPlanned);
                 // Debug: log first few rows to verify parsing
                 if (r < 6 && m === 0) {
-                    console.log(`[PPM Debug] row=${r} rawPlanned=${JSON.stringify(rawPlanned)} type=${typeof rawPlanned} → ${plannedDate}`);
                 }
                 if (!plannedDate) continue;
 

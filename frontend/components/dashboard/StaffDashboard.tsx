@@ -132,7 +132,10 @@ const StaffDashboard = () => {
     useEffect(() => {
         if (propertyId) {
             // Restore shift status from localStorage if available
-            const savedShift = localStorage.getItem(`shift-status-${user?.id || 'unknown'}-${propertyId}`);
+            let savedShift: string | null = null;
+            try {
+                savedShift = localStorage.getItem(`shift-status-${user?.id || 'unknown'}-${propertyId}`);
+            } catch {}
             if (savedShift !== null && !isShiftInitialized) {
                 setIsCheckedIn(savedShift === 'true');
             }
@@ -179,7 +182,9 @@ const StaffDashboard = () => {
                 const data = await res.json();
                 setIsCheckedIn(data.isCheckedIn);
                 setIsShiftInitialized(true);
-                localStorage.setItem(`shift-status-${user.id}-${propertyId}`, String(data.isCheckedIn));
+                try {
+                    localStorage.setItem(`shift-status-${user.id}-${propertyId}`, String(data.isCheckedIn));
+                } catch {}
             }
         } catch (error) {
             console.error('Error fetching check-in status:', error);
@@ -199,7 +204,9 @@ const StaffDashboard = () => {
             if (res.ok) {
                 const data = await res.json();
                 setIsCheckedIn(data.isCheckedIn);
-                localStorage.setItem(`shift-status-${user?.id}-${propertyId}`, String(data.isCheckedIn));
+                try {
+                    localStorage.setItem(`shift-status-${user?.id}-${propertyId}`, String(data.isCheckedIn));
+                } catch {}
                 showToast(data.message, 'success');
             } else {
                 const err = await res.json();

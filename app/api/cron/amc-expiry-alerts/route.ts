@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { WhatsAppQueueService } from '@/backend/services/WhatsAppQueueService';
+import { NotificationService } from '@/backend/services/NotificationService';
 
 /**
  * GET /api/cron/amc-expiry-alerts
@@ -85,6 +86,17 @@ export async function GET(request: NextRequest) {
                     message: lines,
                     eventType: 'AMC_EXPIRY_ALERT',
                 });
+
+                // Also send FCM push so recipients get a mobile push alert
+                await NotificationService.sendToMany([...recipientIds], {
+                    propertyId: contract.property_id || '',
+                    organizationId: contract.organization_id,
+                    type: 'AMC_EXPIRY_ALERT',
+                    title: `⚠️ AMC Expiring in ${days} Days`,
+                    message: `"${contract.system_name}" (${contract.vendor_name}) expires on ${expiryLabel}. Please initiate renewal.`,
+                    deepLink: `/amc`,
+                    priority: days <= 7 ? 'CRITICAL' : days <= 15 ? 'HIGH' : 'NORMAL',
+                }).catch(err => console.error('[AMC Cron] FCM push error:', err));
 
                 totalAlerts++;
             }

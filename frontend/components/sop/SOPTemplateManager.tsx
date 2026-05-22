@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, Play, Trash2, Edit3, ClipboardList, Square, Sparkles, QrCode, LayoutGrid, History, FileText, ChevronDown, CheckCircle2, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -9,7 +9,6 @@ import { Toast } from '@/frontend/components/ui/Toast';
 import SOPTemplateFormModal from './SOPTemplateFormModal';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
 import SOPLayoutAnalyzerModal from './SOPLayoutAnalyzerModal';
-import SOPQRModal from './SOPQRModal';
 import { frequencyLabel, isDue, fmt12h } from './SOPCompletionHistory';
 
 interface SOPTemplateManagerProps {
@@ -25,7 +24,6 @@ interface SOPTemplateManagerProps {
 
 const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, propertyIds, isAdmin = false, onSelectTemplate, onRefresh, activeView = 'list', onViewChange }) => {
     const isMultiProperty = !!propertyIds && propertyIds.length > 0;
-    // In multi-property mode modals need a concrete propertyId — disable them
     const canCreate = isAdmin && !isMultiProperty && !!propertyId;
     const [templates, setTemplates] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +39,7 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
     const supabase = React.useMemo(() => createClient(), []);
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
     const [liveNow, setLiveNow] = useState(() => new Date());
+
     useEffect(() => {
         const id = setInterval(() => setLiveNow(new Date()), 1000);
         return () => clearInterval(id);
@@ -50,7 +49,6 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
     const dueStatusMap = useMemo(() => {
         const map: Record<string, { due: boolean; label: string }> = {};
         for (const t of templates) {
-            // Paused templates are never "due" — skip expensive calculation
             if (!t.is_running) {
                 map[t.id] = { due: false, label: '' };
                 continue;
@@ -58,6 +56,7 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
             const latestDone = (t.completions || [])
                 .filter((c: any) => c.status === 'completed')
                 .sort((a: any, b: any) => new Date(b.completed_at || b.completion_date).getTime() - new Date(a.completed_at || a.completion_date).getTime())[0];
+            
             map[t.id] = isDue(
                 t.frequency,
                 latestDone?.completion_date ?? null,
@@ -70,11 +69,11 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
         return map;
     }, [templates, liveNow]);
 
-    const fetchTemplates = async () => {
+    const fetchTemplates = useCallback(async () => {
         const cacheKey = `sop-templates-${propertyId || (propertyIds?.join(','))}-${isAdmin}`;
         const cached = getCachedData(cacheKey);
         
-        if (cached) {
+        if (cached && !onRefresh) {
             setTemplates(cached);
             setIsLoading(false);
         } else {
@@ -87,48 +86,48 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
                 .select(`
                     *,
                     property:properties(name, code),
-                    items:sop_checklist_items(*)
+                    items:sop_checklist_items(*),
+                    completions:sop_completions(id, status, completion_date, completed_at)
                 `)
                 .eq('is_active', true);
 
             if (isMultiProperty) {
-                query = (query as any).in('property_id', propertyIds);
+                query = query.in('property_id', propertyIds);
             } else if (propertyId) {
-                query = (query as any).eq('property_id', propertyId);
+                query = query.eq('property_id', propertyId);
             }
 
-            // Filter by user ID if not admin
             if (!isAdmin) {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    // Show templates assigned to this user OR open templates (empty assigned_to)
-                    query = (query as any).or(`assigned_to.cs.{${user.id}},assigned_to.eq.{}`);
+                    query = query.or(`assigned_to.is.null,assigned_to.eq.${user.id}`);
                 }
-
             }
 
             const { data, error } = await query.order('created_at', { ascending: false });
-
             if (error) throw error;
 
-            // Process data - completions are now fetched separately or via individual queries
             const processedTemplates = (data || []).map(t => ({
                 ...t,
-                latest_completion: null // We'll fetch these if needed, or leave null for now
+                latest_completion: (t.completions || [])
+                    .filter((c: any) => c.status === 'completed')
+                    .sort((a: any, b: any) => new Date(b.completed_at || b.completion_date).getTime() - new Date(a.completed_at || a.completion_date).getTime())[0] || null
             }));
 
             setTemplates(processedTemplates);
             setCachedData(cacheKey, processedTemplates);
-        } catch (err) {
-            setToast({ message: 'Error loading templates', type: 'error' });
+        } catch (err: any) {
+            console.error('Fetch Templates Error:', err);
+            setToast({ message: 'Failed to load templates', type: 'error' });
         } finally {
             setIsLoading(false);
         }
-    };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [propertyId, propertyIds, isAdmin, supabase, onRefresh]);
 
     useEffect(() => {
         fetchTemplates();
-    }, [propertyId, propertyIds]);
+    }, [fetchTemplates]);
 
     const handleToggleRunning = async (templateId: string, targetPropertyId: string, newState: boolean) => {
         if (!newState && !confirm('Stop this checklist schedule? The template will remain saved but recurring will pause.')) return;
@@ -270,8 +269,7 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
                             const totalPoints = template.items?.length || 0;
                             const progress = totalPoints > 0 ? (checkedCount / totalPoints) * 100 : 0;
                             const ds = dueStatusMap[template.id];
-                            // Only show badge when actionable: overdue/due, countdown, or "starts at"
-                            // Hide "Window closed", "All done today", "Not started" etc.
+                            
                             const showBadge = ds?.label && (
                                 ds.due ||
                                 ds.label.startsWith('Next in') ||
@@ -675,14 +673,6 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
                 propertyId={propertyId!}
                 onSelectTemplate={handleAITemplateSelect}
             />
-
-            {qrTemplateId && (
-                <SOPQRModal
-                    templateId={qrTemplateId}
-                    templateTitle={templates.find(t => t.id === qrTemplateId)?.title || ''}
-                    onClose={() => setQrTemplateId(null)}
-                />
-            )}
 
             {/* Toast */}
             {toast && (

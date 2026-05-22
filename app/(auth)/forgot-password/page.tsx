@@ -115,7 +115,8 @@ function ForgotPasswordContent() {
                             alt="Autopilot Logo"
                             width={200}
                             height={70}
-                            className="object-contain dark:invert transition-smooth"
+                            className="object-contain transition-smooth"
+                            priority
                         />
                     </div>
 

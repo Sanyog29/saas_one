@@ -39,12 +39,21 @@ export async function GET(request: NextRequest) {
         }
 
         // 2. Fetch all confirmed bookings for that property and date
-        const { data: bookings, error: bookingsError } = await supabase
+        let bookingsQuery = supabase
             .from('meeting_room_bookings')
             .select('meeting_room_id, start_time, end_time')
             .eq('property_id', propertyId)
             .eq('booking_date', date)
             .eq('status', 'confirmed');
+
+        // If startTime and endTime are provided, only fetch overlapping bookings
+        if (startTime && endTime) {
+            bookingsQuery = bookingsQuery
+                .lt('start_time', endTime)
+                .gt('end_time', startTime);
+        }
+
+        const { data: bookings, error: bookingsError } = await bookingsQuery;
 
         if (bookingsError) {
             console.error('Error fetching bookings:', bookingsError);

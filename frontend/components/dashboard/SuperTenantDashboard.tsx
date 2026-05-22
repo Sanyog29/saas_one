@@ -626,7 +626,7 @@ const SuperTenantDashboard = () => {
                         }`}
                 >
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Pending Validation</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Needs Check</span>
                         <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${closedPend > 0 ? 'bg-amber-50' : 'bg-emerald-50'}`}>
                             <Clock className={`w-3.5 h-3.5 ${closedPend > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
                         </div>
@@ -716,7 +716,7 @@ const SuperTenantDashboard = () => {
                                     bgColor: 'rgba(16,185,129,0.1)',
                                 },
                                 {
-                                    label: 'Pending Validation',
+                                    label: 'Needs Check',
                                     sublabel: 'Closed by Autopilot, awaiting tenant sign-off',
                                     value: closedPend,
                                     color: 'var(--warning)',
@@ -854,7 +854,7 @@ const SuperTenantDashboard = () => {
                         <option value="open">Open</option>
                         <option value="in_progress">In Progress</option>
                         <option value="waitlist">Waitlist</option>
-                        <option value="pending_validation">Needs Validation</option>
+                        <option value="pending_validation">Needs Check</option>
                         <option value="completed">Completed</option>
                     </select>
                 </div>

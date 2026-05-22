@@ -114,7 +114,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         const cached = getCachedData(cacheKey);
 
         if (cached) {
-            console.log('[ElectricityDashboard] Loading from cache:', propertyId);
+            
             setProperty(cached.property);
             setMeters(cached.meters);
             setPreviousClosings(cached.previousClosings);
@@ -128,7 +128,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         }
 
         setError(null);
-        console.log('[ElectricityDashboard] Refreshing data for property:', propertyId);
+        
 
         let closings: Record<string, number> = {};
         let avgs: Record<string, number> = {};
@@ -158,7 +158,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
 
             const fetchedMeters = metersData || [];
             setMeters(fetchedMeters);
-            console.log('[ElectricityDashboard] Fetched', fetchedMeters.length, 'meters');
+            
 
             // Fetch yesterday's readings for opening readings
             if (fetchedMeters.length > 0) {
@@ -205,7 +205,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                         }
                     });
                     setAverages(avgs);
-                    console.log('[ElectricityDashboard] Averages:', avgs);
+                    
                 }
 
                 // v2: Fetch multipliers for all meters
@@ -217,7 +217,6 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                         multMap[m.meter_id].push(m);
                     });
                     setMultipliersMap(multMap);
-                    console.log('[ElectricityDashboard] Multipliers fetched for', Object.keys(multMap).length, 'meters');
                 }
 
                 // v2: Fetch active tariff for property
@@ -226,7 +225,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                 if (tariffRes.ok) {
                     activeTariffData = await tariffRes.json();
                     setActiveTariff(activeTariffData);
-                    console.log('[ElectricityDashboard] Active tariff:', activeTariffData?.rate_per_unit);
+                    
                 }
 
                 // Fetch pending retakes
@@ -285,7 +284,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         setIsSubmitting(true);
         setError(null);
 
-        console.log('[ElectricityDashboard] Submitting', validReadingsCount, 'readings');
+        
 
         try {
             const readingsToSubmit = Object.entries(readings)
@@ -309,7 +308,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                 throw new Error(errData.error || 'Failed to submit readings');
             }
 
-            console.log('[ElectricityDashboard] Submission successful');
+            
             setToast({ message: 'All readings submitted successfully!', type: 'success', visible: true });
             setTimeout(() => setSuccessMessage(null), 3000);
 
@@ -330,7 +329,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         const r = readings[meterId];
         if (!r || r.closing_reading <= r.opening_reading) return;
 
-        console.log('[ElectricityDashboard] Saving single reading:', meterId);
+        
         setIsSubmitting(true);
         setError(null);
 
@@ -369,7 +368,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
 
     // v2: Save multiplier from card flip editor
     const handleSaveMultiplier = async (meterId: string, multiplierData: any) => {
-        console.log('[ElectricityDashboard] Saving multiplier for meter:', meterId, multiplierData);
+        
 
         const res = await fetch(`/api/properties/${propertyId}/meter-multipliers`, {
             method: 'POST',
@@ -383,7 +382,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         }
 
         const newMult = await res.json();
-        console.log('[ElectricityDashboard] Multiplier saved:', newMult.id);
+        
 
         // Update local state
         setMultipliersMap(prev => ({
@@ -398,7 +397,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
 
     // Add meter
     const handleAddMeter = async (data: any) => {
-        console.log('[ElectricityDashboard] Adding meter:', data);
+        
 
         const res = await fetch(`/api/properties/${propertyId}/electricity-meters`, {
             method: 'POST',

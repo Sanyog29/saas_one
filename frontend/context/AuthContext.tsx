@@ -76,10 +76,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsMembershipLoading(true);
 
         try {
-            // Parallelize membership and profile fetches with a hard 7-second timeout
+            // Parallelize membership and profile fetches with a hard 15-second timeout
             // to prevent the "Verifying access..." hang if Supabase is slow or unresponsive.
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Membership fetch timeout')), 7000)
+                setTimeout(() => reject(new Error('Membership fetch timeout')), 15000)
             );
 
             const fetchPromise = Promise.all([
@@ -223,7 +223,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 body: JSON.stringify({ email, password }),
             });
 
-            const result = await response.json();
+            let result: any = {};
+            if (response.ok || response.status === 503) {
+                result = await response.json().catch(() => ({ error: '' }));
+            }
 
             // If server route is unreachable (503 / fetch failed), fall back to client-side login
             if (response.status === 503 || (result.error && result.error.toLowerCase().includes('unable to reach'))) {
@@ -307,8 +310,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             body: JSON.stringify({ email, password, fullName }),
         });
 
+        if (!response.ok) {
+            const errResult = await response.json().catch(() => ({ error: 'Signup failed' }));
+            throw new Error(errResult.error || 'Signup failed');
+        }
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Signup failed');
 
         // Sync session to browser client
         const { data: sessionData, error } = await supabase.auth.getSession();
@@ -336,14 +342,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
 
         // Clear auto-sign in credentials on explicit logout as requested.
-        localStorage.removeItem('rememberedEmail');
-        localStorage.removeItem('rememberedPassword');
-        sessionStorage.setItem('justLoggedOut', 'true');
+        try { localStorage.removeItem('rememberedEmail'); } catch {}
+        try { localStorage.removeItem('rememberedPassword'); } catch {}
+        try { sessionStorage.setItem('justLoggedOut', 'true'); } catch {}
 
         // Clear all data cache for security
-        Object.keys(localStorage)
-            .filter(k => k.startsWith('cache:'))
-            .forEach(k => localStorage.removeItem(k));
+        try {
+            Object.keys(localStorage)
+                .filter(k => k.startsWith('cache:'))
+                .forEach(k => {
+                    try { localStorage.removeItem(k); } catch {}
+                });
+        } catch {}
 
         await supabase.auth.signOut();
     }, [supabase, user?.id]);

@@ -87,3 +87,35 @@ export async function POST(request: NextRequest) {
         }, { status: 500 });
     }
 }
+export async function GET(request: NextRequest) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const organizationId = searchParams.get('organizationId');
+
+        if (!organizationId) {
+            return NextResponse.json({ error: 'Organization ID is required' }, { status: 400 });
+        }
+
+        // Simple UUID validation
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(organizationId)) {
+            return NextResponse.json([]);
+        }
+
+        const { data: properties, error } = await supabaseAdmin
+            .from('properties')
+            .select('*')
+            .eq('organization_id', organizationId)
+            .is('deleted_at', null)
+            .order('name');
+
+        if (error) {
+            console.error('Error fetching properties:', error);
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        return NextResponse.json(properties || []);
+    } catch (error: any) {
+        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    }
+}

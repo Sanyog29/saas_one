@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle, Activity,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
-    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Wrench
+    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Wrench, ShoppingCart
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -35,9 +35,11 @@ import PPMModule from '@/frontend/components/ppm/PPMModule';
 import VendorManagement from '@/frontend/components/vendors/VendorManagement';
 import { UniversalSearch } from '@/frontend/components/shared/UniversalSearch';
 import TicketFlowMap from '../ops/TicketFlowMap';
+import ProcurementModule from '../procurement/ProcurementModule';
+import VMSOrgVisitorDashboard from '@/frontend/components/vms/VMSOrgVisitorDashboard';
 
 // Types
-type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors';
+type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement';
 
 interface Property {
     id: string;
@@ -129,7 +131,7 @@ const OrgAdminDashboard = () => {
         properties_today: [] as any[],
     });
     const [vmsSummary, setVmsSummary] = useState({
-        total_visitors_today: 0,
+        total_visitors: 0,
         checked_in: 0,
         checked_out: 0,
         properties: [] as any[],
@@ -140,6 +142,7 @@ const OrgAdminDashboard = () => {
         total_vendors: 0,
         properties: [] as any[],
     });
+    const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'all'>('month');
     const [ticketPeriod, setTicketPeriod] = useState<'today' | 'month' | 'all'>('month');
     const [electricityPeriod, setElectricityPeriod] = useState<'today' | 'month'>('month');
     const [isSummariesLoading, setIsSummariesLoading] = useState(false);
@@ -167,8 +170,12 @@ const OrgAdminDashboard = () => {
     useEffect(() => {
         // We restore scroll when the tab is 'requests' and we're not loading
         if (activeTab === 'requests' && !isLoading) {
-            const savedScrollY = sessionStorage.getItem(`orgScrollY-${org?.id}`);
-            const lastTicketId = sessionStorage.getItem(`orgLastTicketId-${org?.id}`);
+            let savedScrollY: string | null = null;
+            let lastTicketId: string | null = null;
+            try {
+                savedScrollY = sessionStorage.getItem(`orgScrollY-${org?.id}`);
+                lastTicketId = sessionStorage.getItem(`orgLastTicketId-${org?.id}`);
+            } catch {}
 
             if (savedScrollY || lastTicketId) {
                 const scrollContainer = document.getElementById('main-scroll-container');
@@ -190,8 +197,10 @@ const OrgAdminDashboard = () => {
                             targetElement.scrollIntoView({ behavior: 'auto', block: 'center' });
                             
                             // Cleanup only after success
-                            sessionStorage.removeItem(`orgLastTicketId-${org?.id}`);
-                            sessionStorage.removeItem(`orgScrollY-${org?.id}`);
+                            try {
+                                sessionStorage.removeItem(`orgLastTicketId-${org?.id}`);
+                                sessionStorage.removeItem(`orgScrollY-${org?.id}`);
+                            } catch {}
                             
                             if (container instanceof HTMLElement) {
                                 setTimeout(() => { container.style.scrollBehavior = ''; }, 50);
@@ -207,8 +216,10 @@ const OrgAdminDashboard = () => {
                             behavior: 'auto'
                         });
                         
-                        sessionStorage.removeItem(`orgScrollY-${org?.id}`);
-                        sessionStorage.removeItem(`orgLastTicketId-${org?.id}`);
+                        try {
+                            sessionStorage.removeItem(`orgScrollY-${org?.id}`);
+                            sessionStorage.removeItem(`orgLastTicketId-${org?.id}`);
+                        } catch {}
                         
                         if (container instanceof HTMLElement) {
                             setTimeout(() => { container.style.scrollBehavior = ''; }, 50);
@@ -233,6 +244,8 @@ const OrgAdminDashboard = () => {
     const activeProperty = selectedPropertyId === 'all'
         ? null
         : properties.find(p => p.id === selectedPropertyId);
+
+    const allPropertyIds = useMemo(() => properties.map(p => p.id), [properties]);
 
     const supabase = useMemo(() => createClient(), []);
 
@@ -279,7 +292,6 @@ const OrgAdminDashboard = () => {
         // This fixes the issue if the URL somehow looks like "uuid part 1 - uuid part 2"
         const cleanId = decoded.trim().replace(/\s+/g, '');
 
-        console.log(`🔍 [Dashboard] Lookup Org ID: "${cleanId}" (Original: "${decoded}")`);
 
         // 3. Fetch strict by ID
         const { data, error } = await supabase
@@ -296,7 +308,7 @@ const OrgAdminDashboard = () => {
             console.warn('⚠️ [Dashboard] Organization not found in DB.');
             setErrorMsg(`Organization not found. ID: ${cleanId}`);
         } else {
-            console.log('✅ [Dashboard] Organization found:', data.name);
+            
             setOrg(data);
             setCachedData(cacheKey, data);
         }
@@ -352,7 +364,7 @@ const OrgAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel', 'electricity', 'stock_reports', 'checklist', 'super_tenants', 'escalation', 'rooms', 'ppm', 'vendors'].includes(tab)) {
+        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel', 'electricity', 'stock_reports', 'checklist', 'super_tenants', 'escalation', 'rooms', 'ppm', 'vendors', 'procurement'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -461,7 +473,7 @@ const OrgAdminDashboard = () => {
     const fetchSummaries = useCallback(async () => {
         if (!org?.id) return;
 
-        const cacheKey = `org-summaries-${org.id}-${ticketPeriod}`;
+        const cacheKey = `org-summaries-${org.id}-${timePeriod}`;
         const cached = getCachedData(cacheKey);
         if (cached) {
             setTicketSummary(cached.ticketSummary);
@@ -474,14 +486,22 @@ const OrgAdminDashboard = () => {
         }
 
         try {
-            const monthStart = new Date(new Date().setDate(1)).toISOString().split('T')[0];
             const todayDate = new Date().toISOString().split('T')[0];
+            let elecStartDate = '';
+            
+            if (timePeriod === 'today') {
+                elecStartDate = todayDate;
+            } else if (timePeriod === 'month') {
+                elecStartDate = new Date(new Date().setDate(1)).toISOString().split('T')[0];
+            } else {
+                elecStartDate = '2000-01-01'; // All time
+            }
 
             const [ticketsRes, electricityRes, vmsRes, vendorRes] = await Promise.all([
-                fetch(`/api/organizations/${org.id}/tickets-summary?period=${ticketPeriod}`),
-                fetch(`/api/organizations/${org.id}/electricity-readings?startDate=${monthStart}&endDate=${todayDate}`),
-                fetch(`/api/organizations/${org.id}/vms-summary?period=${ticketPeriod}`),
-                fetch(`/api/organizations/${org.id}/vendor-summary?period=month`),
+                fetch(`/api/organizations/${org.id}/tickets-summary?period=${timePeriod}`),
+                fetch(`/api/organizations/${org.id}/electricity-readings?startDate=${elecStartDate}&endDate=${todayDate}`),
+                fetch(`/api/organizations/${org.id}/vms-summary?period=${timePeriod}`),
+                fetch(`/api/organizations/${org.id}/vendor-summary?period=${timePeriod}`),
             ]);
 
             const [ticketsData, electricityData, vmsData, vendorData] = await Promise.all([
@@ -517,7 +537,7 @@ const OrgAdminDashboard = () => {
             }
             if (vmsData) {
                 setVmsSummary({
-                    total_visitors_today: vmsData.total_visitors || 0,
+                    total_visitors: vmsData.total_visitors || 0,
                     checked_in: vmsData.total_checked_in || 0,
                     checked_out: vmsData.total_checked_out || 0,
                     properties: vmsData.properties || [],
@@ -543,7 +563,7 @@ const OrgAdminDashboard = () => {
                     properties_today: Object.values(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += r.computed_units || 0; return acc; }, {})),
                 } : electricitySummary,
                 vmsSummary: vmsData ? {
-                    total_visitors_today: vmsData.total_visitors || 0,
+                    total_visitors: vmsData.total_visitors || 0,
                     checked_in: vmsData.total_checked_in || 0,
                     checked_out: vmsData.total_checked_out || 0,
                     properties: vmsData.properties || [],
@@ -560,7 +580,7 @@ const OrgAdminDashboard = () => {
         } finally {
             setIsSummariesLoading(false);
         }
-    }, [org?.id, ticketPeriod]);
+    }, [org?.id, timePeriod]);
 
     useEffect(() => {
         fetchSummaries();
@@ -918,6 +938,16 @@ const OrgAdminDashboard = () => {
                                 Stock Reports
                             </button>
                             <button
+                                onClick={() => handleTabChange('procurement')}
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'procurement'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <ShoppingCart className="w-4 h-4" />
+                                Procurement
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('checklist')}
                                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'checklist'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -935,7 +965,7 @@ const OrgAdminDashboard = () => {
                                     }`}
                             >
                                 <CalendarDays className="w-4 h-4" />
-                                PPM Calendar
+                                PPM
                             </button>
                             <button
                                 onClick={() => handleTabChange('escalation')}
@@ -1040,7 +1070,7 @@ const OrgAdminDashboard = () => {
                                 <Menu className="w-6 h-6" />
                             </button>
                             <div>
-                                <h1 className="text-2xl md:text-3xl font-display font-semibold text-text-primary tracking-tight capitalize">{activeTab}</h1>
+                                <h1 className="text-2xl md:text-3xl font-display font-semibold text-text-primary tracking-tight capitalize">{activeTab === 'ppm' ? 'Planned Preventive Maintenance' : activeTab.replace(/_/g, ' ')}</h1>
                                 <p className="hidden md:block text-text-tertiary text-xs font-body font-medium mt-1">Manage your organization's resources.</p>
                             </div>
                         </div>
@@ -1194,6 +1224,8 @@ const OrgAdminDashboard = () => {
                                 setVmsSummary={setVmsSummary}
                                 vendorSummary={vendorSummary}
                                 setVendorSummary={setVendorSummary}
+                                timePeriod={timePeriod}
+                                setTimePeriod={setTimePeriod}
                                 ticketPeriod={ticketPeriod}
                                 setTicketPeriod={setTicketPeriod}
                                 electricityPeriod={electricityPeriod}
@@ -1201,9 +1233,11 @@ const OrgAdminDashboard = () => {
                                 isSummariesLoading={isSummariesLoading}
                             />
                         </div>
-                        {activeTab === 'revenue' && <RevenueTab properties={properties} selectedPropertyId={selectedPropertyId} />}
+                        {activeTab === 'procurement' && org && <ProcurementModule key="procurement-admin" orgId={org.id} isAdmin={true} properties={properties} />}
+                        {activeTab === 'revenue' && <RevenueTab key="revenue-tab" properties={properties} selectedPropertyId={selectedPropertyId} />}
                         {activeTab === 'properties' && (
                             <PropertiesTab
+                                key="properties-tab"
                                 properties={properties}
                                 onCreate={() => setShowCreatePropModal(true)}
                                 onEdit={(p: any) => setEditingProperty(p)}
@@ -1246,10 +1280,10 @@ const OrgAdminDashboard = () => {
                             )}
                         </div>
 
-                        {activeTab === 'visitors' && <VisitorsTab properties={properties} selectedPropertyId={selectedPropertyId} />}
+                        {activeTab === 'visitors' && org?.id && <VMSOrgVisitorDashboard key="visitors-tab" orgId={org.id} />}
 
                         {activeTab === 'reports' && org && (
-                            <div className="space-y-6">
+                            <div key="reports-tab" className="space-y-6">
                                 <ImportReportsView
                                     organizationId={org.id}
                                     propertyId={selectedPropertyId === 'all' ? undefined : selectedPropertyId}
@@ -1259,6 +1293,7 @@ const OrgAdminDashboard = () => {
 
                         {activeTab === 'users' && (
                             <UserDirectory
+                                key="users-tab"
                                 orgId={org?.id}
                                 orgName={org?.name}
                                 properties={properties}
@@ -1268,6 +1303,7 @@ const OrgAdminDashboard = () => {
 
                         {activeTab === 'diesel' && (
                             <DieselAnalyticsDashboard
+                                key="diesel-tab"
                                 propertyId={selectedPropertyId === 'all' ? undefined : selectedPropertyId}
                                 orgId={org?.id}
                             />
@@ -1275,6 +1311,7 @@ const OrgAdminDashboard = () => {
 
                         {activeTab === 'electricity' && (
                             <ElectricityAnalyticsDashboard
+                                key="electricity-tab"
                                 propertyId={selectedPropertyId === 'all' ? undefined : selectedPropertyId}
                                 orgId={org?.id}
                                 properties={properties}
@@ -1283,9 +1320,9 @@ const OrgAdminDashboard = () => {
 
                         {activeTab === 'stock_reports' && org && (
                             selectedPropertyId !== 'all' ? (
-                                <StockReportView propertyId={selectedPropertyId} orgId={org.id} propertyName={activeProperty?.name} />
+                                <StockReportView key="stock-report-view" propertyId={selectedPropertyId} orgId={org.id} propertyName={activeProperty?.name} />
                             ) : (
-                                <div className="flex flex-col items-center justify-center py-20 text-center">
+                                <div key="stock-report-empty" className="flex flex-col items-center justify-center py-20 text-center">
                                     <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
                                         <Package className="w-8 h-8 text-primary" />
                                     </div>
@@ -1296,10 +1333,10 @@ const OrgAdminDashboard = () => {
                         )}
 
                         {activeTab === 'checklist' && (
-                            <div className="w-full min-h-screen bg-slate-50/50">
+                            <div key="checklist-tab" className="w-full min-h-screen bg-slate-50/50">
                                 <SOPDashboard
                                     propertyId={checklistPropertyId === 'all' ? undefined : checklistPropertyId}
-                                    propertyIds={checklistPropertyId === 'all' ? properties.map(p => p.id) : undefined}
+                                    propertyIds={checklistPropertyId === 'all' ? allPropertyIds : undefined}
                                     headerRight={<NotificationBell />}
                                     propertySelector={
                                         <PropertySelectorPill
@@ -1320,7 +1357,7 @@ const OrgAdminDashboard = () => {
 
 
 
-                        {/* Escalation tab content */}
+                        {/* Urgency tab content */}
                         {activeTab === 'escalation' && org && (
                             <div className="p-4 md:p-8 lg:p-12">
                                 <EscalationHierarchyBuilder
@@ -1689,6 +1726,8 @@ const OverviewTab = memo(function OverviewTab({
     setVmsSummary,
     vendorSummary,
     setVendorSummary,
+    timePeriod,
+    setTimePeriod,
     ticketPeriod,
     setTicketPeriod,
     electricityPeriod,
@@ -1709,6 +1748,8 @@ const OverviewTab = memo(function OverviewTab({
     setVmsSummary: any,
     vendorSummary: any,
     setVendorSummary: any,
+    timePeriod: 'today' | 'month' | 'all',
+    setTimePeriod: (p: 'today' | 'month' | 'all') => void,
     ticketPeriod: 'today' | 'month' | 'all',
     setTicketPeriod: (p: 'today' | 'month' | 'all') => void,
     electricityPeriod: 'today' | 'month',
@@ -1776,13 +1817,13 @@ const OverviewTab = memo(function OverviewTab({
             total_cost: 0,
             properties: electricitySummary.properties,
         };
-    }, [selectedPropertyId, electricitySummary, electricityPeriod]);
+    }, [selectedPropertyId, electricitySummary, timePeriod]);
 
     const displayVmsStats = useMemo(() => {
         if (selectedPropertyId === 'all') return vmsSummary;
         const propStats = (vmsSummary as any).properties?.find((p: any) => p.property_id === selectedPropertyId);
         return {
-            total_visitors_today: propStats?.today || 0,
+            total_visitors: propStats?.total || 0,
             checked_in: propStats?.checked_in || 0,
             checked_out: propStats?.checked_out || 0,
         };
@@ -1821,9 +1862,9 @@ const OverviewTab = memo(function OverviewTab({
     const totalPropertiesCount = selectedPropertyId === 'all' ? properties.length : 1;
 
     // Animated KPI counters
-    const animatedTotal = useCountUp(displayTicketStats.total_tickets);
-    const animatedActive = useCountUp(activeCount);
-    const animatedResolved = useCountUp(trulyClosed);
+    const animatedTotal = useCountUp(displayTicketStats.total_tickets || 0);
+    const animatedActive = useCountUp(activeCount || 0);
+    const animatedResolved = useCountUp(trulyClosed || 0);
     const animatedPending = useCountUp(validationEnabledCount > 0 ? displayTicketStats.pending_validation : 0);
 
     // Animation variants
@@ -1874,27 +1915,27 @@ const OverviewTab = memo(function OverviewTab({
                         </div>
                     </div>
                     <div className="flex items-center gap-4 flex-shrink-0">
-                        {/* Ticket Period Filter */}
+                        {/* Dashboard Period Filter */}
                         <div className="hidden md:flex items-center bg-white/10 rounded-xl p-1 border border-white/10 shadow-sm">
                             <button
-                                onClick={() => setTicketPeriod('today')}
-                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${ticketPeriod === 'today'
+                                onClick={() => setTimePeriod('today')}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${timePeriod === 'today'
                                     ? 'bg-yellow-400 text-slate-900 shadow-lg scale-105'
                                     : 'text-white/70 hover:text-white'}`}
                             >
                                 Today
                             </button>
                             <button
-                                onClick={() => setTicketPeriod('month')}
-                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${ticketPeriod === 'month'
+                                onClick={() => setTimePeriod('month')}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${timePeriod === 'month'
                                     ? 'bg-yellow-400 text-slate-900 shadow-lg scale-105'
                                     : 'text-white/70 hover:text-white'}`}
                             >
                                 This Month
                             </button>
                             <button
-                                onClick={() => setTicketPeriod('all')}
-                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${ticketPeriod === 'all'
+                                onClick={() => setTimePeriod('all')}
+                                className={`px-3 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all ${timePeriod === 'all'
                                     ? 'bg-yellow-400 text-slate-900 shadow-lg scale-105'
                                     : 'text-white/70 hover:text-white'}`}
                             >
@@ -1981,7 +2022,7 @@ const OverviewTab = memo(function OverviewTab({
 
                 {/* KPI Cards Row — 4 insightful cards */}
                 <motion.div 
-                    className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5"
+                    className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5 relative"
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
@@ -2099,7 +2140,7 @@ const OverviewTab = memo(function OverviewTab({
                             }`}
                     >
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Pending Validation</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Needs Review</span>
                             <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${displayTicketStats.pending_validation > 0 ? 'bg-amber-50' : 'bg-emerald-50'
                                 }`}>
                                 <Clock className={`w-3.5 h-3.5 ${displayTicketStats.pending_validation > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
@@ -2159,28 +2200,9 @@ const OverviewTab = memo(function OverviewTab({
                                 <div className="flex items-center gap-2">
                                     <div className="flex items-center bg-slate-100 rounded-lg p-0.5" onClick={(e) => e.stopPropagation()}>
                                         <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setElectricityPeriod('today');
-                                            }}
-                                            className={`px-2 py-1 text-[8px] font-black uppercase tracking-tight rounded-md transition-all ${electricityPeriod === 'today'
-                                                ? 'bg-white text-yellow-600 shadow-sm'
-                                                : 'text-slate-400 hover:text-slate-600'
-                                                }`}
+                                            className={`px-3 py-1 text-[8px] font-black uppercase tracking-tight rounded-md bg-white text-yellow-600 shadow-sm`}
                                         >
-                                            Today
-                                        </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setElectricityPeriod('month');
-                                            }}
-                                            className={`px-2 py-1 text-[8px] font-black uppercase tracking-tight rounded-md transition-all ${electricityPeriod === 'month'
-                                                ? 'bg-white text-yellow-600 shadow-sm'
-                                                : 'text-slate-400 hover:text-slate-600'
-                                                }`}
-                                        >
-                                            Month
+                                            {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All Time'}
                                         </button>
                                     </div>
                                     <div className="w-8 h-8 bg-yellow-50 rounded-xl flex items-center justify-center">
@@ -2189,8 +2211,8 @@ const OverviewTab = memo(function OverviewTab({
                                 </div>
                             </div>
                             <div className="text-yellow-600 text-xs font-bold mb-4 flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full animate-pulse ${electricityPeriod === 'today' ? 'bg-blue-400' : 'bg-yellow-500'}`} />
-                                {electricityPeriod === 'today' ? 'Today' : 'This Month'}
+                                <span className={`w-2 h-2 rounded-full animate-pulse ${timePeriod === 'today' ? 'bg-blue-400' : 'bg-yellow-500'}`} />
+                                {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
                             </div>
 
                             {/* Electricity Visualization */}
@@ -2250,7 +2272,9 @@ const OverviewTab = memo(function OverviewTab({
                             className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm"
                         >
                             <h3 className="text-sm font-black text-slate-900 mb-2">Vendor Revenue</h3>
-                            <div className="text-slate-400 text-xs font-bold mb-2">This Month</div>
+                            <div className="text-slate-400 text-xs font-bold mb-2">
+                                {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
+                            </div>
                             <div className="text-3xl font-black text-slate-900">₹ {displayVendorStats.total_revenue.toLocaleString()}</div>
                             <div className="text-xs text-slate-500 mt-2">
                                 Commission: ₹ {displayVendorStats.total_commission.toLocaleString()} from {displayVendorStats.total_vendors} vendors
@@ -2296,8 +2320,8 @@ const OverviewTab = memo(function OverviewTab({
 
                             <div className="space-y-4">
                                 <div>
-                                    <div className="text-slate-700 text-xs font-bold">Visitors Today</div>
-                                    <div className="text-2xl font-black text-slate-900">{displayVmsStats.total_visitors_today}</div>
+                                    <div className="text-slate-700 text-xs font-bold">Visitors {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All Time'}</div>
+                                    <div className="text-2xl font-black text-slate-900">{displayVmsStats.total_visitors}</div>
                                 </div>
                                 <div>
                                     <div className="text-slate-700 text-xs font-bold">Checked In / Out</div>
@@ -2344,16 +2368,16 @@ const OverviewTab = memo(function OverviewTab({
                                 </div>
                                 <div className="p-4 bg-emerald-50 rounded-xl">
                                     <div className="text-xs font-bold text-emerald-600 mb-1">
-                                        Visitors {ticketPeriod === 'today' ? '(Today)' : ticketPeriod === 'month' ? '(Month)' : '(All Time)'}
+                                        Visitors {timePeriod === 'today' ? '(Today)' : timePeriod === 'month' ? '(Month)' : '(All Time)'}
                                     </div>
-                                    <div className="text-2xl font-black text-emerald-900">{displayVmsStats.total_visitors_today}</div>
+                                    <div className="text-2xl font-black text-emerald-900">{displayVmsStats.total_visitors}</div>
                                 </div>
                                 <div className="p-4 bg-yellow-50 rounded-xl">
-                                    <div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({electricityPeriod === 'today' ? 'Today' : 'Month'})</div>
+                                    <div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div>
                                     <div className="text-2xl font-black text-slate-900">{displayElectricityStats.total_units.toLocaleString()} <span className="text-sm text-slate-400 font-bold">kVAh</span></div>
                                 </div>
                                 <div className="p-4 bg-purple-50 rounded-xl">
-                                    <div className="text-xs font-bold text-purple-600 mb-1">Vendor Revenue</div>
+                                    <div className="text-xs font-bold text-purple-600 mb-1">Vendor Revenue ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div>
                                     <div className="text-2xl font-black text-purple-900">₹{displayVendorStats.total_revenue.toLocaleString('en-IN')}</div>
                                 </div>
                             </div>
@@ -2727,8 +2751,12 @@ const UserModal = ({ user, onClose, onSave, allProperties = [], orgId = '' }: an
                     action: 'add',
                 }),
             });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({ error: 'Failed' }));
+                setPropError(data.error || 'Failed');
+                return;
+            }
             const data = await res.json();
-            if (!res.ok) { setPropError(data.error || 'Failed'); return; }
             const prop = allProperties.find((p: any) => p.id === assigningPropId);
             setAssignedProps(prev => [...prev, { property_id: assigningPropId, property_name: prop?.name || '', role: propAssignRole }]);
             setAssigningPropId('');
@@ -3440,8 +3468,11 @@ const SuperTenantOrgTab = ({ orgId, properties }: { orgId: string; properties: S
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: selectedUserId, organization_id: orgId, property_ids: selectedPropertyIds }),
             });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({ error: 'Request failed' }));
+                throw new Error(data.error || 'Request failed');
+            }
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error);
             showToast('Super Tenant assigned successfully.');
             setShowModal(false);
             setSelectedUserId('');
@@ -3700,11 +3731,12 @@ function WhatsAppSummaryCard({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ organizationId, propertyId }),
             });
-            const data = await res.json();
             if (!res.ok) {
+                const data = await res.json().catch(() => ({ error: 'Failed to send report' }));
                 setErrorMsg(data.error || 'Failed to send report');
                 setStatus('error');
             } else {
+                const data = await res.json();
                 setInfo({ recipients: data.recipients, open_tickets: data.open_tickets });
                 setStatus('success');
                 // Auto-reset after 8 seconds

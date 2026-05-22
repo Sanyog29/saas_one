@@ -13,8 +13,10 @@ interface PPMSchedule {
     scope_of_work: string | null;
     frequency: string;
     vendor_name: string | null;
+    vendor_phone: string | null;
+    vendor_contact_person: string | null;
     vendor_id?: string | null;
-    maintenance_vendors?: { id: string; company_name: string; contact_person: string; phone: string } | null;
+    maintenance_vendors?: { id: string; company_name: string; contact_person: string; phone: string; is_active?: boolean } | null;
     location: string | null;
     maker: string | null;
     checker: string | null;
@@ -27,6 +29,9 @@ interface PPMSchedule {
     invoice_url: string | null;
     verification_status?: 'pending' | 'submitted' | 'verified' | 'rejected';
     attachments?: Record<string, any> | null;
+    completed_by?: string | null;
+    completed_at?: string | null;
+    completed_by_user?: { full_name: string; email: string } | null;
 }
 
 interface Props {
@@ -42,11 +47,23 @@ const STATUS_CONFIG = {
     skipped: { label: 'Skipped', color: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', icon: SkipForward },
 };
 
+const FREQUENCY_CONFIG: Record<string, { text: string; bg: string; border: string; label: string }> = {
+    yearly: { label: 'Yearly', text: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+    quarterly: { label: 'Quarterly', text: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-200' },
+    monthly: { label: 'Monthly', text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+    weekly: { label: 'Weekly', text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
+};
+
+function getFrequencyStyle(frequency: string | null) {
+    const key = (frequency || '').toLowerCase().trim();
+    return FREQUENCY_CONFIG[key] || { text: 'text-slate-700', bg: 'bg-slate-50', border: 'border-slate-200', label: key || 'Unknown' };
+}
+
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function PPMCalendar({ organizationId, propertyId, properties = [] }: Props) {
-    const { membership } = useAuth();
+    const { user, membership } = useAuth();
     const today = new Date();
 
     const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
@@ -69,7 +86,11 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
     const [isClearing, setIsClearing] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
 
-    // Task update form
+    const [activeVendors, setActiveVendors] = useState<{ id: string; company_name: string; contact_person: string; phone: string }[]>([]);
+    const [editVendorId, setEditVendorId] = useState<string | null>(null);
+    const [editVendorName, setEditVendorName] = useState('');
+    const [editVendorPhone, setEditVendorPhone] = useState('');
+    const [editVendorContact, setEditVendorContact] = useState('');
     const [editStatus, setEditStatus] = useState<PPMSchedule['status']>('pending');
     const [editDoneDate, setEditDoneDate] = useState('');
     const [editRemark, setEditRemark] = useState('');
@@ -78,6 +99,25 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
     useEffect(() => {
         setUploadPropertyId(propertyId || '');
     }, [propertyId]);
+
+    // Fetch active vendors
+    useEffect(() => {
+        const fetchVendors = async () => {
+            try {
+                let url = `/api/vendors/maintenance?organization_id=${organizationId}`;
+                if (propertyId) url += `&property_id=${propertyId}`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const data = await res.json();
+                    // Filter for active vendors only
+                    setActiveVendors((data.vendors || []).filter((v: any) => v.is_active));
+                }
+            } catch (err) {
+                console.error('Failed to fetch vendors for PPM:', err);
+            }
+        };
+        fetchVendors();
+    }, [organizationId, propertyId]);
 
     const fetchSchedules = useCallback(async () => {
         setIsLoading(true);
@@ -142,20 +182,32 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
         setEditStatus(task.status);
         setEditDoneDate(task.done_date || '');
         setEditRemark(task.remark || '');
+        setEditVendorId(task.vendor_id || null);
+        setEditVendorName(task.vendor_name || '');
+        setEditVendorPhone(task.vendor_phone || '');
+        setEditVendorContact(task.vendor_contact_person || '');
     };
 
     const handleUpdateTask = async () => {
         if (!selectedTask) return;
         setIsUpdating(true);
         try {
+            const payload: any = {
+                status: editStatus,
+                done_date: editStatus === 'done' ? (editDoneDate || new Date().toISOString().split('T')[0]) : null,
+                remark: editRemark || null,
+                vendor_id: null,
+                vendor_name: editVendorName || null,
+                vendor_phone: editVendorPhone || null,
+                vendor_contact_person: editVendorContact || null,
+            };
+            if (editStatus === 'done') {
+                payload.completed_by = user?.id || null;
+            }
             const res = await fetch(`/api/ppm/schedules/${selectedTask.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    status: editStatus,
-                    done_date: editStatus === 'done' ? (editDoneDate || new Date().toISOString().split('T')[0]) : null,
-                    remark: editRemark || null,
-                }),
+                body: JSON.stringify(payload),
             });
             if (res.ok) {
                 await fetchSchedules();
@@ -238,7 +290,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
     const handleClearData = async () => {
         // Org-level admins must select a property before clearing
         if (!isPropertyAdmin && !clearPropertyId) {
-            setUploadResult({ success: false, message: 'Please select a property to clear PPM data for.' });
+            setUploadResult({ success: false, message: 'Please select a property to clear Planned Preventive Maintenance data for.' });
             return;
         }
         setIsClearing(true);
@@ -253,7 +305,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
             });
             if (res.ok) {
                 setShowClearConfirm(false);
-                setUploadResult({ success: true, message: 'PPM data cleared successfully.' });
+                setUploadResult({ success: true, message: 'Planned Preventive Maintenance data cleared successfully.' });
                 await fetchSchedules();
             } else {
                 const d = await res.json();
@@ -290,6 +342,15 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                             <span key={key} className="flex items-center gap-1.5">
                                 <span className={`w-2.5 h-2.5 rounded-full ${cfg.color}`} />
                                 {cfg.label}
+                            </span>
+                        ))}
+                    </div>
+                    {/* Frequency Legend */}
+                    <div className="hidden lg:flex items-center gap-3 text-xs font-semibold pl-3 border-l border-slate-200">
+                        {Object.entries(FREQUENCY_CONFIG).map(([key, cfg]) => (
+                            <span key={key} className="flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${cfg.bg.replace('bg-', 'bg-').replace('50', '500')}`} />
+                                <span className={cfg.text}>{cfg.label}</span>
                             </span>
                         ))}
                     </div>
@@ -352,14 +413,17 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                                         {postponedCnt > 0 && <span className="w-2 h-2 rounded-full bg-rose-500" title="Postponed" />}
                                                     </div>
                                                     {/* Task pills — show up to 2 */}
-                                                    {tasks.slice(0, 2).map(t => (
-                                                        <div
-                                                            key={t.id}
-                                                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate ${STATUS_CONFIG[t.status].bg} ${STATUS_CONFIG[t.status].text}`}
-                                                        >
-                                                            {t.system_name}
-                                                        </div>
-                                                    ))}
+                                                    {tasks.slice(0, 2).map(t => {
+                                                        const fcfg = getFrequencyStyle(t.frequency);
+                                                        return (
+                                                            <div
+                                                                key={t.id}
+                                                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md truncate ${fcfg.bg} ${fcfg.text}`}
+                                                            >
+                                                                {t.system_name}
+                                                            </div>
+                                                        );
+                                                    })}
                                                     {tasks.length > 2 && (
                                                         <div className="text-[10px] font-black text-slate-400">+{tasks.length - 2} more</div>
                                                     )}
@@ -395,21 +459,34 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                 </div>
                             ) : dayTasks.map(task => {
                                 const cfg = STATUS_CONFIG[task.status];
+                                const fcfg = getFrequencyStyle(task.frequency);
                                 const Icon = cfg.icon;
                                 return (
                                     <div
                                         key={task.id}
                                         onClick={() => handleTaskClick(task)}
-                                        className={`p-3 rounded-xl border cursor-pointer hover:shadow-sm transition-all ${cfg.bg} ${cfg.border}`}
+                                        className={`p-3 rounded-xl border cursor-pointer hover:shadow-sm transition-all ${fcfg.bg} ${fcfg.border}`}
                                     >
                                         <div className="flex items-start gap-2">
                                             <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${cfg.text}`} />
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-xs font-black ${cfg.text}`}>{task.system_name}</p>
+                                                <p className={`text-xs font-black ${fcfg.text}`}>{task.system_name}</p>
                                                 {task.detail_name && <p className="text-[10px] text-slate-600 truncate">{task.detail_name}</p>}
-                                                {task.vendor_name && <p className="text-[10px] text-slate-500 mt-0.5">Vendor: {task.vendor_name}</p>}
+                                                {(task.vendor_name || task.vendor_phone) && (
+                                    <p className="text-[10px] text-slate-500 mt-0.5">
+                                        Vendor: {task.vendor_name || '—'}
+                                        {task.vendor_contact_person && ` · ${task.vendor_contact_person}`}
+                                        {task.vendor_phone && ` · ${task.vendor_phone}`}
+                                    </p>
+                                )}
                                                 {task.location && <p className="text-[10px] text-slate-500">📍 {task.location}</p>}
+                                                <p className={`text-[10px] font-bold mt-0.5 ${fcfg.text}`}>{fcfg.label}</p>
                                                 {task.remark && <p className="text-[10px] text-slate-500 italic mt-1">"{task.remark}"</p>}
+                                                {task.status === 'done' && task.completed_by_user && (
+                                                    <p className="text-[10px] text-emerald-600 font-bold mt-1">
+                                                        Completed by {task.completed_by_user.full_name}
+                                                    </p>
+                                                )}
                                                 {task.verification_status === 'submitted' && (
                                                     <span className="inline-block mt-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded-md">
                                                         PROOF SUBMITTED — REVIEW
@@ -443,22 +520,25 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                             <div className="bg-slate-50 rounded-xl p-3 text-xs space-y-1 text-slate-600">
                                 {selectedTask.detail_name && <p><span className="font-bold">Equipment:</span> {selectedTask.detail_name}</p>}
                                 {selectedTask.scope_of_work && <p><span className="font-bold">Scope:</span> {selectedTask.scope_of_work}</p>}
-                                {(selectedTask.vendor_name || selectedTask.maintenance_vendors) && (
+                                {(selectedTask.vendor_name || selectedTask.vendor_phone) && (
                                     <div className="flex items-start gap-1">
                                         <span className="font-bold shrink-0">Vendor:</span>
-                                        {selectedTask.maintenance_vendors ? (
-                                            <span className="flex flex-col gap-0.5">
-                                                <span className="font-semibold text-primary">{selectedTask.maintenance_vendors.company_name}</span>
-                                                <span className="text-slate-500">{selectedTask.maintenance_vendors.contact_person} · {selectedTask.maintenance_vendors.phone}</span>
-                                            </span>
-                                        ) : (
-                                            <span>{selectedTask.vendor_name}</span>
-                                        )}
+                                        <span>
+                                            {selectedTask.vendor_name || '—'}
+                                            {selectedTask.vendor_contact_person && ` · ${selectedTask.vendor_contact_person}`}
+                                            {selectedTask.vendor_phone && ` · ${selectedTask.vendor_phone}`}
+                                        </span>
                                     </div>
                                 )}
                                 {selectedTask.location && <p><span className="font-bold">Location:</span> {selectedTask.location}</p>}
                                 {selectedTask.maker && <p><span className="font-bold">Maker:</span> {selectedTask.maker} {selectedTask.checker ? `· Checker: ${selectedTask.checker}` : ''}</p>}
                                 <p><span className="font-bold">Planned:</span> {new Date(selectedTask.planned_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                {selectedTask.status === 'done' && selectedTask.completed_by_user && (
+                                    <p className="text-emerald-700 font-semibold">
+                                        <span className="font-bold">Completed by:</span> {selectedTask.completed_by_user.full_name}
+                                        {selectedTask.completed_at && ` · ${new Date(selectedTask.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Status */}
@@ -504,6 +584,45 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                     placeholder="Add notes or closure remarks..."
                                     className="w-full h-20 px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                                 />
+                            </div>
+
+                            {/* Vendor Info */}
+                            <div>
+                                <label className="text-xs font-black text-slate-700 uppercase tracking-widest mb-1.5 block">Vendor Details</label>
+                                <div className="space-y-2">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Company Name</label>
+                                        <input
+                                            type="text"
+                                            value={editVendorName}
+                                            onChange={e => setEditVendorName(e.target.value)}
+                                            placeholder="Enter company name..."
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Contact Person</label>
+                                            <input
+                                                type="text"
+                                                value={editVendorContact}
+                                                onChange={e => setEditVendorContact(e.target.value)}
+                                                placeholder="Name..."
+                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Phone Number</label>
+                                            <input
+                                                type="text"
+                                                value={editVendorPhone}
+                                                onChange={e => setEditVendorPhone(e.target.value)}
+                                                placeholder="Phone..."
+                                                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Completion Proof — hidden when vendor has submitted/verified proof */}
@@ -746,7 +865,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-5 border-b border-slate-100">
                             <div>
-                                <h3 className="text-lg font-black text-slate-900">Upload 52-Week PPM</h3>
+                                <h3 className="text-lg font-black text-slate-900">Upload 52-Week Maintenance Schedule</h3>
                                 <p className="text-xs text-slate-500 mt-0.5">Excel format: SI No · System · Details · Scope · Frequency · Vendor · Location · Maker · Checker · [Month triplets]</p>
                             </div>
                             <button onClick={() => setShowUpload(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">
@@ -804,11 +923,11 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                 disabled={!uploadFile || isUploading}
                                 className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
                             >
-                                {isUploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Importing...</> : 'Import PPM Schedule'}
+                                {isUploading ? <><Loader2 className="w-4 h-4 animate-spin" /> Importing...</> : 'Import Maintenance Schedule'}
                             </button>
 
                             <p className="text-[11px] text-slate-400 text-center leading-relaxed">
-                                Re-uploading will replace all existing PPM data for this property. Data starts from row 4. Columns after Checker should be month triplets (Planned Date · Done Date · Remark).
+                                Re-uploading will replace all existing Maintenance data for this property. Data starts from row 4. Columns after Checker should be month triplets (Planned Date · Done Date · Remark).
                             </p>
 
                             {/* Danger zone — clear all data */}
@@ -818,17 +937,17 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                         onClick={() => setShowClearConfirm(true)}
                                         className="w-full py-2 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-lg transition-all border border-rose-200"
                                     >
-                                        🗑️ Clear All PPM Data
+                                        🗑️ Clear All Maintenance Data
                                     </button>
                                 ) : (
                                     <div className="bg-rose-50 rounded-xl p-3 space-y-2">
                                         {isPropertyAdmin ? (
                                             <p className="text-xs font-bold text-rose-700 text-center">
-                                                This will permanently delete all PPM records for <span className="underline">{properties.find(p => p.id === propertyId)?.name || 'this property'}</span>. Are you sure?
+                                                This will permanently delete all maintenance records for <span className="underline">{properties.find(p => p.id === propertyId)?.name || 'this property'}</span>. Are you sure?
                                             </p>
                                         ) : (
                                             <>
-                                                <p className="text-xs font-bold text-rose-700 text-center">Select a property to clear its PPM data:</p>
+                                                <p className="text-xs font-bold text-rose-700 text-center">Select a property to clear its maintenance data:</p>
                                                 <select
                                                     value={uploadPropertyId}
                                                     onChange={e => setUploadPropertyId(e.target.value)}
@@ -841,7 +960,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                                 </select>
                                                 {uploadPropertyId && (
                                                     <p className="text-xs text-rose-600 text-center">
-                                                        Will delete all PPM records for <strong>{properties.find(p => p.id === uploadPropertyId)?.name}</strong>.
+                                                        Will delete all maintenance records for <strong>{properties.find(p => p.id === uploadPropertyId)?.name}</strong>.
                                                     </p>
                                                 )}
                                             </>

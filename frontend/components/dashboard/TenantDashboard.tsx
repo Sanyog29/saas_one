@@ -81,6 +81,7 @@ const TenantDashboard = () => {
     const [activeTickets, setActiveTickets] = useState<Ticket[]>([]);
     const [completedTickets, setCompletedTickets] = useState<Ticket[]>([]);
     const [isFetchingTickets, setIsFetchingTickets] = useState(false);
+    const [meetingRoomCredits, setMeetingRoomCredits] = useState<{ remaining_hours: number; monthly_hours: number } | null>(null);
 
     // Edit Modal State
     const [editingTicket, setEditingTicket] = useState<Ticket | null>(null);
@@ -227,6 +228,22 @@ const TenantDashboard = () => {
             setErrorMsg('Network error.');
         } finally {
             setIsLoading(false);
+            // Fetch meeting room credits after property loads
+            if (propertyId) {
+                fetchMeetingRoomCredits();
+            }
+        }
+    };
+
+    const fetchMeetingRoomCredits = async () => {
+        try {
+            const res = await fetch(`/api/meeting-room-credits?propertyId=${propertyId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setMeetingRoomCredits(data.credit);
+            }
+        } catch (err) {
+            console.error('Failed to fetch meeting room credits:', err);
         }
     };
 
@@ -583,7 +600,7 @@ const TenantDashboard = () => {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                         >
-                            {activeTab === 'overview' && <OverviewTab onNavigate={handleTabChange} property={property} onMenuToggle={() => setSidebarOpen(true)} />}
+                            {activeTab === 'overview' && <OverviewTab onNavigate={handleTabChange} property={property} onMenuToggle={() => setSidebarOpen(true)} meetingRoomCredits={meetingRoomCredits} />}
                             {activeTab === 'requests' && property && user && (
                                 <RequestsTab
                                     activeTickets={activeTickets}
@@ -851,7 +868,7 @@ const ComingSoonView = ({ title, icon: Icon, description }: { title: string, ico
 );
 
 // Overview Tab for Tenant - Dark Card-Based Interface
-const OverviewTab = ({ onNavigate, property, onMenuToggle }: { onNavigate: (tab: Tab) => void, property: Property | null, onMenuToggle?: () => void }) => {
+const OverviewTab = ({ onNavigate, property, onMenuToggle, meetingRoomCredits }: { onNavigate: (tab: Tab) => void, property: Property | null, onMenuToggle?: () => void, meetingRoomCredits?: { remaining_hours: number; monthly_hours: number } | null }) => {
     const { user } = useAuth();
     const params = useParams();
     const [ticketCount, setTicketCount] = useState({ active: 0, completed: 0 });
@@ -961,6 +978,19 @@ const OverviewTab = ({ onNavigate, property, onMenuToggle }: { onNavigate: (tab:
                         </div>
                         <h3 className="text-3xl font-display font-semibold text-slate-800 mb-4">Meeting Rooms</h3>
                         <p className="text-slate-500 text-base mb-8 leading-relaxed">Reserve meeting spaces & conference rooms with ease.</p>
+                        {meetingRoomCredits !== undefined && (
+                            <div className="mt-auto">
+                                {meetingRoomCredits ? (
+                                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                        <span className="text-slate-900">{meetingRoomCredits.remaining_hours}h</span> remaining / {meetingRoomCredits.monthly_hours}h monthly
+                                    </div>
+                                ) : (
+                                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                        No credits allocated
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </button>
             </div>
@@ -1066,7 +1096,7 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                                 <option value="all">All Requests</option>
                                 <option value="in_progress">In Progress</option>
                                 <option value="waitlist">Waitlist</option>
-                                <option value="pending_validation">Needs Approval</option>
+                                <option value="pending_validation">Needs Check</option>
                                 <option value="completed">Completed</option>
                             </select>
                         </div>

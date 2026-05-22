@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
-import { Plus, Loader2, Search, Filter, Calendar as CalendarIcon, LayoutGrid, Zap } from 'lucide-react';
+import { Plus, Loader2, Search, Filter, Calendar as CalendarIcon, LayoutGrid, Zap, Building2 } from 'lucide-react';
 import RoomCard from './RoomCard';
 import RoomFormModal from './RoomFormModal';
 import AdminBookingList from './AdminBookingList';
 import TenantRoomBooking from './TenantRoomBooking';
 import AdminCreditsPanel from './AdminCreditsPanel';
+import CompanyKanban from '../companies/CompanyKanban';
 
 interface Room {
     id: string;
@@ -32,11 +33,24 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
     const [isLoading, setIsLoading] = useState(!getCachedData(cacheKey));
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
-    const [activeTab, setActiveTab] = useState<'rooms' | 'bookings' | 'book' | 'credits'>('rooms');
+    const [activeTab, setActiveTab] = useState<'rooms' | 'bookings' | 'book' | 'credits' | 'companies'>('rooms');
+    const [organizationId, setOrganizationId] = useState<string>('');
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedRoom, setSelectedRoom] = useState<Room | undefined>(undefined);
+
+    const fetchPropertyDetails = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/properties/${propertyId}`);
+            const data = await res.json();
+            if (data?.organization_id) {
+                setOrganizationId(data.organization_id);
+            }
+        } catch (error) {
+            console.error('Error fetching property details:', error);
+        }
+    }, [propertyId]);
 
     const fetchRooms = useCallback(async (isInitial = false) => {
         if (!rooms.length && isInitial) setIsLoading(true);
@@ -59,7 +73,8 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
 
     useEffect(() => {
         fetchRooms(true);
-    }, [fetchRooms]);
+        fetchPropertyDetails();
+    }, [fetchRooms, fetchPropertyDetails]);
 
     const handleEdit = (room: Room) => {
         setSelectedRoom(room);
@@ -97,7 +112,7 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-0 md:p-8 md:rounded-[2.5rem] md:border md:border-slate-100 md:shadow-sm">
                 <div className="flex flex-col gap-4 w-full md:w-auto px-4 md:px-0 pt-4 md:pt-0">
                     <div>
-                        <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Meeting Room Assets</h2>
+                        <h2 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Meeting Rooms</h2>
                         <p className="text-slate-500 font-bold text-[10px] md:text-xs uppercase tracking-widest mt-1">Manage and monitor conference facilities</p>
                     </div>
 
@@ -118,11 +133,11 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
                             <span className="truncate">Bookings</span>
                         </button>
                         <button
-                            onClick={() => setActiveTab('credits')}
-                            className={`flex flex-1 items-center justify-center gap-0.5 md:gap-2 px-0.5 md:px-6 py-2 rounded-lg md:rounded-xl text-[6.5px] md:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'credits' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            onClick={() => setActiveTab('companies')}
+                            className={`flex flex-1 items-center justify-center gap-0.5 md:gap-2 px-0.5 md:px-6 py-2 rounded-lg md:rounded-xl text-[6.5px] md:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'companies' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            <Zap className="w-2.5 h-2.5 md:w-3.5 md:h-3.5" />
-                            <span className="truncate">Credits</span>
+                            <Building2 className="w-2.5 h-2.5 md:w-3.5 md:h-3.5" />
+                            <span className="truncate">Company Credits</span>
                         </button>
                         <button
                             onClick={() => setActiveTab('book')}
@@ -149,7 +164,7 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
 
             {activeTab === 'rooms' ? (
                 <>
-                    {/* Filters */}
+                    {/* Filters omitted for brevity, keeping existing logic */}
                     <div className="flex flex-col md:flex-row gap-3 md:gap-4">
                         <div className="flex-1 relative group">
                             <Search className="absolute left-4 md:left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-primary transition-colors" />
@@ -175,7 +190,7 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
                         </div>
                     </div>
 
-                    {/* Grid */}
+                    {/* Grid omitted for brevity */}
                     {isLoading ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
                             {[1, 2, 3].map(i => (
@@ -208,6 +223,8 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
                 <AdminBookingList propertyId={propertyId} />
             ) : activeTab === 'credits' ? (
                 <AdminCreditsPanel propertyId={propertyId} />
+            ) : activeTab === 'companies' ? (
+                <CompanyKanban propertyId={propertyId} organizationId={organizationId} />
             ) : (
                 <TenantRoomBooking propertyId={propertyId} user={user} hideHeader={true} />
             )}

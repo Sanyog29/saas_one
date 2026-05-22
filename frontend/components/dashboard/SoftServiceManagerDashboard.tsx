@@ -28,6 +28,7 @@ const StockMovementModal = dynamic(
     { ssr: false }
 );
 
+import type { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
 const UniversalQRScannerModal = dynamic(
     () => import('@/frontend/components/shared/UniversalQRScannerModal'),
     { ssr: false }
@@ -225,7 +226,7 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
                 <UniversalQRScannerModal
                     title="Scanner"
                     onClose={() => setShowUniversalScanner(false)}
-                    onResult={(result: any) => {
+                    onResult={(result: QRScanResult) => {
                         setShowUniversalScanner(false);
                         if (result.type === 'checklist') {
                             router.push(`/checklist/${result.templateId}`);

@@ -63,53 +63,51 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
     }, []);
 
     // Time-window logic: distinguishes between Early, Active, and Late states.
+    // FORCED to Asia/Kolkata (IST) timezone.
     const windowStatus = useMemo(() => {
-        if (!template?.end_time) return { isWindowClosed: false, isLate: false, isUpcoming: false };
+        if (!template?.end_time || !completion?.completion_date) return { isWindowClosed: false, isLate: false, isUpcoming: false };
         
-        const nowMins = liveNow.getHours() * 60 + liveNow.getMinutes();
-        const [sH, sM] = (template.start_time ?? '00:00').slice(0, 5).split(':').map(Number);
-        const [eH, eM] = template.end_time.slice(0, 5).split(':').map(Number);
-        
-        const startMins = sH * 60 + sM;
-        const endMins = eH * 60 + eM;
-        const isOvernight = endMins < startMins;
+        // Extract YYYY-MM-DD reliably
+        const dateStr = typeof completion.completion_date === 'string' 
+            ? completion.completion_date.slice(0, 10) 
+            : new Date(completion.completion_date).toISOString().slice(0, 10);
 
-        const withinWindow = isOvernight
-            ? (nowMins >= startMins || nowMins < endMins)
-            : (nowMins >= startMins && nowMins <= endMins);
+        const startStr = (template.start_time ?? '00:00').slice(0, 5);
+        const endStr = template.end_time.slice(0, 5);
+
+        // Construct ISO strings with the IST offset (+05:30)
+        const windowStart = new Date(`${dateStr}T${startStr}:00+05:30`);
+        let windowEnd = new Date(`${dateStr}T${endStr}:00+05:30`);
         
-        // Late means after the end time but before the next day's start time
-        const isLate = isOvernight
-            ? (nowMins >= endMins && nowMins < startMins)
-            : (nowMins > endMins);
+        const [sH, sM] = startStr.split(':').map(Number);
+        const [eH, eM] = endStr.split(':').map(Number);
+
+        if (eH < sH || (eH === sH && eM < sM)) {
+            // Overnight shift: ends on the next calendar day
+            windowEnd.setDate(windowEnd.getDate() + 1);
+        }
         
-        // Upcoming means before the start time but after the previous day's end time
-        const isUpcoming = isOvernight
-            ? (nowMins < startMins && nowMins >= endMins)
-            : (nowMins < startMins);
+        const isUpcoming = liveNow < windowStart;
+        const isLate = liveNow > windowEnd;
+        const withinWindow = !isUpcoming && !isLate;
 
         return { isWindowClosed: !withinWindow, isLate, isUpcoming };
-    }, [template, liveNow]);
+    }, [template, completion?.completion_date, liveNow]);
 
     // Destructure for easier use in JSX
     const { isWindowClosed, isLate, isUpcoming } = windowStatus;
 
     // Slot overdue check for hourly checklists
     const isSlotOverdue = useMemo(() => {
-        if (!template || isWindowClosed) return false;
+        if (!template || isWindowClosed || !completion?.completion_date) return false;
         const hourlyMatch = template.frequency?.match(/^every_(\d+)_hours?$/);
         if (hourlyMatch) {
             const intervalH = parseInt(hourlyMatch[1]);
-            let slotStartMs: number;
-            if (completion?.slot_time) {
-                const [sH, sM] = completion.slot_time.slice(0, 5).split(':').map(Number);
-                const now = liveNow;
-                slotStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sH, sM, 0, 0).getTime();
-            } else if (completion?.created_at) {
-                slotStartMs = new Date(completion.created_at).getTime();
-            } else {
-                return false;
-            }
+            const slotTime = completion.slot_time || '00:00';
+            const dateStr = completion.completion_date;
+            
+            // Construct slot start in IST
+            const slotStartMs = new Date(`${dateStr}T${slotTime.slice(0, 5)}:00+05:30`).getTime();
             const slotEndMs = slotStartMs + intervalH * 3_600_000;
             return liveNow.getTime() > slotEndMs;
         }
@@ -119,9 +117,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
     // Combined expiration check
     const isExpired = isLate || isSlotOverdue;
 
-    const [adminUnlocked, setAdminUnlocked] = useState(false);
-    // Hard lock: only if already completed. Time-window based lock removed per user request.
-    const isReadOnly = (completion?.status === 'completed') && !adminUnlocked;
+    // Read-only logic removed per user request: "checklist should be any time editable by anyone at any time"
+    const isReadOnly = false;
 
     // Realtime: sync item checks + completion status changes made by other users
     useEffect(() => {
@@ -317,7 +314,17 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             };
 
             const { tItem: templateItem, cItem: item } = findContext(completion, template);
-            if (!item || !templateItem) return;
+            
+            if (!templateItem) {
+                console.error('[SOP Debug] Template item not found for ID:', itemId);
+                return;
+            }
+
+            if (!item) {
+                console.warn('[SOP Debug] Completion item not found in session for ID:', itemId);
+                setToast({ message: 'Session out of sync. Please refresh the checklist.', type: 'error' });
+                return;
+            }
 
             const newValue = value !== null ? value : !item.is_checked;
             const isChecked = templateItem.type === 'checkbox' ? !!newValue : true;
@@ -517,7 +524,7 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             const videoRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ item: { completionItemId: item.id, photo_url: data.url } }),
+                body: JSON.stringify({ item: { completionItemId: item.id, video_url: data.url } }),
             });
             if (!videoRes.ok) throw new Error('Failed to save video URL');
 
@@ -535,6 +542,38 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         } catch (err: any) {
             console.error('Error uploading video:', err);
             setToast({ message: err.message || 'Error uploading video', type: 'error' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleRemoveMedia = async (itemId: string, type: 'photo' | 'video') => {
+        if (!completion || !itemId) return;
+        try {
+            setIsSaving(true);
+            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            const item = completion.items.find((i: any) => i.checklist_item_id === itemId);
+            if (!item) return;
+
+            const updatePayload = type === 'photo' ? { photo_url: null } : { video_url: null };
+
+            const res = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ item: { completionItemId: item.id, ...updatePayload } }),
+            });
+
+            if (!res.ok) throw new Error('Failed to remove media');
+
+            setCompletion((prev: any) => ({
+                ...prev,
+                items: prev.items.map((i: any) =>
+                    i.checklist_item_id === itemId ? { ...i, ...updatePayload } : i
+                ),
+            }));
+            setToast({ message: `${type === 'photo' ? 'Photo' : 'Video'} removed`, type: 'success' });
+        } catch (err: any) {
+            setToast({ message: err.message || 'Error removing media', type: 'error' });
         } finally {
             setIsSaving(false);
         }
@@ -641,19 +680,9 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
                     <ArrowLeft size={20} />
                 </button>
                 <h1 className="text-base font-black text-slate-900 tracking-tight truncate max-w-[55%] text-center">{template.title}</h1>
-                {isSuperAdmin && (completion?.status === 'completed' || isExpired) ? (
-                    <button
-                        onClick={() => setAdminUnlocked(v => !v)}
-                        title={adminUnlocked ? 'Re-lock checklist' : 'Admin override — unlock checklist'}
-                        className={`w-9 h-9 flex items-center justify-center rounded-full transition-all ${adminUnlocked ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
-                    >
-                        <Lock size={16} />
-                    </button>
-                ) : (
                     <button className="w-9 h-9 flex items-center justify-center text-slate-400 hover:bg-slate-100 rounded-full transition-all">
                         <MoreVertical size={20} />
                     </button>
-                )}
             </div>
 
             {/* ── SESSION META ── */}
@@ -729,24 +758,14 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
 
             {/* ── BANNERS ── */}
             <div className="px-6 space-y-2">
-                {adminUnlocked ? (
-                    <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-amber-50/50 border border-amber-100 backdrop-blur-sm">
-                        <div className="p-2 bg-amber-100 rounded-xl">
-                            <Lock size={14} className="text-amber-600" />
-                        </div>
-                        <div className="flex-1">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Admin Override Active</p>
-                            <p className="text-[9px] font-medium text-amber-600/80">Lock is lifted — edits allowed.</p>
-                        </div>
-                    </div>
-                ) : isUpcoming && completion?.status !== 'completed' ? (
+                {isUpcoming && completion?.status !== 'completed' ? (
                     <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-blue-50/50 border border-blue-100 backdrop-blur-sm">
                         <div className="p-2 bg-blue-100 rounded-xl">
                             <Clock size={14} className="text-blue-600" />
                         </div>
                         <div className="flex-1">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Upcoming Checklist</p>
-                            <p className="text-[9px] font-medium text-blue-600/80">Scheduled window has not started yet.</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Checklist Not Started</p>
+                            <p className="text-[9px] font-medium text-blue-600/80">Please wait for the start time.</p>
                         </div>
                     </div>
                 ) : isLate && completion?.status !== 'completed' ? (
@@ -756,20 +775,20 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
                         </div>
                         <div className="flex-1">
                             <p className="text-[10px] font-black uppercase tracking-widest text-rose-700">Late Entry Mode</p>
-                            <p className="text-[9px] font-medium text-rose-600/80">Scheduled window has ended.</p>
+                            <p className="text-[9px] font-medium text-rose-600/80">The time for this checklist has passed.</p>
                         </div>
                     </div>
                 ) : completion?.status === 'completed' ? (
                     <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border backdrop-blur-sm ${completion.is_late ? 'bg-rose-50/50 border-rose-100' : 'bg-emerald-50/50 border-emerald-100'}`}>
                         <div className={`p-2 rounded-xl ${completion.is_late ? 'bg-rose-100' : 'bg-emerald-100'}`}>
-                            <Lock size={14} className={completion.is_late ? 'text-rose-600' : 'text-emerald-600'} />
+                            <CheckCircle2 size={14} className={completion.is_late ? 'text-rose-600' : 'text-emerald-600'} />
                         </div>
                         <div className="flex-1">
                             <p className={`text-[10px] font-black uppercase tracking-widest ${completion.is_late ? 'text-rose-700' : 'text-emerald-700'}`}>
                                 {completion.is_late ? 'Completed Late' : 'Checklist Completed'}
                             </p>
                             <p className={`text-[9px] font-medium ${completion.is_late ? 'text-rose-600/80' : 'text-emerald-600/80'}`}>
-                                Record is now read-only.
+                                This record is saved.
                             </p>
                         </div>
                     </div>
@@ -841,7 +860,7 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
                                     initial={{ opacity: 0, y: 8 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: index * 0.05 }}
-                                    className={`border-b border-slate-100 ${itemSlotLocked ? 'opacity-60' : ''}`}
+                                    className={`border-b border-slate-100 ${isReadOnly ? 'opacity-60' : ''}`}
                                 >
                             {/* Item title row */}
                             <div className="flex items-start gap-3 px-4 pt-4 pb-1">
@@ -891,29 +910,47 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
 
                             {/* Photo preview — full width */}
                             {completionItem?.photo_url && (
-                                <div
-                                    className="mx-4 mb-3 rounded-2xl overflow-hidden cursor-pointer relative group"
-                                    onClick={() => setPreviewImageUrl(completionItem.photo_url!)}
-                                >
-                                    <img src={completionItem.photo_url} alt="Proof" className="w-full h-48 object-cover" />
-                                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                        <Eye size={28} className="text-white" />
+                                <div className="mx-4 mb-3 rounded-2xl overflow-hidden relative group">
+                                    <div
+                                        className="cursor-pointer"
+                                        onClick={() => setPreviewImageUrl(completionItem.photo_url!)}
+                                    >
+                                        <img src={completionItem.photo_url} alt="Proof" className="w-full h-48 object-cover" />
+                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                                            <Eye size={28} className="text-white" />
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'photo'); }}
+                                        className="absolute top-3 right-3 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
+                                        title="Delete photo"
+                                    >
+                                        <X size={16} />
+                                    </button>
                                 </div>
                             )}
 
                             {/* Video preview — full width */}
                             {completionItem?.video_url && (
-                                <div
-                                    className="mx-4 mb-3 rounded-2xl overflow-hidden cursor-pointer relative"
-                                    onClick={() => setPreviewVideoUrl(completionItem.video_url!)}
-                                >
-                                    <video src={completionItem.video_url} className="w-full h-48 object-cover" muted playsInline />
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                                        <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-                                            <Play size={22} className="text-white ml-1" />
+                                <div className="mx-4 mb-3 rounded-2xl overflow-hidden relative group">
+                                    <div
+                                        className="cursor-pointer"
+                                        onClick={() => setPreviewVideoUrl(completionItem.video_url!)}
+                                    >
+                                        <video src={completionItem.video_url} className="w-full h-48 object-cover" muted playsInline />
+                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
+                                            <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
+                                                <Play size={22} className="text-white ml-1" />
+                                            </div>
                                         </div>
                                     </div>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'video'); }}
+                                        className="absolute top-3 right-3 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
+                                        title="Delete video"
+                                    >
+                                        <X size={16} />
+                                    </button>
                                 </div>
                             )}
 

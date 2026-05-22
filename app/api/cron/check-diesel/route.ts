@@ -1,62 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/frontend/utils/supabase/server';
+import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 
 /**
  * GET /api/cron/check-diesel
  * Checks if diesel readings have been logged for today.
- * If not, notifies all Property Admins.
+ * Notifications for diesel are intentionally disabled per product decision.
+ * This cron now only logs the status for monitoring purposes.
  */
 export async function GET(request: NextRequest) {
     try {
-        const supabase = await createClient();
+        const authHeader = request.headers.get('authorization');
+        if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const today = new Date().toISOString().split('T')[0];
 
-        // 1. Check for logs today
-        const { data: logs, error: logError } = await supabase
+        const { data: logs, error: logError } = await supabaseAdmin
             .from('diesel_readings')
-            .select('id')
+            .select('id, property_id')
             .gte('reading_date', today);
 
-        if (logError && logError.code !== '42P01') { // Ignore if table missing for now
-            throw logError;
-        }
+        if (logError && logError.code !== '42P01') throw logError;
 
         const hasLogsToday = logs && logs.length > 0;
 
-        if (hasLogsToday) {
-            return NextResponse.json({ success: true, message: 'Logs present', notifications_sent: 0 });
-        }
-
-        // 2. If no logs, find Admins to notify
-        // We'll target Master Admins and Property Admins
-        const { data: admins, error: userError } = await supabase
-            .from('users')
-            .select('id')
-            .eq('is_master_admin', true); // Simplified targeting
-
-        if (userError) throw userError;
-
-        const notifications = (admins || []).map(admin => ({
-            type: 'admin_reminder',
-            recipient_role: 'ADMIN',
-            recipient_id: admin.id,
-            title: 'Diesel Log Pending',
-            body: 'Daily diesel readings have not been recorded yet. Please update the log.',
-            entity_id: 'diesel-log' // generic ID
-        }));
-
-        if (notifications.length > 0) {
-            const { error: insertError } = await supabase
-                .from('notifications')
-                .insert(notifications);
-
-            if (insertError) throw insertError;
-        }
-
+        // Diesel notifications are disabled — no push or WhatsApp sent.
         return NextResponse.json({
             success: true,
-            message: 'Notifications sent',
-            notifications_sent: notifications.length
+            has_logs_today: hasLogsToday,
+            log_count: logs?.length || 0,
+            notifications_sent: 0,
+            note: 'Diesel notifications disabled per product decision.',
         });
 
     } catch (error) {

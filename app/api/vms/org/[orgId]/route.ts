@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { getISTDateBounds } from '@/backend/utils/timezone';
 
 /**
  * GET /api/vms/org/[orgId]
@@ -36,31 +37,15 @@ export async function GET(
     }
 
     // Date filter
-    if (date === 'today') {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        query = query.gte('checkin_time', today.toISOString());
-    } else if (date === 'yesterday') {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        yesterday.setHours(0, 0, 0, 0);
-        const end = new Date(yesterday);
-        end.setHours(23, 59, 59, 999);
-        query = query.gte('checkin_time', yesterday.toISOString()).lte('checkin_time', end.toISOString());
-    } else if (date === 'week') {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        query = query.gte('checkin_time', weekAgo.toISOString());
-    } else if (date === 'month') {
-        const monthAgo = new Date();
-        monthAgo.setDate(monthAgo.getDate() - 30);
-        query = query.gte('checkin_time', monthAgo.toISOString());
-    } else if (date === 'custom' && customDate) {
-        const start = new Date(customDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(customDate);
-        end.setHours(23, 59, 59, 999);
-        query = query.gte('checkin_time', start.toISOString()).lte('checkin_time', end.toISOString());
+    if (date) {
+        let filterType = date;
+        let customStr = undefined;
+        if (!['today', 'yesterday', 'week', 'month'].includes(date)) {
+            filterType = 'custom';
+            customStr = customDate;
+        }
+        const bounds = getISTDateBounds(filterType as any, customStr);
+        query = query.gte('checkin_time', bounds.start).lte('checkin_time', bounds.end);
     }
 
     // Search filter
@@ -75,28 +60,34 @@ export async function GET(
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Today stats for entire org
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Stats that respect the same date filter as the visitor list
+    let statsStart: string | null = null;
+    let statsEnd: string | null = null;
 
-    const [{ count: totalToday }, { count: checkedIn }, { count: checkedOut }] = await Promise.all([
-        supabaseAdmin
-            .from('visitor_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('organization_id', orgId)
-            .gte('checkin_time', todayStart.toISOString()),
-        supabaseAdmin
-            .from('visitor_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('organization_id', orgId)
-            .eq('status', 'checked_in')
-            .gte('checkin_time', todayStart.toISOString()),
-        supabaseAdmin
-            .from('visitor_logs')
-            .select('*', { count: 'exact', head: true })
-            .eq('organization_id', orgId)
-            .eq('status', 'checked_out')
-            .gte('checkin_time', todayStart.toISOString()),
+    if (date) {
+        let filterType = date;
+        let customStr = undefined;
+        if (!['today', 'yesterday', 'week', 'month'].includes(date)) {
+            filterType = 'custom';
+            customStr = customDate;
+        }
+        const bounds = getISTDateBounds(filterType as any, customStr);
+        statsStart = bounds.start;
+        statsEnd = bounds.end;
+    }
+
+    const buildStatsQuery = (baseQuery: any) => {
+        let q = baseQuery;
+        if (propertyId) q = q.eq('property_id', propertyId);
+        if (statsStart) q = q.gte('checkin_time', statsStart);
+        if (statsEnd) q = q.lte('checkin_time', statsEnd);
+        return q;
+    };
+
+    const [{ count: totalVisitors }, { count: checkedIn }, { count: checkedOut }] = await Promise.all([
+        buildStatsQuery(supabaseAdmin.from('visitor_logs').select('*', { count: 'exact', head: true }).eq('organization_id', orgId)),
+        buildStatsQuery(supabaseAdmin.from('visitor_logs').select('*', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'checked_in')),
+        buildStatsQuery(supabaseAdmin.from('visitor_logs').select('*', { count: 'exact', head: true }).eq('organization_id', orgId).eq('status', 'checked_out')),
     ]);
 
     // Fetch all properties in this org for filter dropdown
@@ -110,7 +101,7 @@ export async function GET(
     return NextResponse.json({
         visitors: data || [],
         stats: {
-            total_today: totalToday || 0,
+            total_visitors: totalVisitors || 0,
             checked_in: checkedIn || 0,
             checked_out: checkedOut || 0,
         },

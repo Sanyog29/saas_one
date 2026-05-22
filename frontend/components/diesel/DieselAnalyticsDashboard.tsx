@@ -38,6 +38,8 @@ interface TrendPoint {
     litres: number;
 }
 
+const isValidId = (id?: string) => !!id && id !== 'undefined' && id !== 'null' && id !== 'all';
+
 interface DieselAnalyticsDashboardProps {
     propertyId?: string;
     orgId?: string;
@@ -46,7 +48,7 @@ interface DieselAnalyticsDashboardProps {
 const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ propertyId: propIdFromProps, orgId }) => {
     const params = useParams();
     const propertyId = propIdFromProps || (params?.propertyId as string);
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
 
     // UI State
     const [viewMode, setViewMode] = useState<'combined' | 'generator'>('combined');
@@ -66,30 +68,40 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
         month: DieselReading[];
         prevMonth: DieselReading[];
         trend: DieselReading[];
-    }>({ today: [], month: [], prevMonth: [], trend: [] });
+        custom: DieselReading[];
+    }>({ today: [], month: [], prevMonth: [], trend: [], custom: [] });
+
+    // Date Range Filter State
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [dateFrom, setDateFrom] = useState<string>('');
+    const [dateTo, setDateTo] = useState<string>('');
+    const [isCustomRange, setIsCustomRange] = useState(false);
 
     const [activeTariff, setActiveTariff] = useState<number>(0);
     const [isLoading, setIsLoading] = useState(true);
 
     // Fetch Initial Data
     const fetchData = useCallback(async () => {
-        if (!propertyId && !orgId) return;
+        if (!isValidId(propertyId) && !isValidId(orgId)) return;
         setIsLoading(true);
 
         try {
             // 1. Property Name (if propertyId exists)
-            if (propertyId && propertyId !== 'undefined') {
+            if (isValidId(propertyId)) {
                 const { data } = await supabase.from('properties').select('name').eq('id', propertyId).single();
                 setProperty(data);
             }
 
             // 2. Generators
-            const gensRes = await fetch(propertyId && propertyId !== 'undefined'
-                ? `/api/properties/${propertyId}/generators`
-                : `/api/organizations/${orgId}/generators`);
+            let gensRes = null;
+            if (isValidId(propertyId)) {
+                gensRes = await fetch(`/api/properties/${propertyId}/generators`);
+            } else if (isValidId(orgId)) {
+                gensRes = await fetch(`/api/organizations/${orgId}/generators`);
+            }
 
             let gens = [];
-            if (gensRes.ok) {
+            if (gensRes && gensRes.ok) {
                 gens = await gensRes.json();
                 if (Array.isArray(gens)) {
                     setGenerators(gens);
@@ -98,7 +110,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
 
             // 3. Current Tariff (Property required for specific tariff, or find first available)
             const today = new Date().toISOString().split('T')[0];
-            if (propertyId && propertyId !== 'undefined' && Array.isArray(gens) && gens.length > 0) {
+            if (isValidId(propertyId) && Array.isArray(gens) && gens.length > 0) {
                 let tariffFound = false;
                 for (const gen of gens) {
                     const tariffRes = await fetch(`/api/properties/${propertyId}/dg-tariffs?generatorId=${gen.id}&date=${today}`);
@@ -116,22 +128,36 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
 
             // 4. Readings (Batch or separate)
             // Fetch based on Property or Organization
-            const readingsBaseUrl = (propertyId && propertyId !== 'undefined')
+            const readingsBaseUrl = isValidId(propertyId)
                 ? `/api/properties/${propertyId}/diesel-readings`
-                : `/api/organizations/${orgId}/diesel-readings`;
+                : isValidId(orgId)
+                    ? `/api/organizations/${orgId}/diesel-readings`
+                    : null;
 
-            const [todayR, monthR, prevMonthR, trendR] = await Promise.all([
+            if (!readingsBaseUrl) {
+                setRawReadings({ today: [], month: [], prevMonth: [], trend: [], custom: [] });
+                return;
+            }
+
+            const fetchTasks: Promise<DieselReading[]>[] = [
                 fetch(`${readingsBaseUrl}?period=today`).then(r => r.json()).catch(() => []),
                 fetch(`${readingsBaseUrl}?startDate=${new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]}`).then(r => r.json()).catch(() => []),
                 fetch(`${readingsBaseUrl}?startDate=${new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0]}&endDate=${new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0]}`).then(r => r.json()).catch(() => []),
                 fetch(`${readingsBaseUrl}?startDate=${new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}`).then(r => r.json()).catch(() => [])
-            ]);
+            ];
+
+            if (isCustomRange && dateFrom && dateTo) {
+                fetchTasks.push(fetch(`${readingsBaseUrl}?startDate=${dateFrom}&endDate=${dateTo}`).then(r => r.json()).catch(() => []));
+            }
+
+            const [todayR, monthR, prevMonthR, trendR, customR] = await Promise.all(fetchTasks);
 
             setRawReadings({
                 today: Array.isArray(todayR) ? todayR : [],
                 month: Array.isArray(monthR) ? monthR : [],
                 prevMonth: Array.isArray(prevMonthR) ? prevMonthR : [],
-                trend: Array.isArray(trendR) ? trendR : []
+                trend: Array.isArray(trendR) ? trendR : [],
+                custom: isCustomRange && Array.isArray(customR) ? customR : []
             });
 
         } catch (error) {
@@ -139,10 +165,10 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
         } finally {
             setIsLoading(false);
         }
-    }, [propertyId, orgId, supabase]);
+    }, [propertyId, orgId, dateFrom, dateTo, isCustomRange]);
 
     useEffect(() => {
-        if (propertyId === 'undefined' && !orgId) return;
+        if (!isValidId(propertyId) && !isValidId(orgId)) return;
         fetchData();
     }, [fetchData]);
 
@@ -156,7 +182,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
         const calc = (readings: DieselReading[]) => {
             return readings.filter(filterFn).reduce((acc, r) => {
                 let cost = r.computed_cost || 0;
-                let rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
+                const rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
                 if (cost === 0 && rate > 0) {
                     cost = (r.computed_consumed_litres || 0) * rate;
                 }
@@ -170,31 +196,67 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
         const today = calc(rawReadings.today);
         const month = calc(rawReadings.month);
         const prevMonth = calc(rawReadings.prevMonth);
+        const custom = calc(rawReadings.custom);
 
-        // Averages (Month)
-        const uniqueDays = new Set(rawReadings.month.filter(filterFn).map(r => r.reading_date)).size || 1;
-        const avgDailyCost = month.cost / uniqueDays;
-        const avgDailyLitres = month.litres / uniqueDays;
+        const avgCalc = (readings: DieselReading[]) => {
+            const uniqueDays = new Set(readings.filter(filterFn).map(r => r.reading_date)).size || 1;
+            const totals = calc(readings);
+            return { cost: totals.cost / uniqueDays, litres: totals.litres / uniqueDays };
+        };
+
+        const monthAvgs = avgCalc(rawReadings.month);
+        const customAvgs = isCustomRange ? avgCalc(rawReadings.custom) : monthAvgs;
 
         return {
             today,
             month,
             prevMonth,
-            averages: { cost: avgDailyCost, litres: avgDailyLitres }
+            custom,
+            averages: isCustomRange ? customAvgs : monthAvgs
         };
-    }, [rawReadings, viewMode, selectedGenId]);
+    }, [rawReadings, viewMode, selectedGenId, isCustomRange, activeTariff]);
 
     // Derived Trend Data
     const chartData = useMemo(() => {
-        const days = trendPeriod === '7D' ? 7 : 30;
-        const result: TrendPoint[] = [];
-        const now = new Date();
-
         const filterFn = (r: DieselReading) => {
             if (viewMode === 'combined') return true;
             return r.generator_id === selectedGenId;
         };
 
+        if (isCustomRange && dateFrom && dateTo) {
+            const result: TrendPoint[] = [];
+            const relevantReadings = rawReadings.custom.filter(filterFn);
+            const start = new Date(dateFrom);
+            const end = new Date(dateTo);
+            const dayMs = 24 * 60 * 60 * 1000;
+            const totalDays = Math.round((end.getTime() - start.getTime()) / dayMs) + 1;
+
+            for (let i = 0; i < totalDays; i++) {
+                const d = new Date(start.getTime() + i * dayMs);
+                const dateStr = d.toISOString().split('T')[0];
+                const label = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+
+                const dayReadings = relevantReadings.filter(r => r.reading_date === dateStr);
+                const dayTotals = dayReadings.reduce((acc, r) => {
+                    let cost = r.computed_cost || 0;
+                    const rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
+                    if (cost === 0 && rate > 0) {
+                        cost = (r.computed_consumed_litres || 0) * rate;
+                    }
+                    return {
+                        cost: acc.cost + cost,
+                        litres: acc.litres + (r.computed_consumed_litres || 0)
+                    };
+                }, { cost: 0, litres: 0 });
+
+                result.push({ date: label, cost: Math.round(dayTotals.cost), litres: Math.round(dayTotals.litres) });
+            }
+            return result;
+        }
+
+        const days = trendPeriod === '7D' ? 7 : 30;
+        const result: TrendPoint[] = [];
+        const now = new Date();
         const relevantReadings = rawReadings.trend.filter(filterFn);
 
         for (let i = days - 1; i >= 0; i--) {
@@ -206,7 +268,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
             const dayReadings = relevantReadings.filter(r => r.reading_date === dateStr);
             const dayTotals = dayReadings.reduce((acc, r) => {
                 let cost = r.computed_cost || 0;
-                let rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
+                const rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
                 if (cost === 0 && rate > 0) {
                     cost = (r.computed_consumed_litres || 0) * rate;
                 }
@@ -223,15 +285,19 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
             });
         }
         return result;
-    }, [rawReadings.trend, trendPeriod, viewMode, selectedGenId]);
+    }, [rawReadings.trend, rawReadings.custom, trendPeriod, viewMode, selectedGenId, isCustomRange, dateFrom, dateTo, activeTariff]);
 
     // Format Helpers
     const fmtCost = (val: number) => val > 0 ? `₹${val.toLocaleString()}` : '—';
     const fmtLitres = (val: number) => val > 0 ? `${Math.round(val).toLocaleString()} L` : '—';
 
     // Current Display Values
-    const displayCost = costTimeframe === 'today' ? metrics.today.cost : metrics.month.cost;
-    const displayLitres = litresTimeframe === 'today' ? metrics.today.litres : metrics.month.litres;
+    const displayCost = isCustomRange
+        ? metrics.custom.cost
+        : (costTimeframe === 'today' ? metrics.today.cost : metrics.month.cost);
+    const displayLitres = isCustomRange
+        ? metrics.custom.litres
+        : (litresTimeframe === 'today' ? metrics.today.litres : metrics.month.litres);
 
     if (isLoading) return (
         <div className="space-y-8 animate-pulse">
@@ -361,6 +427,52 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                             </button>
                         </div>
                     )}
+
+                    {/* Date Range Filter */}
+                    <div className="flex items-center gap-2 mt-3">
+                        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5">
+                            <Calendar className="w-4 h-4 text-slate-400" />
+                            <input
+                                type="date"
+                                value={dateFrom}
+                                max={dateTo || todayStr}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                                className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none focus:ring-0"
+                            />
+                            <span className="text-xs text-slate-400">to</span>
+                            <input
+                                type="date"
+                                value={dateTo}
+                                min={dateFrom}
+                                max={todayStr}
+                                onChange={(e) => setDateTo(e.target.value)}
+                                className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none focus:ring-0"
+                            />
+                        </div>
+                        <button
+                            onClick={() => {
+                                if (dateFrom && dateTo) {
+                                    setIsCustomRange(true);
+                                }
+                            }}
+                            disabled={!dateFrom || !dateTo}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-white hover:bg-primary-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Apply
+                        </button>
+                        {isCustomRange && (
+                            <button
+                                onClick={() => {
+                                    setIsCustomRange(false);
+                                    setDateFrom('');
+                                    setDateTo('');
+                                }}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+                            >
+                                Reset
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Scope Toggle */}
@@ -412,10 +524,16 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                                         DIESEL<br />COST
                                     </span>
                                 </div>
-                                <div className="flex bg-emerald-100/50 rounded-lg p-1">
-                                    <button onClick={() => setCostTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'today' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Today</button>
-                                    <button onClick={() => setCostTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'month' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>This Month</button>
-                                </div>
+                                {isCustomRange ? (
+                                    <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-emerald-600 shadow-sm">
+                                        Custom Range
+                                    </span>
+                                ) : (
+                                    <div className="flex bg-emerald-100/50 rounded-lg p-1">
+                                        <button onClick={() => setCostTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'today' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Today</button>
+                                        <button onClick={() => setCostTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'month' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>This Month</button>
+                                    </div>
+                                )}
                             </div>
                             <div className="mt-4">
                                 <div className="text-3xl font-black text-slate-800 tracking-tight">
@@ -423,7 +541,9 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                                 </div>
                                 <div className="h-1.5 w-12 bg-emerald-500 rounded-full mt-4 mb-4" />
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    {costTimeframe === 'today' ? 'Total today' : 'Total this month'}
+                                    {isCustomRange
+                                        ? `${dateFrom} to ${dateTo}`
+                                        : (costTimeframe === 'today' ? 'Total today' : 'Total this month')}
                                 </p>
                             </div>
                         </div>
@@ -446,10 +566,16 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                                         LITRES<br />CONSUMED
                                     </span>
                                 </div>
-                                <div className="flex bg-amber-100/50 rounded-lg p-1">
-                                    <button onClick={() => setLitresTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${litresTimeframe === 'today' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>Today</button>
-                                    <button onClick={() => setLitresTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${litresTimeframe === 'month' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>This Month</button>
-                                </div>
+                                {isCustomRange ? (
+                                    <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-amber-600 shadow-sm">
+                                        Custom Range
+                                    </span>
+                                ) : (
+                                    <div className="flex bg-amber-100/50 rounded-lg p-1">
+                                        <button onClick={() => setLitresTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${litresTimeframe === 'today' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>Today</button>
+                                        <button onClick={() => setLitresTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${litresTimeframe === 'month' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>This Month</button>
+                                    </div>
+                                )}
                             </div>
                             <div className="mt-4">
                                 <div className="text-3xl font-black text-slate-800 tracking-tight">
@@ -457,7 +583,9 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                                 </div>
                                 <div className="h-1.5 w-12 bg-amber-500 rounded-full mt-4 mb-4" />
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    {litresTimeframe === 'today' ? 'Consumed today' : 'Consumed this month'}
+                                    {isCustomRange
+                                        ? `${dateFrom} to ${dateTo}`
+                                        : (litresTimeframe === 'today' ? 'Consumed today' : 'Consumed this month')}
                                 </p>
                             </div>
                         </div>
@@ -501,7 +629,11 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                     <div>
                         <h3 className="text-lg font-bold text-slate-900">Consumption Trends</h3>
-                        <p className="text-sm text-slate-500">Analyze usage patterns over time</p>
+                        <p className="text-sm text-slate-500">
+                            {isCustomRange
+                                ? `Showing data from ${dateFrom} to ${dateTo}`
+                                : 'Analyze usage patterns over time'}
+                        </p>
                     </div>
                     <div className="flex items-center gap-4">
                         {/* Metric Toggle */}

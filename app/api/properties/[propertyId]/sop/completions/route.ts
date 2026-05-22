@@ -247,7 +247,6 @@ export async function POST(
 
         if (!existingCompletion) {
             // Generate on-the-fly if missing. This is a fallback for missed pre-generation.
-            // Admin bypass is implied since we are creating a valid slot.
             const { data: newCompletion, error: insertError } = await supabaseAdmin
                 .from('sop_completions')
                 .insert({
@@ -259,12 +258,11 @@ export async function POST(
                     slot_time: slotTime,
                     status: 'pending'
                 })
-                .select('*, items:sop_completion_items(*)')
-                .maybeSingle();
+                .select()
+                .single();
 
             if (insertError) {
                 // If it's a unique constraint error, someone else might have just created it.
-                // Try to fetch it one last time.
                 const { data: retry } = await supabaseAdmin
                     .from('sop_completions')
                     .select('*, items:sop_completion_items(*)')
@@ -277,11 +275,19 @@ export async function POST(
                 }
                 existingCompletion = retry;
             } else {
-                existingCompletion = newCompletion;
-            }
+            // NOTE: sop_completion_items are auto-populated via fn_clone_sop_checklist_items trigger 
+            // after inserting into sop_completions. We just need to refetch to get the items.
+            const { data: finalCompletion } = await supabaseAdmin
+                .from('sop_completions')
+                .select('*, items:sop_completion_items(*)')
+                .eq('id', newCompletion.id)
+                .single();
+            
+            existingCompletion = finalCompletion;
         }
+    }
 
-        // Update to in_progress if it was just pending/missed
+    // Update to in_progress if it was just pending/missed
         if (existingCompletion.status === 'pending' || existingCompletion.status === 'missed') {
             const [sH, sM] = (startTime ?? '00:00').slice(0, 5).split(':').map(Number);
             const [eH, eM] = (endTime ?? '23:59').slice(0, 5).split(':').map(Number);

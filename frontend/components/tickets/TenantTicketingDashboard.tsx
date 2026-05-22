@@ -160,6 +160,9 @@ export default function TenantTicketingDashboard({
             // Staff/MST see their assigned tickets. Tenants see all non-internal tickets for the property.
             const queryParam = isStaff ? `assignedTo=${user.id}` : `isInternal=false`;
             const response = await fetch(`/api/tickets?propertyId=${propertyId}&${queryParam}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
             const data = await response.json();
 
             if (response.ok) {
@@ -181,8 +184,12 @@ export default function TenantTicketingDashboard({
     // Universal Scroll Restoration for Tenant Dashboard
     useEffect(() => {
         if (!loading && (activeTickets.length > 0 || resolvedTickets.length > 0)) {
-            const savedScrollY = sessionStorage.getItem(`tenantScrollY-${propertyId}`);
-            const lastTicketId = sessionStorage.getItem(`tenantLastTicketId-${propertyId}`);
+            let savedScrollY: string | null = null;
+            let lastTicketId: string | null = null;
+            try {
+                savedScrollY = sessionStorage.getItem(`tenantScrollY-${propertyId}`);
+                lastTicketId = sessionStorage.getItem(`tenantLastTicketId-${propertyId}`);
+            } catch {}
 
             if (savedScrollY || lastTicketId) {
                 const scrollContainer = document.getElementById('main-scroll-container');
@@ -202,8 +209,10 @@ export default function TenantTicketingDashboard({
                             targetElement.scrollIntoView({ behavior: 'auto', block: 'center' });
                             
                             // Cleanup only after success
-                            sessionStorage.removeItem(`tenantLastTicketId-${propertyId}`);
-                            sessionStorage.removeItem(`tenantScrollY-${propertyId}`);
+                            try {
+                                sessionStorage.removeItem(`tenantLastTicketId-${propertyId}`);
+                                sessionStorage.removeItem(`tenantScrollY-${propertyId}`);
+                            } catch {}
                             
                             // Restore original scroll behavior if needed
                             setTimeout(() => { (container as HTMLElement).style.scrollBehavior = ''; }, 50);
@@ -218,8 +227,10 @@ export default function TenantTicketingDashboard({
                             behavior: 'auto'
                         });
                         
-                        sessionStorage.removeItem(`tenantScrollY-${propertyId}`);
-                        sessionStorage.removeItem(`tenantLastTicketId-${propertyId}`);
+                        try {
+                            sessionStorage.removeItem(`tenantScrollY-${propertyId}`);
+                            sessionStorage.removeItem(`tenantLastTicketId-${propertyId}`);
+                        } catch {}
                         
                         setTimeout(() => { (container as HTMLElement).style.scrollBehavior = ''; }, 50);
                         return;
@@ -264,6 +275,9 @@ export default function TenantTicketingDashboard({
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
             const data = await response.json();
 
             if (response.ok) {
@@ -651,8 +665,10 @@ export default function TenantTicketingDashboard({
                                                             // Standardized Scroll Saving
                                                             const scrollContainer = document.getElementById('main-scroll-container');
                                                             const scrollPos = scrollContainer ? scrollContainer.scrollTop : window.scrollY;
-                                                            sessionStorage.setItem(`tenantScrollY-${propertyId}`, scrollPos.toString());
-                                                            sessionStorage.setItem(`tenantLastTicketId-${propertyId}`, ticket.id);
+                                                            try {
+                                                                sessionStorage.setItem(`tenantScrollY-${propertyId}`, scrollPos.toString());
+                                                                sessionStorage.setItem(`tenantLastTicketId-${propertyId}`, ticket.id);
+                                                            } catch {}
                                                             router.push(`/tickets/${ticket.id}`);
                                                         }}
                                                         className={`group/ticket ${isDark ? 'bg-[#0d1117] border-[#21262d] hover:border-emerald-500/30' : 'premium-list border-border/5 hover:border-primary/20'} p-4 md:p-8 cursor-pointer transition-all rounded-2xl border hover:shadow-2xl ${isFinal ? 'opacity-80' : ''}`}

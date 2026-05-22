@@ -20,6 +20,22 @@ export async function GET(
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Verify admin role for this property
+    const { data: membership } = await supabaseAdmin
+        .from('property_memberships')
+        .select('role')
+        .eq('property_id', propertyId)
+        .eq('user_id', user.id)
+        .eq('is_active', true)
+        .maybeSingle();
+    
+    const userRole = (membership?.role || '').toLowerCase();
+    const isAdmin = ['property_admin', 'org_admin', 'org_super_admin', 'master_admin'].includes(userRole);
+
+    if (!isAdmin) {
+        return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const templateId = searchParams.get('templateId');
     const date = searchParams.get('date'); // YYYY-MM-DD
@@ -95,11 +111,14 @@ export async function GET(
                 const [sH, sM] = template.start_time.slice(0, 5).split(':').map(Number);
                 const [eH, eM] = template.end_time.slice(0, 5).split(':').map(Number);
                 const startMins = sH * 60 + sM;
-                const endMins = eH * 60 + eM;
+                const endMins_raw = eH * 60 + eM;
+                const isOvernight = endMins_raw <= startMins;
+                const endMins = isOvernight ? endMins_raw + 1440 : endMins_raw;
+
                 for (let t = startMins; t + intervalH * 60 <= endMins; t += intervalH * 60) {
-                    const h = Math.floor(t / 60), m = t % 60;
+                    const h = Math.floor(t / 60) % 24, m = t % 60;
                     const slotEnd = t + intervalH * 60;
-                    const eHr = Math.floor(slotEnd / 60), eMn = slotEnd % 60;
+                    const eHr = Math.floor(slotEnd / 60) % 24, eMn = slotEnd % 60;
                     slots.push({ label: `${fmt12h(h, m)} - ${fmt12h(eHr, eMn)}`, slotTime: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}` });
                 }
             } else {

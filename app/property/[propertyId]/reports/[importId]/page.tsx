@@ -19,8 +19,8 @@ interface TicketData {
     location: string | null;
     reportedDate: string;
     closedDate: string | null;
-    spocName: string;
-    spocEmail: string;
+    contactPersonName: string;
+    contactPersonEmail: string;
     assigneeName: string;
     beforePhoto: string | null;
     afterPhoto: string | null;
@@ -197,7 +197,7 @@ export default function SnagReportPage() {
     const handleExportCSV = () => {
         if (!reportData) return;
 
-        const headers = ['ticket id', 'title', 'description', 'category', 'floor', 'location', 'status', 'priority', 'spoc', 'reported date', 'closure date'];
+        const headers = ['ticket id', 'title', 'description', 'category', 'floor', 'location', 'status', 'priority', 'contact person', 'reported date', 'closure date'];
         const rows = reportData.tickets.map(t => [
             t.ticketNumberDisplay,
             t.title,
@@ -207,7 +207,7 @@ export default function SnagReportPage() {
             t.location || '-',
             t.status,
             t.priority,
-            t.spocName,
+            t.contactPersonName,
             formatDate(t.reportedDate),
             formatDate(t.closedDate)
         ]);
@@ -398,9 +398,9 @@ export default function SnagReportPage() {
                                         <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg mb-5">
                                             <div>
                                                 <span className="block text-[#AA895F] font-bold text-[10px] uppercase tracking-wider mb-1">
-                                                    SPOC (Admin)
+                                                    CONTACT PERSON (Admin)
                                                 </span>
-                                                <span className="text-gray-800 text-sm">{ticket.spocName}</span>
+                                                <span className="text-gray-800 text-sm">{ticket.contactPersonName}</span>
                                             </div>
                                             <div>
                                                 <span className="block text-[#AA895F] font-bold text-[10px] uppercase tracking-wider mb-1">

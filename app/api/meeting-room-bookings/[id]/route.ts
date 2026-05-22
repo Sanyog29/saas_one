@@ -25,7 +25,7 @@ export async function DELETE(
         // 1. Fetch booking to get property_id
         const { data: booking, error: bookingError } = await adminSupabase
             .from('meeting_room_bookings')
-            .select('property_id, user_id, booking_date, start_time, end_time')
+            .select('property_id, user_id, company_id, booking_date, start_time, end_time')
             .eq('id', bookingId)
             .single();
 
@@ -133,37 +133,26 @@ export async function DELETE(
             console.error('Activity log insertion failed:', err);
         }
 
-        // 8. Refund credits if booking is in the future and tenant has a credit record
+        // 8. Refund credits if booking is in the future
         const bookingEnd = new Date(`${booking.booking_date}T${booking.end_time}`);
         if (bookingEnd > new Date()) {
             const [startH, startM] = booking.start_time.split(':').map(Number);
             const [endH, endM] = booking.end_time.split(':').map(Number);
             const durationHours = (endH * 60 + endM - startH * 60 - startM) / 60;
 
-            const { data: credit } = await supabaseAdmin
-                .from('meeting_room_credits')
-                .select('id, remaining_hours')
-                .eq('property_id', booking.property_id)
-                .eq('user_id', booking.user_id)
-                .single();
-
-            if (credit) {
-                const newRemaining = credit.remaining_hours + durationHours;
-                await supabaseAdmin
-                    .from('meeting_room_credits')
-                    .update({ remaining_hours: newRemaining, updated_at: new Date().toISOString() })
-                    .eq('id', credit.id);
-
-                await supabaseAdmin.from('meeting_room_credit_log').insert({
-                    credit_id: credit.id,
-                    user_id: booking.user_id,
-                    action: 'refunded',
-                    hours_changed: durationHours,
-                    hours_after: newRemaining,
-                    performed_by: user.id,
-                    notes: `Credit refund on booking cancellation`,
-                });
-            }
+            // Atomic refund via RPC (handles company credits correctly)
+            await supabaseAdmin.rpc(
+                'refund_meeting_room_credit',
+                {
+                    p_property_id: booking.property_id,
+                    p_user_id: booking.user_id,
+                    p_company_id: booking.company_id,
+                    p_hours: durationHours,
+                    p_booking_id: bookingId,
+                    p_performed_by: user.id,
+                    p_notes: 'Credit refund on booking cancellation'
+                }
+            );
         }
 
         return NextResponse.json({ success: true, message: 'Booking deleted successfully' });

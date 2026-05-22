@@ -1,6 +1,18 @@
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
+// ─── Fix 1: Proper SW lifecycle (was missing — caused mobile activation failures) ───
+self.addEventListener('install', () => {
+    console.log('[firebase-messaging-sw.js] Installing, skipping waiting...');
+    self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+    console.log('[firebase-messaging-sw.js] Activating, claiming clients...');
+    event.waitUntil(self.clients.claim());
+});
+
+// ─── Firebase Init ────────────────────────────────────────────────────────────────
 firebase.initializeApp({
     apiKey: "AIzaSyBcZ3cFsWiLfp7QFUcwOwjvSeM5Y-0hRZk",
     authDomain: "web-notification-52467.firebaseapp.com",
@@ -11,18 +23,37 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// ─── Background Message Handler ───────────────────────────────────────────────────
+// FCM delivers the notification automatically when webpush.notification is present
+// in the payload. We only need to handle the data-only fallback case here.
 messaging.onBackgroundMessage(function (payload) {
-    console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    // Note: We do NOT call showNotification here because the browser automatically
-    // shows the notification when 'webpush.notification' is present in the FCM payload.
+    console.log('[firebase-messaging-sw.js] Received background message:', payload);
+
+    // Only manually show if FCM did NOT auto-display (i.e., data-only payload)
+    if (payload.notification) return; // FCM already handled it
+
+    const data = payload.data || {};
+    const title = data.title || 'Autopilot Notice';
+    const options = {
+        body: data.message || 'You have a new notification from Autopilot',
+        icon: '/android-chrome-192x192.png',
+        badge: '/android-chrome-192x192.png',
+        // Fix minor: prefer deep_link, fallback to url
+        data: { url: data.deep_link || data.url || '/' },
+        requireInteraction: true,
+        vibrate: [200, 100, 200],
+        tag: data.notification_id || 'autopilot-fms',
+        renotify: true,
+    };
+    self.registration.showNotification(title, options);
 });
 
+// ─── Notification Click Handler ───────────────────────────────────────────────────
 self.addEventListener('notificationclick', function (event) {
     console.log('[firebase-messaging-sw.js] Notification clicked', event);
-
     event.notification.close();
 
-    // Prioritize deep_link from data, fallback to root
+    // Fix minor: support both deep_link and url fields
     const data = event.notification.data || {};
     const relativeUrl = data.deep_link || data.url || '/';
 
@@ -41,7 +72,7 @@ self.addEventListener('notificationclick', function (event) {
             // 2. If no exact match, find any tab on same origin and navigate it
             for (let client of windowClients) {
                 if ('navigate' in client && 'focus' in client) {
-                    return client.navigate(targetUrl).then(c => c.focus());
+                    return client.navigate(targetUrl).then(c => c && c.focus());
                 }
             }
 

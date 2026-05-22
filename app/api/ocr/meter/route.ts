@@ -19,7 +19,6 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        console.log(`[OCR] Request for meter: ${meterId} property: ${propertyId}`);
 
         // 1. Log Start to Audit Table
         if (meterId && propertyId) {
@@ -80,7 +79,6 @@ CRITICAL INSTRUCTIONS:
         const data = await response.json();
         const content = JSON.parse(data.choices[0].message.content);
 
-        console.log('[OCR Result]:', content);
 
         // 3. Log Success and Store Results (Shadow Entry)
         if (meterId && propertyId) {
@@ -184,13 +182,11 @@ CRITICAL INSTRUCTIONS:
 
             let dbResult;
             if (existingReading) {
-                console.log('[OCR] Updating existing reading:', existingReading.id);
                 dbResult = await supabase
                     .from('electricity_readings')
                     .update(readingData)
                     .eq('id', existingReading.id);
             } else {
-                console.log('[OCR] Creating new reading record');
                 dbResult = await supabase
                     .from('electricity_readings')
                     .insert(readingData);
@@ -201,7 +197,6 @@ CRITICAL INSTRUCTIONS:
                 throw new Error(`Database error: ${dbResult.error.message}`);
             }
             
-            console.log('[OCR] Successfully stored reading for meter:', meterId);
 
             // Return augmented content to frontend
             content.reading = finalReading;

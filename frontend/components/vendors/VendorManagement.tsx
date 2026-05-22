@@ -244,7 +244,7 @@ export default function VendorManagement({ organizationId, propertyId, propertie
                                 <div className="text-xs text-green-600">
                                     A Supabase account has been created.<br />
                                     Temp password: <span className="font-mono font-bold">{addResult.temp_password}</span><br />
-                                    WhatsApp notification sent with credentials.
+                                    WhatsApp notification sent with login details.
                                 </div>
                                 <button onClick={() => { setAddResult(null); setShowAddForm(false); }}
                                     className="mt-2 text-xs text-green-700 underline">Close</button>

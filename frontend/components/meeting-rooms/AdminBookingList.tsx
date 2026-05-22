@@ -234,6 +234,10 @@ const AdminBookingList: React.FC<AdminBookingListProps> = ({ propertyId }) => {
                                                 <Clock className="w-3 h-3" />
                                                 <span className="text-[10px] font-bold uppercase tracking-wider">{booking.start_time} - {booking.end_time}</span>
                                             </div>
+                                            <div className="flex items-center gap-1.5 text-primary/60">
+                                                <div className="w-1 h-1 rounded-full bg-current" />
+                                                <span className="text-[10px] font-black uppercase tracking-wider">Booked: {new Date(booking.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

@@ -17,7 +17,14 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
     const [selectedCapacity, setSelectedCapacity] = useState<number>(0);
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
     
-    const roomsCacheKey = `rooms-avail-${propertyId}-${selectedDate.toISOString().split('T')[0]}-${selectedCapacity}`;
+    const formatLocalDate = (d: Date) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    const roomsCacheKey = `rooms-avail-${propertyId}-${formatLocalDate(selectedDate)}-${selectedCapacity}`;
     const historyCacheKey = `tenant-bookings-${user?.id}`;
     const creditCacheKey = `tenant-credits-${propertyId}-${user?.id}`;
     
@@ -150,7 +157,7 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
     const fetchRooms = async () => {
         setIsSearching(true);
         try {
-            const dateStr = selectedDate.toISOString().split('T')[0];
+            const dateStr = formatLocalDate(selectedDate);
             // Fetch all rooms for the property with capacity filter
             const res = await fetch(`/api/meeting-rooms/available?propertyId=${propertyId}&date=${dateStr}&capacity=${selectedCapacity}`);
             const data = await res.json();
@@ -205,7 +212,7 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
     const handleConfirmBook = async () => {
         if (!pendingBooking) return;
         const { room, slot } = pendingBooking;
-        const dateStr = selectedDate.toISOString().split('T')[0];
+        const dateStr = formatLocalDate(selectedDate);
         setIsBooking(true);
         setBookingError('');
         try {
@@ -380,7 +387,7 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
                                 <RoomCard
                                     key={room.id}
                                     room={room}
-                                    selectedDate={selectedDate.toISOString().split('T')[0]}
+                                    selectedDate={formatLocalDate(selectedDate)}
                                     onBook={handleBook}
                                 />
                             ))}
@@ -643,6 +650,9 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
                                                             {booking.meeting_room?.location && (
                                                                 <p className="text-[11px] text-muted-foreground mt-1 truncate">{booking.meeting_room.location}</p>
                                                             )}
+                                                            <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mt-2">
+                                                                Booked at: {new Date(booking.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                                            </p>
                                                         </div>
                                                         {!isPast && (
                                                             <button

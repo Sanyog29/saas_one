@@ -31,7 +31,7 @@ export default function CapabilityWrapper({
 
     const hasPermission = context?.capabilities[domain]?.includes(action);
 
-    if (!hasPermission) return <>{fallback}</>;
+    if (!hasPermission) return fallback as any;
 
-    return <>{children}</>;
+    return children as any;
 }

@@ -1,17 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/frontend/context/AuthContext';
 import Skeleton from '@/frontend/components/ui/Skeleton';
 import { Toast } from '@/frontend/components/ui/Toast';
-import { ClipboardCheck, ScanLine, LayoutGrid, History, FileBarChart } from 'lucide-react';
+import { ClipboardCheck, LayoutGrid, History, FileBarChart } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SOPTemplateManager from './SOPTemplateManager';
 import SOPCompletionHistory from './SOPCompletionHistory';
 import SOPChecklistRunner from './SOPChecklistRunner';
 import SOPCompletionDetail from './SOPCompletionDetail';
 import SOPReportSection from './SOPReportSection';
-import UniversalQRScannerModal from '@/frontend/components/shared/UniversalQRScannerModal';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
 
 interface SOPDashboardProps {
@@ -35,7 +34,7 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
     const [isLoading, setIsLoading] = useState(true);
     const [userRole, setUserRole] = useState<string>('');
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-    const [showScanner, setShowScanner] = useState(false);
+    const [historyFilter, setHistoryFilter] = useState<'all' | 'due' | 'missed' | 'completed'>('all');
     const { invalidateCache } = useDataCache();
 
     useEffect(() => {
@@ -117,6 +116,13 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
         setSelectedCompletionDate(null);
     };
 
+    const handleViewDetail = useCallback((id: string, templateId: string, propId: string) => {
+        setViewingCompletionTemplateId(templateId);
+        setViewingCompletionId(id);
+        setViewingPropertyId(propId);
+        setActiveView('detail');
+    }, []);
+
     if (isLoading) {
         return (
             <div className="space-y-6 p-8">
@@ -147,16 +153,6 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
                         <div className="flex-shrink-0">{propertySelector}</div>
                     )}
 
-                    {/* Scan QR - Only for non-admin (MST/staff) */}
-                    {!isAdmin && (
-                        <button
-                            onClick={() => setShowScanner(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white rounded-lg hover:bg-primary transition-all font-black uppercase tracking-widest text-[9px] md:text-[10px]"
-                        >
-                            <ScanLine size={12} />
-                            Scan QR
-                        </button>
-                    )}
 
                     {/* Right side: headerRight (notification bell etc) */}
                     <div className="flex items-center gap-2">
@@ -220,7 +216,6 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
 
                 {/* Content Area */}
                 <motion.div
-                    layout
                     className="bg-white border border-slate-200 rounded-xl md:rounded-[2rem] shadow-sm overflow-hidden"
                 >
                     <div className="p-2 md:p-6">
@@ -239,9 +234,8 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
                                         isAdmin={isAdmin}
                                         userRole={userRole}
                                         onSelectTemplate={handleStartChecklist}
-                                        onRefresh={() => { }}
                                         activeView="list"
-                                        onViewChange={(v) => setActiveView(v)}
+                                        onViewChange={setActiveView as any}
                                     />
                                 )}
 
@@ -252,14 +246,11 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
                                         isAdmin={isAdmin}
                                         userRole={userRole}
                                         onSelectTemplate={handleStartChecklist}
-                                        onViewDetail={(id: string, templateId: string, propId: string) => {
-                                            setViewingCompletionTemplateId(templateId);
-                                            setViewingCompletionId(id);
-                                            setViewingPropertyId(propId);
-                                            setActiveView('detail');
-                                        }}
+                                        onViewDetail={handleViewDetail}
                                         activeView="history"
-                                        onViewChange={isAdmin ? (v) => setActiveView(v as any) : undefined}
+                                        onViewChange={isAdmin ? (setActiveView as any) : undefined}
+                                        initialFilter={historyFilter}
+                                        onFilterChange={setHistoryFilter}
                                     />
                                 )}
 
@@ -315,29 +306,6 @@ const SOPDashboard: React.FC<SOPDashboardProps> = ({ propertyId, propertyIds, pr
                 </motion.div>
             </div>
 
-            {showScanner && (
-                <UniversalQRScannerModal
-                    onResult={async (result) => {
-                        setShowScanner(false);
-                        if (result.type === 'checklist') {
-                            // Find/create session via API — dedup returns existing in_progress if any
-                            try {
-                                const res = await fetch(`/api/properties/${propertyId}/sop/completions`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ templateId: result.templateId }),
-                                });
-                                const data = await res.json();
-                                handleStartChecklist(result.templateId, data.completion?.property_id || propertyId!, data.completion?.id || undefined);
-                            } catch {
-                                handleStartChecklist(result.templateId, propertyId!);
-                            }
-                        }
-                        // stock/barcode types not applicable in checklist context
-                    }}
-                    onClose={() => setShowScanner(false)}
-                />
-            )}
 
             {/* Toast Notification */}
             {toast && (

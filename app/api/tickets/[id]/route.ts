@@ -57,6 +57,21 @@ export async function GET(
             .eq('ticket_id', ticketId)
             .order('escalated_at', { ascending: true });
 
+        // Get material requests (Procurement)
+        const { data: procurementRequests } = await adminSupabase
+            .from('material_requests')
+            .select(`
+                *,
+                line_items:material_request_items(
+                    *
+                ),
+                requester:users!material_requests_requested_by_fkey(full_name)
+            `)
+            .eq('ticket_id', ticketId)
+            .order('created_at', { ascending: false });
+
+        const formattedProcurementRequests = procurementRequests || [];
+
         // Check if validation is enabled for this property
         const { data: feature } = await adminSupabase
             .from('property_features')
@@ -76,7 +91,15 @@ export async function GET(
             { step: 'Completed', completed: ticket.status === 'resolved' || ticket.status === 'closed', time: ticket.resolved_at },
         ];
 
-        return NextResponse.json({ ticket, comments: comments || [], activities: activities || [], escalationLogs: escalationLogs || [], timeline, validationEnabled });
+        return NextResponse.json({ 
+            ticket, 
+            comments: comments || [], 
+            activities: activities || [], 
+            escalationLogs: escalationLogs || [], 
+            procurementRequests: formattedProcurementRequests,
+            timeline, 
+            validationEnabled 
+        });
     } catch (error) {
         console.error('Ticket detail error:', error);
         return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -442,8 +465,8 @@ export async function PATCH(
 
         if (priority) updates.priority = priority;
         if (resolution_notes) updates.resolution_notes = resolution_notes;
-        if (photo_before_url) updates.photo_before_url = photo_before_url;
-        if (photo_after_url) updates.photo_after_url = photo_after_url;
+        if (photo_before_url !== undefined) updates.photo_before_url = photo_before_url;
+        if (photo_after_url !== undefined) updates.photo_after_url = photo_after_url;
         if (rating) updates.rating = rating;
 
         // Allow editing title and description for Creator, Property Admin, or MST
@@ -512,24 +535,19 @@ export async function PATCH(
 
         // Trigger Web Push Notifications asynchronously
         try {
-            console.log('[Ticket Update API] update successful. Triggering notifications checks...');
-            console.log('[Ticket Update API] Updates:', JSON.stringify(updates));
 
             const { NotificationService } = await import('@/backend/services/NotificationService');
 
             // Check for assignment
             if (updates.assigned_to) {
-                console.log('[Ticket Update API] Triggering afterTicketAssigned...');
                 NotificationService.afterTicketAssigned(ticketId).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (Assigned):', err);
                 });
             } else {
-                console.log('[Ticket Update API] skipping assignment notification (assigned_to not in updates)');
             }
 
             // Check for waitlist
             if (updates.status === 'waitlist') {
-                console.log('[Ticket Update API] Triggering afterTicketWaitlisted...');
                 NotificationService.afterTicketWaitlisted(ticketId).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (Waitlisted):', err);
                 });
@@ -537,7 +555,6 @@ export async function PATCH(
 
             // Check for pending validation (non-internal MST complete, awaiting tenant approval)
             if (updates.status === 'pending_validation') {
-                console.log('[Ticket Update API] Triggering afterTicketPendingValidation...');
                 NotificationService.afterTicketPendingValidation(ticketId).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (PendingValidation):', err);
                 });
@@ -545,7 +562,6 @@ export async function PATCH(
 
             // Check for completion (admin-forced or tenant-validated)
             if (updates.status === 'closed' || updates.status === 'resolved') {
-                console.log('[Ticket Update API] Triggering afterTicketCompleted...');
                 NotificationService.afterTicketCompleted(ticketId).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (Completed):', err);
                 });
@@ -553,7 +569,6 @@ export async function PATCH(
 
             // Check for validation outcome (approved or rejected)
             if (action === 'validate') {
-                console.log('[Ticket Update API] Triggering afterTicketValidated...');
                 NotificationService.afterTicketValidated(ticketId, validation_approved === true).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (Validated):', err);
                 });
@@ -612,10 +627,6 @@ export async function DELETE(
         const { data: allPMs } = await adminSupabase.from('property_memberships').select('*').eq('user_id', user.id);
         const { data: allOMs } = await adminSupabase.from('organization_memberships').select('*').eq('user_id', user.id);
 
-        console.log(`[DELETE TICKET] User: ${user.id}, Master: ${userProfile?.is_master_admin}`);
-        console.log(`[DELETE TICKET] Ticket: ${ticketId}, Property: ${ticket.property_id}, Org: ${ticket.organization_id}`);
-        console.log(`[DELETE TICKET] User All PMs:`, allPMs);
-        console.log(`[DELETE TICKET] User All OMs:`, allOMs);
 
         if (userProfile?.is_master_admin === true) {
             canDelete = true;
@@ -636,7 +647,6 @@ export async function DELETE(
                 .eq('user_id', user.id)
                 .eq('property_id', ticket.property_id);
 
-            console.log(`[DELETE TICKET] Found PMs for this property:`, pmList);
 
             const validPm = pmList?.find(m =>
                 adminRoles.includes(m.role) ||
@@ -645,10 +655,8 @@ export async function DELETE(
             );
 
             if (validPm) {
-                console.log(`[DELETE TICKET] Found valid PM:`, validPm);
                 canDelete = true;
             } else {
-                console.log(`[DELETE TICKET] No valid PM found in list of ${pmList?.length || 0} memberships`);
             }
         }
 
@@ -660,7 +668,6 @@ export async function DELETE(
                 .eq('user_id', user.id)
                 .eq('organization_id', ticket.organization_id);
 
-            console.log(`[DELETE TICKET] Found OMs for this org:`, omList);
 
             const validOm = omList?.find(m =>
                 adminRoles.includes(m.role) ||
@@ -669,15 +676,12 @@ export async function DELETE(
             );
 
             if (validOm) {
-                console.log(`[DELETE TICKET] Found valid OM:`, validOm);
                 canDelete = true;
             } else {
-                console.log(`[DELETE TICKET] No valid OM found in list of ${omList?.length || 0} memberships`);
             }
         }
 
         if (!canDelete) {
-            console.log(`[DELETE TICKET] Final Decision: Permission Denied for user ${user.id} on ticket ${ticketId}`);
             return NextResponse.json({ error: 'You do not have permission to delete this ticket' }, { status: 403 });
         }
 
@@ -703,7 +707,6 @@ export async function DELETE(
 
         // If the above failed due to FK from notification_delivery, we try deleting that first
         if (notifDeleteError && notifDeleteError.code === '23503') {
-            console.log('Cascade blocked by notification_delivery, cleaning that up first...');
             const { data: notifIds } = await adminSupabase
                 .from('notifications')
                 .select('id')

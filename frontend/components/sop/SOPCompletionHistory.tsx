@@ -16,6 +16,8 @@ interface SOPCompletionHistoryProps {
     userRole?: string;
     activeView?: 'list' | 'history' | 'reports';
     onViewChange?: (v: 'list' | 'history' | 'reports') => void;
+    initialFilter?: 'all' | 'due' | 'missed' | 'completed';
+    onFilterChange?: (filter: 'all' | 'due' | 'missed' | 'completed') => void;
 }
 
 /** Parse every_N_hour(s) frequency → interval in hours, or null */
@@ -45,10 +47,40 @@ function fmtRemaining(ms: number): string {
 
 /** Format HH:MM (24h) → "H:MM AM/PM" */
 export function fmt12h(hhmm: string): string {
+    if (!hhmm) return 'N/A';
     const [h, m] = hhmm.slice(0, 5).split(':').map(Number);
     const ampm = h >= 12 ? 'PM' : 'AM';
     const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
     return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+/** Helper: Get date parts forced to Asia/Kolkata (IST) */
+function getISTDateParts(date: Date) {
+    const formatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric', month: 'numeric', day: 'numeric',
+        hour: 'numeric', minute: 'numeric', second: 'numeric',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(date);
+    const map: any = {};
+    parts.forEach(p => map[p.type] = p.value);
+    
+    const year = parseInt(map.year);
+    const month = parseInt(map.month);
+    const day = parseInt(map.day);
+    const hour = parseInt(map.hour);
+    const minute = parseInt(map.minute);
+    
+    // Construct ISO date string (YYYY-MM-DD)
+    const isoDate = `${map.year}-${map.month.padStart(2, '0')}-${map.day.padStart(2, '0')}`;
+    
+    return {
+        year, month, day, hour, minute,
+        isoDate,
+        totalMins: hour * 60 + minute,
+        todayStart: new Date(`${isoDate}T00:00:00+05:30`)
+    };
 }
 
 /** Compute the slot window a completion belongs to, e.g. "09:00 – 12:00" */
@@ -76,19 +108,10 @@ function getCompletionSlot(
     if (!timestampStr) return null;
 
     // Use India local time for slot calculation
-    const dt = new Date(timestampStr);
-    const indiaTime = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Kolkata',
-        hour: 'numeric',
-        minute: 'numeric',
-        hour12: false
-    }).format(dt);
-    
-    const [dtH, dtM] = indiaTime.split(':').map(Number);
+    const ist = getISTDateParts(new Date(timestampStr));
+    const dtMins = ist.totalMins;
     const [sH, sM] = startTime.slice(0, 5).split(':').map(Number);
-    
     const startMins = sH * 60 + sM;
-    const dtMins = dtH * 60 + dtM;
     
     let elapsed = dtMins - startMins;
     if (elapsed < 0) elapsed += 1440; 
@@ -110,14 +133,20 @@ function getCompletionSlot(
 function computeCurrentSlotStart(frequency: string, startTime: string | null, now: Date, endTime?: string | null): string | null {
     const intervalH = parseHourlyInterval(frequency);
     if (!intervalH || !startTime) return null;
+    
+    const ist = getISTDateParts(now);
+    const nowMins = ist.totalMins;
+    
     const [sH, sM] = startTime.slice(0, 5).split(':').map(Number);
     const startMins = sH * 60 + sM;
-    const nowMins = now.getHours() * 60 + now.getMinutes();
     const elapsed = nowMins - startMins;
-    if (elapsed < 0) return null;
+    
+    // If it's before start time, it might still be in the previous day's overnight shift
+    if (elapsed < 0 && !isWithinTimeWindow(nowMins, startTime, endTime || '23:59')) return null;
 
     // Compute the raw slot start
-    let slotStartMins = startMins + Math.floor(elapsed / (intervalH * 60)) * intervalH * 60;
+    const elapsedActual = elapsed < 0 ? elapsed + 1440 : elapsed;
+    let slotStartMins = startMins + Math.floor(elapsedActual / (intervalH * 60)) * intervalH * 60;
 
     // Clamp to the last valid slot: a slot is valid only if its END fits within endTime
     if (endTime) {
@@ -170,35 +199,10 @@ export function isDue(
     if (frequency === 'on_demand') return { due: false, label: '', status: '' };
 
     const now = baseDate || new Date();
+    const ist = getISTDateParts(now);
+    const nowMins = ist.totalMins;
+    const todayStr = ist.isoDate;
     const intervalHours = parseHourlyInterval(frequency);
-    const nowMins = now.getHours() * 60 + now.getMinutes();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    // ── Global window pre-checks (for non-hourly) ───────────────────────────
-    if (intervalHours === null && startTime && endTime) {
-        const [sh, sm] = startTime.slice(0, 5).split(':').map(Number);
-        const [eh, em] = endTime.slice(0, 5).split(':').map(Number);
-        const smins = sh * 60 + sm;
-        const emins = eh * 60 + em;
-        const isOvernight = emins <= smins;
-
-        if (!isWithinTimeWindow(nowMins, startTime, endTime)) {
-            // If window is closed, check if it was COMPLETED in the most recent instance
-            const last = lastCompletedAt ? new Date(lastCompletedAt) : lastCompletionDate ? new Date(lastCompletionDate) : null;
-            
-            let lastWindowStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), sh, sm, 0, 0);
-            const isCurrentlyEarlyMorning = isOvernight && nowMins < emins;
-            
-            if (isCurrentlyEarlyMorning) {
-                // We are in the morning part of an overnight window, so the "closed" window we care about
-                // is actually the one happening right now (but we are outside of it? No, wait.)
-                // Actually, if window is closed, it means we are in the gap.
-            }
-
-            // Logic for "Missed": If window is closed and no completion in THAT window
-            // This is handled better inside the frequency blocks below.
-        }
-    }
 
     // ── Hourly + time window → daily-reset schedule logic ───────────────────
     if (intervalHours !== null && startTime && endTime) {
@@ -208,13 +212,15 @@ export function isDue(
         const endMins = eH * 60 + eM;
 
         const isOvernight = endMins <= startMins;
-        let baselineDate = today;
+        let baselineDateStr = todayStr;
         
         if (isOvernight && nowMins < endMins) {
-            baselineDate = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+            // We are in the morning part of an overnight window, baseline is yesterday
+            const yesterday = new Date(now.getTime() - 86400000);
+            baselineDateStr = getISTDateParts(yesterday).isoDate;
         }
 
-        const baselineStart = new Date(baselineDate.getFullYear(), baselineDate.getMonth(), baselineDate.getDate(), sH, sM, 0, 0);
+        const baselineStart = new Date(`${baselineDateStr}T${startTime.slice(0,5)}:00+05:30`);
         const windowDurationMins = isOvernight ? (1440 - startMins + endMins) : (endMins - startMins);
         
         const todaySlots: Date[] = [];
@@ -272,7 +278,6 @@ export function isDue(
     if (!lastCompletionDate) {
         if (frequency === 'daily' && startTime && endTime) {
             if (isWithinTimeWindow(nowMins, startTime, endTime)) return { due: true, label: 'Due now', status: 'due' };
-            // If window hasn't started yet today
             const [sh] = startTime.slice(0, 5).split(':').map(Number);
             if (nowMins < sh * 60) return { due: false, label: `Starts at ${fmt12h(startTime)}`, status: 'upcoming' };
             return { due: true, label: 'Missed', status: 'missed' };
@@ -289,31 +294,26 @@ export function isDue(
             const emins = eh * 60 + em;
             const isOvernight = emins <= smins;
 
-            let currentWindowStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), sh, sm, 0, 0);
+            let currentWindowStartStr = todayStr;
             if (isOvernight && nowMins < emins) {
-                currentWindowStart = new Date(currentWindowStart.getTime() - 24 * 60 * 60 * 1000);
+                const yesterday = new Date(now.getTime() - 86400000);
+                currentWindowStartStr = getISTDateParts(yesterday).isoDate;
             }
-
-            const logicalDate = currentWindowStart.toLocaleDateString('en-CA');
+            
+            const currentWindowStart = new Date(`${currentWindowStartStr}T${startTime.slice(0,5)}:00+05:30`);
+            const logicalDate = currentWindowStartStr;
             const isDoneInCurrentWindow = lastCompletionDate === logicalDate && (last.getTime() >= currentWindowStart.getTime() || lastCompletedAt);
             
-            // If it was started but not COMPLETED, it's still due!
             if (isDoneInCurrentWindow && lastCompletedAt) return { due: false, label: 'Done today', status: 'completed' };
-            
             if (isWithinTimeWindow(nowMins, startTime, endTime)) return { due: true, label: 'Due now', status: 'due' };
-            
-                        // If we haven't reached the start of the current logical window yet (e.g. 8 AM vs 10 PM)
             if (nowMins < smins) return { due: false, label: `Starts at ${fmt12h(startTime)}`, status: 'upcoming' };
 
-            // If we are past the window and not done
             const isPastWindow = isOvernight ? (nowMins >= emins && nowMins < smins) : (nowMins >= emins);
             if (isPastWindow) return { due: true, label: 'Missed', status: 'missed' };
-            
             return { due: false, label: `Starts at ${fmt12h(startTime)}`, status: 'upcoming' };
         }
 
-        const lastDate = new Date(last.getFullYear(), last.getMonth(), last.getDate());
-        const isSameDay = lastCompletionDate === today.toLocaleDateString('en-CA');
+        const isSameDay = lastCompletionDate === todayStr;
         if (isSameDay) return { due: false, label: 'Done today', status: 'completed' };
         return { due: true, label: 'Due today', status: 'due' };
     }
@@ -334,7 +334,7 @@ export function isDue(
     return { due: false, label: '', status: '' };
 }
 
-const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId, propertyIds, onSelectTemplate, onViewDetail, isAdmin = false, userRole, activeView = 'history', onViewChange }) => {
+const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId, propertyIds, onSelectTemplate, onViewDetail, isAdmin = false, userRole, activeView = 'history', onViewChange, initialFilter = 'all', onFilterChange }) => {
     const isMultiProperty = !!propertyIds && propertyIds.length > 0;
     const [completions, setCompletions] = useState<any[]>([]);
     const [rawTemplateData, setRawTemplateData] = useState<Array<{ template: any; latestCompletion: any; lastDate: string | null }>>([]);
@@ -342,12 +342,14 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
     const [liveNow, setLiveNow] = useState(() => new Date());
     const supabase = React.useMemo(() => createClient(), []);
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
-    const [activeFilter, setActiveFilter] = useState<'due' | 'missed' | 'completed' | 'all'>('all');
-    const [selectedDate, setSelectedDate] = useState(liveNow.toLocaleDateString('en-CA'));
-    const isToday = selectedDate === liveNow.toLocaleDateString('en-CA');
+    const [activeFilter, setActiveFilter] = useState<'all' | 'due' | 'missed' | 'completed'>(initialFilter);
+    const [isAllTime, setIsAllTime] = useState(true);
+    
+    // Always use IST for current date selection
+    const todayIST = getISTDateParts(liveNow).isoDate;
+    const [selectedDate, setSelectedDate] = useState(todayIST);
+    const isToday = selectedDate === todayIST;
 
-    // Tick every few seconds to reduce recalculation overhead while keeping 
-    // real-time labels (Due In, etc.) reasonably accurate.
     useEffect(() => {
         const id = setInterval(() => setLiveNow(new Date()), 5000);
         return () => clearInterval(id);
@@ -366,19 +368,17 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
         }
 
         try {
-                const { data: { user } } = await supabase.auth.getUser();
-
                 // Fetch completions
                 let completionQuery = supabase
                     .from('sop_completions')
                     .select(`
                         *,
                         template:sop_templates(title, frequency, category, start_time, end_time),
-                        user:users(full_name),
+                        user:completed_by(full_name),
                         items:sop_completion_items(is_checked, value)
                     `)
                     .order('completion_date', { ascending: false })
-                    .limit(50);
+                    .order('completed_at', { ascending: false });
 
                 if (isMultiProperty) {
                     completionQuery = (completionQuery as any).in('property_id', propertyIds);
@@ -386,10 +386,7 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                     completionQuery = (completionQuery as any).eq('property_id', propertyId);
                 }
 
-                // No per-user filter — all staff see shared completions for their applicable templates
                 const { data: completionData, error: completionError } = await completionQuery;
-
-
                 if (completionError) throw completionError;
                 const results = completionData || [];
                 setCompletions(results);
@@ -414,7 +411,6 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 if (!isAdmin) {
                     const { data: { user } } = await supabase.auth.getUser();
                     if (user) {
-                        // Empty assigned_to = open to all staff; otherwise check if user is in list
                         applicableTemplates = applicableTemplates.filter(t =>
                             !t.assigned_to || t.assigned_to.length === 0 || t.assigned_to.includes(user.id)
                         );
@@ -423,13 +419,10 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                     }
                 }
 
-
-                // Store raw rows — live due/upcoming computed in useMemo every second
                 const rows = applicableTemplates.map(template => {
                     const templateCompletions = results.filter(
                         (c: any) => c.template_id === template.id && c.status === 'completed'
                     );
-                    // Sort by completed_at DESC to get the TRUE latest completion
                     const sorted = [...templateCompletions].sort((a, b) => {
                         const tA = a.completed_at ? new Date(a.completed_at).getTime() : 0;
                         const tB = b.completed_at ? new Date(b.completed_at).getTime() : 0;
@@ -439,14 +432,9 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                     return { template, latestCompletion, lastDate: latestCompletion?.completion_date ?? null };
                 });
                 setRawTemplateData(rows);
-
-                // Update Cache
-                setCachedData(cacheKey, {
-                    completions: results,
-                    rawTemplateData: rows
-                });
+                setCachedData(cacheKey, { completions: results, rawTemplateData: rows });
             } catch (err: any) {
-                console.error('Error loading data:', err?.message ?? err?.error_description ?? JSON.stringify(err) ?? err);
+                console.error('Error loading data:', err);
             } finally {
                 setIsLoading(false);
             }
@@ -465,51 +453,32 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
 
     const handleCancelSession = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!window.confirm('Are you sure you want to stop/cancel this active session? Information entered will be lost.')) return;
-
+        if (!window.confirm('Are you sure?')) return;
         try {
-            const { error } = await supabase
-                .from('sop_completions')
-                .delete()
-                .eq('id', id);
-
+            const { error } = await supabase.from('sop_completions').delete().eq('id', id);
             if (error) throw error;
-
             setCompletions(prev => prev.filter(c => c.id !== id));
-        } catch (err) {
-            console.error('Error canceling session:', err);
-            alert('Failed to stop the session.');
-        }
+        } catch (err) { alert('Failed.'); }
     };
 
     const handleDelete = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!window.confirm('Are you sure you want to delete this audit record? This cannot be undone.')) return;
-
+        if (!window.confirm('Delete record?')) return;
         try {
-            const { error } = await supabase
-                .from('sop_completions')
-                .delete()
-                .eq('id', id);
-
+            const { error } = await supabase.from('sop_completions').delete().eq('id', id);
             if (error) throw error;
-
             setCompletions(prev => prev.filter(c => c.id !== id));
-        } catch (err) {
-            console.error('Error deleting completion:', err);
-            alert('Failed to delete the audit record.');
-        }
+        } catch (err) { alert('Failed.'); }
     };
 
-    // ── Live-computed values (recalculate every second via liveNow) ──────────
-    const { dueTemplates, upcomingTemplates, missedTemplates, completedToday, stats } = useMemo(() => {
+    const { dueTemplates, upcomingTemplates, missedTemplates, completedToday, doneList, stats } = useMemo(() => {
         const due: any[] = [];
         const upcoming: any[] = [];
         const missed: any[] = [];
         const completed: any[] = [];
 
-        const [y, m, d] = selectedDate.split('-').map(Number);
-        const refDate = isToday ? liveNow : new Date(y, m - 1, d, 23, 59, 59);
+        const istRef = isToday ? getISTDateParts(liveNow) : getISTDateParts(new Date(`${selectedDate}T23:59:59+05:30`));
+        const refDate = isToday ? liveNow : new Date(`${selectedDate}T23:59:59+05:30`);
 
         for (const { template, latestCompletion, lastDate } of rawTemplateData) {
             const dueStatus = isDue(
@@ -520,33 +489,28 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 refDate
             );
 
-            const nowMins = refDate.getHours() * 60 + refDate.getMinutes();
+            const nowMins = istRef.totalMins;
             const [sh, sm] = (template.start_time || '00:00').slice(0, 5).split(':').map(Number);
             const [eh, em] = (template.end_time || '23:59').slice(0, 5).split(':').map(Number);
             const isOvernight = (eh * 60 + em) <= (sh * 60 + sm);
 
-            let currentShiftStart = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), sh, sm, 0, 0);
+            let currentShiftStart = new Date(`${istRef.isoDate}T${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00+05:30`);
             if (isOvernight && nowMins < (eh * 60 + em)) {
                 currentShiftStart = new Date(currentShiftStart.getTime() - 24 * 3600000);
             }
-            const actualLogicalDate = currentShiftStart.toLocaleDateString('en-CA');
+            const actualLogicalDate = getISTDateParts(currentShiftStart).isoDate;
 
             const isHourly = /^every_\d+_hours?$/.test(template.frequency);
             const currentSlot = computeCurrentSlotStart(template.frequency, template.start_time, refDate, template.end_time);
             
-            const slotMatch = (c: any) => {
+            const slotMatch = (c: any, targetDate: string, targetSlot?: string | null) => {
                 if (c.template_id !== template.id) return false;
-                if (!isHourly) {
-                    if (template.frequency === 'daily' && template.start_time && template.end_time) {
-                        return c.completion_date === actualLogicalDate;
-                    }
-                    return c.completion_date === actualLogicalDate;
-                }
-                return c.completion_date === actualLogicalDate && (c.slot_time || '').startsWith(currentSlot || '00:00');
+                if (!isHourly) return c.completion_date === targetDate;
+                return c.completion_date === targetDate && (c.slot_time || '').startsWith(targetSlot || '00:00');
             };
 
-            const slotCompleted = completions.find((c: any) => c.status === 'completed' && slotMatch(c));
-            const inProgress = isToday ? completions.find((c: any) => c.status === 'in_progress' && slotMatch(c)) : null;
+            const slotCompleted = completions.find((c: any) => c.status === 'completed' && slotMatch(c, actualLogicalDate, currentSlot));
+            const inProgress = isToday ? completions.find((c: any) => c.status === 'in_progress' && slotMatch(c, actualLogicalDate, currentSlot)) : null;
 
             const templateWithMeta = { 
                 ...template, 
@@ -558,493 +522,272 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
             if (slotCompleted) {
                 completed.push({ 
                     ...templateWithMeta, 
-                    dueStatus: (slotCompleted.completion_date !== actualLogicalDate) ? 'late' : 'on-time',
-                    completedAt: slotCompleted.completed_at 
+                    dueStatus: (slotCompleted.is_late) ? 'late' : 'on-time',
+                    completedAt: slotCompleted.completed_at,
+                    is_late: slotCompleted.is_late
                 });
             } else if (isToday && (inProgress || (template.is_running && dueStatus.status === 'due'))) {
-                // We show as DUE if there is an active session OR if the template is running and it's time
                 due.push(templateWithMeta);
             } else if (isToday && template.is_running && dueStatus.status === 'upcoming') {
                 upcoming.push({ ...templateWithMeta, upcomingLabel: dueStatus.label, progressPct: 0 });
             } else if (actualLogicalDate === selectedDate) {
-                // Only show as missed if it was actually supposed to run
                 if (template.is_running || inProgress) {
                     missed.push({ ...templateWithMeta, historicalDate: actualLogicalDate });
                 }
             }
+        }
 
-            if (isToday && template.frequency === 'daily' && template.start_time && template.end_time) {
-                const yShiftStart = new Date(currentShiftStart.getTime() - 24 * 3600000);
-                const yLogicalDate = yShiftStart.toLocaleDateString('en-CA');
-                const yDone = completions.find(c => c.template_id === template.id && c.completion_date === yLogicalDate && c.status === 'completed');
-                if (!yDone) {
-                    missed.push({ ...template, dueLabel: 'Missed Yesterday', historicalDate: yLogicalDate, isHistorical: true });
+        const historicalMissed: any[] = [];
+        if (isToday) {
+            for (const { template } of rawTemplateData) {
+                if (template.frequency !== 'daily' || !template.start_time || !template.end_time || !template.is_running) continue;
+
+                const [sh, sm] = template.start_time.split(':').map(Number);
+                const [eh, em] = template.end_time.split(':').map(Number);
+                const isOvernight = (eh * 60 + em) <= (sh * 60 + sm);
+
+                let currentShiftStart = new Date(`${istRef.isoDate}T${template.start_time.slice(0, 5)}:00+05:30`);
+                if (isOvernight && istRef.totalMins < (eh * 60 + em)) {
+                    currentShiftStart = new Date(currentShiftStart.getTime() - 24 * 3600000);
+                }
+
+                for (let i = 1; i <= 7; i++) {
+                    const pastShiftStart = new Date(currentShiftStart.getTime() - i * 24 * 3600000);
+                    const pastIst = getISTDateParts(pastShiftStart);
+                    const pastLogicalDate = pastIst.isoDate;
+                    
+                    let pastShiftEnd = new Date(`${pastLogicalDate}T${template.end_time.slice(0,5)}:00+05:30`);
+                    if (isOvernight) pastShiftEnd.setDate(pastShiftEnd.getDate() + 1);
+                    if (liveNow < pastShiftEnd) continue;
+
+                    const anyRecord = completions.find(c => c.template_id === template.id && c.completion_date === pastLogicalDate);
+                    const isMissed = !anyRecord || anyRecord.status === 'missed' || anyRecord.status === 'pending';
+                    
+                    if (isMissed) {
+                        historicalMissed.push({ 
+                            ...template, 
+                            dueLabel: `Missed (${i === 1 ? 'Yesterday' : i + 'd ago'})`, 
+                            historicalDate: pastLogicalDate, 
+                            isHistorical: true 
+                        });
+                    }
                 }
             }
         }
 
+        // Sort arrays
+        missed.sort((a, b) => (b.historicalDate || '').localeCompare(a.historicalDate || ''));
+        due.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+
+        const doneList = completions.filter(c => {
+            if (c.status !== 'completed') return false;
+            if (isAllTime) return true;
+            return c.completion_date === selectedDate;
+        });
+
+        const totalForDay = completed.length + due.length + missed.length;
+        const totalAllTime = totalForDay + historicalMissed.length;
+
         return {
             dueTemplates: due,
             upcomingTemplates: upcoming,
-            missedTemplates: missed,
+            missedTemplates: [...missed, ...historicalMissed],
             completedToday: completed,
+            doneList,
             stats: {
-                total: completions.length,
-                completed: completed.length,
+                total: isAllTime ? totalAllTime : totalForDay,
+                completed: doneList.length,
                 pending: due.length,
                 due: due.length,
-                overdue: 0
+                missed: isAllTime ? (missed.length + historicalMissed.length) : missed.length,
+                historicalMissed: historicalMissed.length
             }
         };
-    }, [rawTemplateData, completions, liveNow, selectedDate]); 
+    }, [rawTemplateData, completions, liveNow, selectedDate, isAllTime]);
 
-    if (isLoading) {
-        return (
-            <div className="space-y-4">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 rounded-3xl" />)}
-            </div>
-        );
-    }
+    if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-24 rounded-3xl" />)}</div>;
 
     return (
         <div className="space-y-4">
-            {/* Tab switcher — only shown when admin passes onViewChange */}
-            {/* Stats — 2×2 grid */}
-            <div className="grid grid-cols-2 gap-2.5">
-                <div className="bg-white/70 backdrop-blur-md p-4 rounded-[2rem] border border-slate-100 shadow-sm transition-all hover:shadow-md">
-                    <div className="flex items-start justify-between mb-2">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total History</p>
-                        <div className="p-1.5 bg-slate-50 rounded-lg">
-                            <History size={12} className="text-slate-400" />
-                        </div>
-                    </div>
-                    <p className="text-3xl font-black text-slate-900 tracking-tight">{stats.total}</p>
-                </div>
-                <div className="bg-emerald-50 p-3.5 rounded-2xl border border-emerald-100 shadow-sm">
-                    <div className="flex items-start justify-between mb-2">
-                        <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Shift Done</p>
-                        <CheckCircle2 size={14} className="text-emerald-400" />
-                    </div>
-                    <p className="text-3xl font-black text-emerald-600">{completedToday.length}</p>
-                </div>
-                <div className="bg-amber-50 p-3.5 rounded-2xl border border-amber-100 shadow-sm">
-                    <div className="flex items-start justify-between mb-2">
-                        <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Due Now</p>
-                        <Clock size={14} className="text-amber-400" />
-                    </div>
-                    <p className="text-3xl font-black text-amber-600">{dueTemplates.length}</p>
-                </div>
-                <div className="bg-rose-50/70 backdrop-blur-md p-4 rounded-[2rem] border border-rose-100 shadow-sm transition-all hover:shadow-md">
-                    <div className="flex items-start justify-between mb-2">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-rose-400">Missed</p>
-                        <div className="p-1.5 bg-rose-100/50 rounded-lg">
-                            <XCircle size={12} className="text-rose-400" />
-                        </div>
-                    </div>
-                    <p className="text-3xl font-black text-rose-600 tracking-tight">{missedTemplates.length}</p>
-                </div>
-            </div>
 
-            {/* Status Segmented Toggle */}
             <div className="flex items-center gap-3 px-1 mb-2">
                 <div className="flex-1 bg-slate-50 p-1 rounded-2xl border border-slate-200 flex items-center gap-2 px-3">
                     <Calendar size={14} className="text-slate-400" />
                     <input
                         type="date"
+                        disabled={isAllTime}
                         value={selectedDate}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="bg-transparent border-none text-[10px] font-black uppercase tracking-widest text-slate-600 focus:outline-none w-full"
+                        className={`bg-transparent border-none text-[10px] font-black uppercase tracking-widest text-slate-600 focus:outline-none w-full ${isAllTime ? 'opacity-30' : ''}`}
                     />
                 </div>
-                {selectedDate !== liveNow.toLocaleDateString('en-CA') && (
-                    <button
-                        onClick={() => setSelectedDate(liveNow.toLocaleDateString('en-CA'))}
-                        className="p-2 bg-slate-900 text-white rounded-xl shadow-sm hover:bg-primary transition-all"
-                    >
-                        <History size={14} />
-                    </button>
+                <div 
+                    onClick={() => setIsAllTime(!isAllTime)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border transition-all cursor-pointer select-none
+                        ${isAllTime ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-500'}`}
+                >
+                    <div className={`w-3 h-3 rounded-full ${isAllTime ? 'bg-emerald-400' : 'bg-slate-200'} transition-all`} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">All Time</span>
+                </div>
+                {!isToday && !isAllTime && (
+                    <button onClick={() => setSelectedDate(todayIST)} className="p-2 bg-slate-900 text-white rounded-xl"><History size={14} /></button>
                 )}
             </div>
+
             <div className="flex items-center justify-center py-2">
                 <div className="bg-slate-50 p-0.5 rounded-xl border border-slate-200 flex items-center gap-0.5 w-full">
-                    <button
-                        onClick={() => setActiveFilter('all')}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all duration-200 ${activeFilter === 'all' ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        <LayoutGrid size={10} />
-                        All
-                    </button>
-                    <button
-                        onClick={() => setActiveFilter('due')}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all duration-200 ${activeFilter === 'due' ? 'bg-amber-500 text-white shadow-sm shadow-amber-200' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        <Clock size={10} />
-                        Due {dueTemplates.length > 0 && `(${dueTemplates.length})`}
-                    </button>
-                    <button
-                        onClick={() => setActiveFilter('missed')}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all duration-200 ${activeFilter === 'missed' ? 'bg-rose-500 text-white shadow-sm shadow-rose-200' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        <XCircle size={10} />
-                        Missed {missedTemplates.length > 0 && `(${missedTemplates.length})`}
-                    </button>
-                    <button
-                        onClick={() => setActiveFilter('completed')}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg font-black text-[9px] uppercase tracking-wider transition-all duration-200 ${activeFilter === 'completed' ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-200' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        <CheckCircle2 size={10} />
-                        Done {completedToday.length > 0 && `(${completedToday.length})`}
-                    </button>
+                    <button onClick={() => { setActiveFilter('all'); onFilterChange?.('all'); }} className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase ${activeFilter === 'all' ? 'bg-white text-slate-900' : 'text-slate-400'}`}>All</button>
+                    <button onClick={() => { setActiveFilter('due'); onFilterChange?.('due'); }} className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase ${activeFilter === 'due' ? 'bg-amber-500 text-white' : 'text-slate-400'}`}>Due {dueTemplates.length > 0 && `(${dueTemplates.length})`}</button>
+                    <button onClick={() => { setActiveFilter('missed'); onFilterChange?.('missed'); }} className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase ${activeFilter === 'missed' ? 'bg-rose-500 text-white' : 'text-slate-400'}`}>Missed {stats.missed > 0 && `(${stats.missed})`}</button>
+                    <button onClick={() => { setActiveFilter('completed'); onFilterChange?.('completed'); }} className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase ${activeFilter === 'completed' ? 'bg-emerald-500 text-white' : 'text-slate-400'}`}>Done {stats.completed > 0 && `(${stats.completed})`}</button>
                 </div>
             </div>
 
-
-            {/* 1. Due Checklists Section */}
-            {(activeFilter === 'all' || activeFilter === 'due') && dueTemplates.length > 0 && (
-                <div className="space-y-2">
-                    <h3 className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Due Checklists</h3>
-                    {dueTemplates.map((template, index) => (
-                        <motion.div
-                            key={`due-${template.id}`}
-                            initial={{ opacity: 0, y: 12 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.03 }}
-                            className="group relative bg-white border border-rose-100 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
-                            onClick={() => onSelectTemplate(template.id, template.property_id, template.inProgressId || undefined, template.historicalDate)}
-                        >
-                            <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-500" />
-                            <div className="flex items-center gap-4 px-4 py-4">
-                                <div className="w-11 h-11 rounded-2xl bg-rose-50 flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform">
-                                    <AlertTriangle size={18} className="text-rose-500" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <h4 className="font-black text-[15px] text-slate-900 tracking-tight truncate leading-tight">{template.title}</h4>
-                                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                                        <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black uppercase tracking-widest rounded-full">{template.dueLabel}</span>
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{frequencyLabel(template.frequency)}</span>
-                                    </div>
-                                </div>
-                                <div className="flex-shrink-0 bg-slate-900 text-white p-2.5 rounded-xl">
-                                    <Play size={14} fill="currentColor" />
+            <AnimatePresence mode="wait">
+                <motion.div
+                    key={activeFilter}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
+                >
+                    {(activeFilter === 'all' || activeFilter === 'due') && dueTemplates.length > 0 && (
+                        <div className="space-y-2 mb-6">
+                            <h3 className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Due Checklists</h3>
+                    {dueTemplates.map(t => (
+                        <div key={`due-${t.id}`} onClick={() => onSelectTemplate(t.id, t.property_id, t.inProgressId || undefined, t.historicalDate)} className="bg-white border border-rose-100 rounded-[2rem] p-4 flex items-center gap-4">
+                            <div className="w-11 h-11 rounded-2xl bg-rose-50 flex items-center justify-center"><AlertTriangle size={18} className="text-rose-500" /></div>
+                            <div className="flex-1 min-w-0">
+                                <h4 className="font-black text-[15px] truncate">{t.title}</h4>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-full">{t.dueLabel}</span>
                                 </div>
                             </div>
-                        </motion.div>
-                    ))}
-                </div>
-            )}
-
-            {/* 2. Missed Checklists Section */}
-            {(activeFilter === 'all' || activeFilter === 'missed') && missedTemplates.length > 0 && (
-                <div className="space-y-2">
-                    <h3 className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Missed Shifts</h3>
-                    {missedTemplates.map((template, index) => (
-                        <motion.div
-                            key={`missed-${template.id}-${template.historicalDate}`}
-                            initial={{ opacity: 0, y: 12 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.03 }}
-                            className="group relative bg-white border border-rose-100 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
-                            onClick={() => onSelectTemplate(template.id, template.property_id, template.inProgressId || undefined, template.historicalDate)}
-                        >
-                            <div className="absolute top-0 left-0 w-1.5 h-full bg-rose-400/30" />
-                            <div className="flex items-center gap-4 px-4 py-4">
-                                <div className="w-11 h-11 rounded-2xl bg-rose-50 flex items-center justify-center flex-shrink-0">
-                                    <XCircle size={18} className="text-rose-400" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <h4 className="font-black text-[15px] text-slate-900 tracking-tight truncate leading-tight">{template.title}</h4>
-                                        {template.historicalDate && (
-                                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                                                {new Date(template.historicalDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-1.5 mt-1">
-                                        <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[8px] font-black uppercase tracking-widest rounded-full">Missed</span>
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
-                                            {template.start_time && template.end_time ? `${fmt12h(template.start_time)} - ${fmt12h(template.end_time)}` : 'No window'}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex-shrink-0 bg-rose-500 text-white p-2.5 rounded-xl shadow-lg shadow-rose-200">
-                                    <Play size={14} fill="currentColor" />
-                                </div>
-                            </div>
-                        </motion.div>
-                    ))}
-                </div>
-            )}
-
-            {/* 3. Completed Today Section */}
-            {(activeFilter === 'all' || activeFilter === 'completed') && completedToday.length > 0 && (
-                <div className="space-y-2">
-                    <h3 className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Completed Today</h3>
-                    {completedToday.map((template, index) => (
-                        <motion.div
-                            key={`completed-${template.id}`}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: index * 0.03 }}
-                            className="bg-emerald-50 border border-emerald-100 rounded-2xl overflow-hidden flex shadow-sm"
-                        >
-                            <div className="w-1.5 bg-emerald-500 flex-shrink-0" />
-                            <div className="flex items-center gap-3 px-3 py-3 flex-1">
-                                <div className="w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center flex-shrink-0">
-                                    <CheckCircle2 size={16} className="text-emerald-500" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <h4 className="font-black text-sm text-slate-900 tracking-tight truncate">{template.title}</h4>
-                                    <div className="flex items-center gap-1.5 mt-0.5">
-                                        {template.historicalDate || (template.completion_date && template.completion_date !== new Date(liveNow).toLocaleDateString('en-CA')) ? (
-                                            <span className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Completed Late</span>
-                                        ) : (
-                                            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Completed</span>
-                                        )}
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{frequencyLabel(template.frequency)}</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    {template.slotCompletedId ? (
-                                        <button
-                                            onClick={() => onViewDetail(template.slotCompletedId, template.id, template.property_id)}
-                                            className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-emerald-200 transition-all shadow-sm"
-                                        >
-                                            View Report
-                                        </button>
-                                    ) : (
-                                        <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest px-2">Done</span>
-                                    )}
-                                </div>
-                            </div>
-                        </motion.div>
-                    ))}
-                </div>
-            )}
-
-            {/* Upcoming Checklists — horizontal scrollable chips */}
-            {upcomingTemplates.length > 0 && (
-                <div>
-                    <h3 className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-2">Upcoming</h3>
-                    <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                        {upcomingTemplates.map((template, index) => {
-                            // SVG ring constants
-                            const r = 22;
-                            const circ = 2 * Math.PI * r; // ≈ 138.2
-                            const offset = circ - ((template.progressPct ?? 0) / 100) * circ;
-                            return (
-                                <motion.div
-                                    key={`upcoming-${template.id}`}
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    transition={{ delay: index * 0.04 }}
-                                    className="flex-shrink-0 w-36 bg-white border border-blue-100 rounded-2xl p-3 flex flex-col items-center gap-1.5 shadow-sm"
-                                >
-                                    {/* Circular progress ring */}
-                                    <div className="relative w-14 h-14 flex items-center justify-center">
-                                        <svg width="56" height="56" viewBox="0 0 56 56" className="-rotate-90 absolute inset-0">
-                                            {/* Track */}
-                                            <circle cx="28" cy="28" r={r} fill="none" stroke="#dbeafe" strokeWidth="4" />
-                                            {/* Progress */}
-                                            <motion.circle
-                                                cx="28" cy="28" r={r}
-                                                fill="none"
-                                                stroke="url(#blueGrad)"
-                                                strokeWidth="4"
-                                                strokeLinecap="round"
-                                                strokeDasharray={circ}
-                                                initial={{ strokeDashoffset: circ }}
-                                                animate={{ strokeDashoffset: offset }}
-                                                transition={{ duration: 1.1, ease: 'linear' }}
-                                            />
-                                            <defs>
-                                                <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                                    <stop offset="0%" stopColor="#60a5fa" />
-                                                    <stop offset="100%" stopColor="#3b82f6" />
-                                                </linearGradient>
-                                            </defs>
-                                        </svg>
-                                        <Timer size={18} className="text-blue-500 relative z-10" />
-                                    </div>
-                                    {/* Title */}
-                                    <p className="text-[11px] font-black text-slate-900 tracking-tight text-center leading-tight line-clamp-2 w-full">{template.title}</p>
-                                    {/* Time label */}
-                                    <span className="text-[9px] font-black text-blue-500 uppercase tracking-wider text-center">{template.upcomingLabel}</span>
-                                    {/* Frequency badge */}
-                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100">{frequencyLabel(template.frequency)}</span>
-                                </motion.div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
-
-            {/* History List */}
-            <div className="space-y-2">
-                {completions.length > 0 && (
-                    <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">History</h3>
-                )}
-                <AnimatePresence>
-                    {/* Merge completions + missed alerts, sorted newest first */}
-                    {[
-                        ...completions
-                            .filter((c: any) => c.status !== 'pending') // Only show active/completed/missed in history
-                            .map((c: any) => ({ type: 'completion' as const, data: c, sortTs: c.due_at || c.created_at })),
-                    ]
-                        .sort((a, b) => new Date(b.sortTs).getTime() - new Date(a.sortTs).getTime())
-                        .map((entry, index) => {
-
-                        const completion = entry.data;
-                        const items = completion.items || [];
-                        const checkedItems = items.filter((i: any) => i.is_checked || i.value).length;
-                        const totalItems = items.length;
-                        const progress = totalItems > 0 ? (checkedItems / totalItems) * 100 : 0;
-                        const isCompleted = completion.status === 'completed';
-                        const isInProgress = completion.status === 'in_progress';
-
-                        // Compute time slot label (e.g. "9:00 AM – 12:00 PM")
-                        const slot = (() => {
-                            const tmpl = completion.template;
-                            // Use explicit slot_time if available, else due_at/created_at
-                            const ts = completion.due_at || completion.created_at;
-                            const to12 = (hhmm: string) => {
-                                const [h, m] = hhmm.slice(0, 5).split(':').map(Number);
-                                const ampm = h >= 12 ? 'PM' : 'AM';
-                                const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-                                return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
-                            };
-                            // 1. Hourly + start_time → compute exact slot window
-                            const computed = getCompletionSlot(ts, tmpl?.frequency, tmpl?.start_time, completion.slot_time);
-                            if (computed) {
-                                const [s, e] = computed.split(' – ');
-                                return `${to12(s)} – ${to12(e)}`;
-                            }
-                            // 2. Hourly without start_time → round created_at down to slot boundary
-                            const intervalH = tmpl?.frequency ? parseHourlyInterval(tmpl.frequency) : null;
-                            if (intervalH && ts) {
-                                const d = new Date(ts);
-                                const totalMins = d.getHours() * 60 + d.getMinutes();
-                                const slotStartMins = Math.floor(totalMins / (intervalH * 60)) * (intervalH * 60);
-                                const slotEndMins = slotStartMins + intervalH * 60;
-                                const fmt = (mins: number) => {
-                                    const h = Math.floor(mins / 60) % 24, m = mins % 60;
-                                    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-                                };
-                                return `${to12(fmt(slotStartMins))} – ${to12(fmt(slotEndMins))}`;
-                            }
-                            // 3. Fixed window on template → show window
-                            if (tmpl?.start_time && tmpl?.end_time)
-                                return `${to12(tmpl.start_time)} – ${to12(tmpl.end_time)}`;
-                            // 4. Fallback → show actual logged time
-                            if (ts) {
-                                const d = new Date(ts);
-                                const h = d.getHours(), mi = d.getMinutes();
-                                const ampm = h >= 12 ? 'PM' : 'AM';
-                                const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-                                return `${h12}:${String(mi).padStart(2, '0')} ${ampm}`;
-                            }
-                            return null;
-                        })();
-
-                        // Overdue = in-progress but time window has passed or it's from a previous day
-                        const isExpired = isInProgress && (() => {
-                            // 1. Check if it's from a previous date
-                            const todayStr = liveNow.toISOString().slice(0, 10);
-                            if (completion.completion_date < todayStr) return true;
-
-                            // 2. Check if window has passed today (considering overnight)
-                            const tmpl = completion.template;
-                            if (!tmpl || !tmpl.end_time) return false;
-                            
-                            const nowMins = liveNow.getHours() * 60 + liveNow.getMinutes();
-                            const [sH, sM] = (tmpl.start_time ?? '00:00').slice(0, 5).split(':').map(Number);
-                            const [eH, eM] = tmpl.end_time.slice(0, 5).split(':').map(Number);
-                            
-                            const startMins = sH * 60 + sM;
-                            const endMins = eH * 60 + eM;
-                            const isOvernight = endMins <= startMins;
-
-                            const withinWindow = isOvernight
-                                ? (nowMins >= startMins || nowMins < endMins)
-                                : (nowMins >= startMins && nowMins <= endMins);
-                            
-                            // If we are currently NOT in the window, and we've already passed the window today
-                            // For overnight, "past window" means we are between endMins and startMins
-                            if (isOvernight) {
-                                return nowMins >= endMins && nowMins < startMins;
-                            }
-                            // For normal day, past window means nowMins > endMins
-                            return nowMins > endMins;
-                        })();
-
-                        return (
-                            <motion.div
-                                key={completion.id}
-                                initial={{ opacity: 0, y: 12 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.03 }}
-                                className="group relative bg-white border border-slate-100 rounded-[2rem] overflow-hidden shadow-sm hover:shadow-md transition-all active:scale-[0.98] p-4 mb-3"
-                                onClick={() => {
-                                    if (isInProgress || completion.status === 'pending') onSelectTemplate(completion.template_id, completion.property_id, completion.id);
-                                    else onViewDetail(completion.id, completion.template_id, completion.property_id);
-                                }}
-                            >
-                                <div className="flex items-center gap-4">
-                                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0 ${isCompleted ? 'bg-emerald-50' : 'bg-amber-50'}`}>
-                                        {isCompleted ? <CheckCircle2 size={18} className="text-emerald-500" /> : <Clock size={18} className="text-amber-500" />}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-black text-[15px] text-slate-900 tracking-tight truncate leading-tight">
-                                            {completion.template?.title || 'Unknown Checklist'}
-                                        </h4>
-                                        <div className="flex items-center flex-wrap gap-2 mt-1">
-                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${isExpired ? 'bg-rose-500 text-white' : completion.is_late ? 'bg-amber-100 text-amber-700' : isCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
-                                                {isExpired ? 'Missed' : completion.is_late ? 'Late' : isCompleted ? 'Done' : 'Active'}
-                                            </span>
-                                            {slot && <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{slot.includes('–') ? slot : `@ ${slot}`}</span>}
-                                        </div>
-                                    </div>
-                                    <div className="flex-shrink-0 text-slate-200">
-                                        <ChevronRight size={18} />
-                                    </div>
-                                </div>
-                                
-                                <div className="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex items-center gap-1.5 text-slate-400">
-                                            <User size={10} />
-                                            <span className="text-[9px] font-bold uppercase tracking-wider">{completion.user?.full_name?.split(' ')[0] || 'System'}</span>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-slate-400">
-                                            <Calendar size={10} />
-                                            <span className="text-[9px] font-bold uppercase tracking-wider">
-                                                {new Date(completion.completion_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[10px] font-black text-slate-900 tracking-tight">{checkedItems}/{totalItems}</span>
-                                        <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                            <div className={`h-full ${progress === 100 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} />
-                                        </div>
-                                    </div>
-                                </div>
-                            </motion.div>
-                        );
-                    })}
-                </AnimatePresence>
-
-                {completions.length === 0 && dueTemplates.length === 0 && (
-                    <div className="text-center py-16 px-4 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                        <div className="w-14 h-14 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-slate-300 mx-auto mb-4">
-                            <History size={24} />
+                            <div className="bg-slate-900 text-white p-2.5 rounded-xl"><Play size={14} fill="currentColor" /></div>
                         </div>
-                        <h3 className="text-base font-black text-slate-900 tracking-tight mb-1">No History Record Found</h3>
-                        <p className="text-slate-500 text-xs font-medium max-w-sm mx-auto">Completing checklist items will populate this history log with audit records.</p>
-                    </div>
-                )}
-                <div className="h-32" />
-            </div>
+                    ))}
+                </div>
+            )}
+
+            {(activeFilter === 'all' || activeFilter === 'missed') && missedTemplates.length > 0 && (
+                <div className="space-y-6">
+                    <h3 className="text-[9px] font-black text-rose-500 uppercase tracking-widest px-1">Missed Shifts</h3>
+                    {(() => {
+                        const groups: Record<string, any[]> = {};
+                        missedTemplates.forEach(t => {
+                            const d = t.historicalDate || 'Today';
+                            if (!groups[d]) groups[d] = [];
+                            groups[d].push(t);
+                        });
+                        const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+                        
+                        return sortedDates.map(date => (
+                            <div key={`missed-group-${date}`} className="space-y-3">
+                                <div className="flex items-center gap-2 px-2">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{date === todayIST ? 'Today' : date}</span>
+                                    <div className="h-px flex-1 bg-slate-100" />
+                                </div>
+                                {groups[date].map(t => (
+                                    <div 
+                                        key={`missed-${t.id}-${t.historicalDate}`} 
+                                        onClick={() => onSelectTemplate(t.id, t.property_id, t.inProgressId || undefined, t.historicalDate)} 
+                                        className="bg-white border border-rose-100 rounded-[2rem] p-4 flex items-center gap-4 hover:shadow-md transition-all cursor-pointer group"
+                                    >
+                                        <div className="w-11 h-11 rounded-2xl bg-rose-50 flex items-center justify-center group-hover:bg-rose-100 transition-colors">
+                                            <XCircle size={18} className="text-rose-400" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-black text-[15px] truncate text-slate-900 group-hover:text-rose-600 transition-colors">{t.title}</h4>
+                                            <div className="flex items-center gap-1.5 mt-1">
+                                                <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[8px] font-black rounded-full uppercase tracking-tight">
+                                                    {t.dueLabel || 'Missed'}
+                                                </span>
+                                                <div className="w-1 h-1 rounded-full bg-slate-200" />
+                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
+                                                    {t.start_time ? fmt12h(t.start_time) : ''}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="bg-rose-500 text-white p-2.5 rounded-xl group-hover:bg-rose-600 transition-colors shadow-lg shadow-rose-200">
+                                            <Play size={14} fill="currentColor" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ));
+                    })()}
+                </div>
+            )}
+
+            {(activeFilter === 'all' || activeFilter === 'completed') && (activeFilter === 'all' ? completedToday : doneList).length > 0 && (
+                <div className="space-y-6">
+                    <h3 className="text-[9px] font-black text-emerald-500 uppercase tracking-widest px-1">
+                        {activeFilter === 'all' ? 'Completed Today' : 'Completed Checklists'}
+                    </h3>
+                    {(() => {
+                        const items = activeFilter === 'all' ? completedToday : doneList;
+                        const groups: Record<string, any[]> = {};
+                        items.forEach(c => {
+                            const d = c.completion_date || 'Unknown';
+                            if (!groups[d]) groups[d] = [];
+                            groups[d].push(c);
+                        });
+                        const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+                        return sortedDates.map(date => (
+                            <div key={`done-group-${date}`} className="space-y-3">
+                                <div className="flex items-center gap-2 px-2">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{date === todayIST ? 'Today' : date}</span>
+                                    <div className="h-px flex-1 bg-slate-100" />
+                                </div>
+                                {groups[date].map(c => {
+                                    const template = c.template || {};
+                                    const time = c.completed_at ? new Date(c.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                                    
+                                    return (
+                                        <div 
+                                            key={`completed-${c.id}`} 
+                                            onClick={() => onViewDetail(c.id, c.template_id, c.property_id)}
+                                            className={`bg-white border rounded-2xl p-4 flex items-center gap-4 hover:shadow-md transition-all cursor-pointer group ${c.is_late ? 'border-amber-100' : 'border-emerald-100'}`}
+                                        >
+                                            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-colors ${c.is_late ? 'bg-amber-50 group-hover:bg-amber-100' : 'bg-emerald-50 group-hover:bg-emerald-100'}`}>
+                                                <CheckCircle2 size={18} className={c.is_late ? 'text-amber-500' : 'text-emerald-500'} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className={`font-black text-[15px] truncate transition-colors flex items-center gap-2 ${c.is_late ? 'text-slate-900 group-hover:text-amber-600' : 'text-slate-900 group-hover:text-emerald-600'}`}>
+                                                    {template.title || 'Untitled Checklist'}
+                                                    {c.is_late && (
+                                                        <span className="px-1.5 py-0.5 bg-amber-100 text-amber-600 text-[8px] font-black rounded-full uppercase tracking-tight">Late</span>
+                                                    )}
+                                                </h4>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-tight">
+                                                        <Clock size={10} />
+                                                        {time}
+                                                    </div>
+                                                    <div className="w-1 h-1 rounded-full bg-slate-200" />
+                                                    <div className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-tight ${c.is_late ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                                        <User size={10} />
+                                                        {(() => {
+                                                            const userData = Array.isArray(c.user) ? c.user[0] : c.user;
+                                                            return userData?.full_name?.split(' ')[0] || 'Staff';
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className={`text-slate-300 transition-all transform translate-x-0 group-hover:translate-x-1 ${c.is_late ? 'group-hover:text-amber-500' : 'group-hover:text-emerald-500'}`}>
+                                                <ChevronRight size={18} />
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ));
+                    })()}
+                </div>
+            )}
+                </motion.div>
+            </AnimatePresence>
         </div>
     );
 };

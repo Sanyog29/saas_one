@@ -122,7 +122,7 @@ export default function PPMReports({ organizationId, propertyId, properties = []
         ]);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([taskHeaders, ...taskRows]), 'All Tasks');
 
-        XLSX.writeFile(wb, `PPM_Report_${fromDate}_to_${toDate}.xlsx`);
+        XLSX.writeFile(wb, `Maintenance_Report_${fromDate}_to_${toDate}.xlsx`);
     };
 
     const summary = reportData?.summary;
@@ -276,7 +276,7 @@ export default function PPMReports({ organizationId, propertyId, properties = []
                     {reportData.summary.total === 0 && (
                         <div className="text-center py-20 text-slate-400">
                             <AlertCircle className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                            <p className="text-sm font-semibold">No PPM tasks found for this period</p>
+                            <p className="text-sm font-semibold">No maintenance tasks found for this period</p>
                         </div>
                     )}
                 </>

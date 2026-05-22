@@ -36,6 +36,20 @@ export async function GET(request: Request) {
 
         if (error) {
             console.error('Auth Error:', error.message);
+            
+            // Check if session already exists (e.g., if code was consumed by a browser prefetch)
+            const { data: { session: existingSession } } = await supabase.auth.getSession();
+            
+            if (existingSession) {
+                console.log('Session already exists (likely from prefetch). Proceeding.');
+                if (decodedNext) {
+                    return NextResponse.redirect(`${requestUrl.origin}${decodedNext}`);
+                }
+                // If not a password reset, we can redirect to the main app, but we don't have the user object from the exchange.
+                // We can just redirect to dashboard/home and let the client handle it.
+                return NextResponse.redirect(`${requestUrl.origin}/`);
+            }
+
             // If this was a password reset, redirect to forgot-password
             if (decodedNext === '/reset-password') {
                 return NextResponse.redirect(

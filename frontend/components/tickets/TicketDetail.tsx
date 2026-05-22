@@ -1,11 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Clock, User, MapPin, Send, CheckCircle, Circle, Camera, AlertTriangle, Pause, Play, Video, Upload, X, Loader2 } from 'lucide-react';
+import { 
+    ArrowLeft, Clock, User, MapPin, Send, CheckCircle, Circle, Camera, 
+    AlertTriangle, Pause, Play, Video, Upload, X, Loader2, Package, ShoppingBag 
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import EnhancedClassificationBadge from './EnhancedClassificationBadge';
 import MediaCaptureModal, { MediaFile } from '@/frontend/components/shared/MediaCaptureModal';
 import { parseDate } from '@/frontend/utils/date';
+import ProcurementCatalogModal from '@/frontend/components/procurement/ProcurementCatalogModal';
+import { useAuth } from '@/frontend/context/AuthContext';
+
 
 interface TicketDetailProps {
     ticketId: string;
@@ -106,6 +112,10 @@ function MediaSlot({
 }
 
 export default function TicketDetail({ ticketId, onBack, isAdmin = false }: TicketDetailProps) {
+    const { user } = useAuth();
+    const userRole = user?.user_metadata?.role || '';
+    const isTenant = userRole === 'tenant';
+
     const [ticket, setTicket] = useState<Record<string, unknown> | null>(null);
     const [timeline, setTimeline] = useState<TimelineStep[]>([]);
     const [comments, setComments] = useState<Comment[]>([]);
@@ -120,6 +130,9 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
     const [uploadError, setUploadError] = useState<string | null>(null);
     const [activities, setActivities] = useState<Activity[]>([]);
     const [escalationLogs, setEscalationLogs] = useState<EscalationLog[]>([]);
+    const [procurementRequests, setProcurementRequests] = useState<any[]>([]);
+    const [showProcurementModal, setShowProcurementModal] = useState(false);
+
 
     useEffect(() => {
         fetchTicketDetail();
@@ -135,6 +148,7 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                 setComments(data.comments || []);
                 setActivities(data.activities || []);
                 setEscalationLogs(data.escalationLogs || []);
+                setProcurementRequests(data.procurementRequests || []);
             }
         } catch (error) {
             console.error('Error fetching ticket:', error);
@@ -179,6 +193,24 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
             if (response.ok) fetchTicketDetail();
         } catch (error) {
             console.error('Error updating status:', error);
+        }
+    };
+
+    const handleProcurementAction = async (requestId: string, status: 'approved' | 'rejected') => {
+        try {
+            const res = await fetch(`/api/procurement/requests/${requestId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status })
+            });
+            if (res.ok) {
+                await fetchTicketDetail();
+            } else {
+                const data = await res.json();
+                alert(data.error || 'Failed to update request');
+            }
+        } catch (err) {
+            console.error('Procurement action error:', err);
         }
     };
 
@@ -339,9 +371,9 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                                     <AlertTriangle className={`w-5 h-5 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`} />
                                 </div>
                                 <div>
-                                    <h2 className={`text-lg font-bold ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
-                                        {isSLABreached ? 'SLA Breached' : 'SLA On Track'}
-                                    </h2>
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${isSLABreached ? 'text-red-500' : 'text-slate-400'}`}>
+                                        {isSLABreached ? 'Late' : 'On Track'}
+                                    </span>
                                     <p className="text-sm text-gray-500">
                                         {isSLABreached
                                             ? isResolved
@@ -353,18 +385,18 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                             </div>
                             {/* Stats pills */}
                             <div className="flex flex-wrap gap-2">
-                                <div className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-center">
+                                <div className="px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-center">
                                     <div className="text-base font-black text-white">{(ticket?.sla_hours as number) || 24}h</div>
                                     <div className="text-[9px] text-gray-500 uppercase tracking-wide">SLA Target</div>
                                 </div>
                                 {isSLABreached && (
-                                    <div className="px-3 py-1.5 bg-red-500/15 border border-red-500/30 rounded-lg text-center">
+                                    <div className="px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-lg text-center">
                                         <div className="text-base font-black text-red-400">{formatDuration(breachMs)}</div>
                                         <div className="text-[9px] text-gray-500 uppercase tracking-wide">Overdue By</div>
                                     </div>
                                 )}
                                 {(ticket?.total_paused_minutes as number) > 0 && (
-                                    <div className="px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-center">
+                                    <div className="px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-center">
                                         <div className="text-base font-black text-yellow-400">{formatDuration((ticket?.total_paused_minutes as number) * 60000)}</div>
                                         <div className="text-[9px] text-gray-500 uppercase tracking-wide">Time Paused</div>
                                     </div>
@@ -415,7 +447,7 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                                 )}
 
                                 {/* Deadline row — highlighted red if breached */}
-                                <div className={`flex items-center gap-3 rounded-lg px-2 py-1.5 -ml-2 ${isSLABreached ? 'bg-red-500/10' : 'bg-green-500/10'}`}>
+                                <div className={`flex items-center gap-3 rounded-lg px-3 py-2 -ml-2 ${isSLABreached ? 'bg-red-500/10' : 'bg-green-500/10'}`}>
                                     <div className={`w-3.5 h-3.5 rounded-full border-2 border-[#0d1117] flex-shrink-0 z-10 ${isSLABreached ? 'bg-red-500' : 'bg-green-500'}`} />
                                     <div className="flex-1 flex items-center justify-between min-w-0">
                                         <span className={`text-sm font-bold ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
@@ -522,14 +554,14 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                                                 {/* Level badges + reason + timestamp */}
                                                 <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-gray-800 text-gray-400 border border-gray-700">
+                                                        <span className="text-xs font-bold px-3 py-1 rounded-md bg-gray-800 text-gray-400 border border-gray-700">
                                                             L{log.from_level}
                                                         </span>
                                                         <svg className="w-3.5 h-3.5 text-red-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                                                        <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-red-500/20 text-red-300 border border-red-500/30">
+                                                        <span className="text-xs font-bold px-3 py-1 rounded-md bg-red-500/20 text-red-300 border border-red-500/30">
                                                             L{log.to_level ?? 'Final'}
                                                         </span>
-                                                        <span className="text-xs px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400">
+                                                        <span className="text-xs px-3 py-1 rounded-full bg-orange-500/10 text-orange-400">
                                                             {reasonLabel}
                                                         </span>
                                                     </div>
@@ -554,8 +586,8 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                                                             {toInitials}
                                                         </div>
                                                         <div>
-                                                            <p className="text-[10px] uppercase tracking-wider text-gray-500">To</p>
-                                                            <p className="text-xs font-bold text-white">{log.to_employee?.full_name || 'No Assignee'}</p>
+                                                            <p className="text-[10px] text-white/50 mb-0.5">Assigned To</p>
+                                                            <p className="text-xs font-bold text-white">{log.to_employee?.full_name || 'Not Assigned'}</p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -623,18 +655,91 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                 <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
                     {assignee?.full_name ? (
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 bg-cyan-500/20 rounded-full flex items-center justify-center">
-                                <User className="w-6 h-6 text-cyan-400" />
+                            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+                                <User className="w-5 h-5 text-slate-400" />
                             </div>
                             <div>
-                                <p className="text-sm text-gray-400">Assigned Technician</p>
+                                <p className="text-sm text-gray-400">Assigned Staff</p>
                                 <p className="font-medium">{assignee.full_name}</p>
                             </div>
                         </div>
                     ) : (
-                        <p className="text-gray-400 text-center py-4">No technician assigned yet</p>
+                        <p className="text-gray-400 text-center py-4">No staff assigned yet</p>
                     )}
                 </div>
+
+                {/* Procurement Requests */}
+                {procurementRequests.length > 0 && (
+                    <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-semibold flex items-center gap-2">
+                                <ShoppingBag className="w-5 h-5 text-cyan-400" />
+                                Material Requests
+                            </h2>
+                            <span className="px-3 py-1.5 bg-[#21262d] rounded-md text-xs text-gray-400">
+                                {procurementRequests.length} Request{procurementRequests.length !== 1 ? 's' : ''}
+                            </span>
+                        </div>
+                        <div className="space-y-4">
+                            {procurementRequests.map((req) => (
+                                <div key={req.id} className="border border-[#30363d] rounded-lg p-4 bg-[#0d1117]">
+                                    <div className="flex flex-wrap items-center justify-between gap-4 mb-3">
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="font-medium text-sm text-white">
+                                                    Req #{req.id.split('-')[0]}
+                                                </span>
+                                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                                    req.status === 'approved' ? 'bg-green-500/20 text-green-400' :
+                                                    req.status === 'rejected' ? 'bg-red-500/20 text-red-400' :
+                                                    'bg-yellow-500/20 text-yellow-400'
+                                                }`}>
+                                                    {req.status.replace('_', ' ').toUpperCase()}
+                                                </span>
+                                            </div>
+                                            <div className="text-xs text-gray-400">
+                                                Requested by {req.requester?.full_name || 'Unknown'} on {parseDate(req.created_at)?.toLocaleDateString()}
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-sm font-bold text-white">
+                                                ₹{req.total_amount?.toLocaleString() || '0'}
+                                            </div>
+                                            <div className="text-xs text-gray-500 capitalize">
+                                                Budget: {req.budget_type?.replace('_', ' ')}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Items Preview */}
+                                    <div className="bg-[#161b22] rounded-md p-3">
+                                        <div className="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">
+                                            Items ({req.items?.length || 0})
+                                        </div>
+                                        <div className="space-y-2">
+                                            {req.items?.slice(0, 3).map((item: any) => (
+                                                <div key={item.id} className="flex justify-between text-sm">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-gray-300">{item.name}</span>
+                                                        <span className="text-xs text-gray-500">x{item.quantity}</span>
+                                                    </div>
+                                                    <span className="text-gray-400">₹{item.total_price?.toLocaleString() || '0'}</span>
+                                                </div>
+                                            ))}
+                                            {(req.items?.length || 0) > 3 && (
+                                                <div className="text-xs text-cyan-400 mt-2">
+                                                    + {(req.items?.length || 0) - 3} more items...
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    
+
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Communication Thread */}
                 <div className="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
@@ -663,24 +768,39 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                         )}
                     </div>
 
-                    <div className="flex gap-3 pt-4 border-t border-[#30363d]">
-                        <input
-                            type="text"
-                            value={newComment}
-                            onChange={(e) => setNewComment(e.target.value)}
-                            placeholder="Type your message here..."
-                            className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
-                            onKeyDown={(e) => e.key === 'Enter' && handleSendComment()}
-                        />
-                        <button
-                            onClick={handleSendComment}
-                            disabled={sendingComment || !newComment.trim()}
-                            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600 rounded-lg flex items-center gap-2"
-                        >
-                            <Send className="w-4 h-4" />
-                            Send Comment
-                        </button>
+                    <div className="flex flex-col gap-3 pt-4 border-t border-[#30363d]">
+                        <div className="flex gap-3">
+                            <input
+                                type="text"
+                                value={newComment}
+                                onChange={(e) => setNewComment(e.target.value)}
+                                placeholder="Type your message here..."
+                                className="flex-1 bg-[#0d1117] border border-[#30363d] rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500"
+                                onKeyDown={(e) => e.key === 'Enter' && handleSendComment()}
+                            />
+                            <button
+                                onClick={handleSendComment}
+                                disabled={sendingComment || !newComment.trim()}
+                                className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-600 rounded-lg flex items-center gap-2 transition-all"
+                            >
+                                <Send className="w-4 h-4" />
+                                <span className="hidden sm:inline">Send</span>
+                            </button>
+                        </div>
+                        
+                        {!isTenant && (
+                            <div className="flex justify-end">
+                                <button 
+                                    onClick={() => setShowProcurementModal(true)}
+                                    className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-all font-medium"
+                                >
+                                    <Package className="w-4 h-4" />
+                                    Material Request
+                                </button>
+                            </div>
+                        )}
                     </div>
+
                 </div>
 
                 {/* Admin Actions */}
@@ -709,6 +829,22 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                 onCapture={handleMediaUpload}
                 title={`Upload ${uploadingType === 'before' ? 'Before' : 'After'} Media`}
             />
+
+            {/* Procurement Modal */}
+            {ticket && (
+                <ProcurementCatalogModal 
+                    isOpen={showProcurementModal}
+                    onClose={() => {
+                        setShowProcurementModal(false);
+                        fetchTicketDetail(); // Refresh to show the procurement activity log
+                    }}
+                    ticketId={ticketId}
+                    propertyId={ticket.property_id as string}
+                    organizationId={ticket.organization_id as string}
+                    isProcurementUser={user?.user_metadata?.role?.toLowerCase().includes('procurement')}
+                />
+            )}
         </div>
     );
 }
+

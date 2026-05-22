@@ -82,13 +82,11 @@ async function uploadMediaToStorage(mediaUrl: string, ticketId: string, mediaKey
         }
 
         const encryptedBuffer = Buffer.from(await res.arrayBuffer());
-        console.log('[WA WEBHOOK] Downloaded encrypted size:', encryptedBuffer.length, 'bytes');
 
         // Decrypt if we have the mediaKey (WhatsApp CDN files are AES-256-CBC encrypted)
         let rawBuffer: Buffer;
         if (mediaKeyBase64) {
             rawBuffer = decryptWhatsAppMedia(encryptedBuffer, mediaKeyBase64);
-            console.log('[WA WEBHOOK] Decrypted size:', rawBuffer.length, 'bytes');
         } else {
             rawBuffer = encryptedBuffer;
         }
@@ -99,7 +97,6 @@ async function uploadMediaToStorage(mediaUrl: string, ticketId: string, mediaKey
             .jpeg({ quality: 85, progressive: true })
             .toBuffer();
 
-        console.log('[WA WEBHOOK] Compressed size:', compressed.length, 'bytes');
 
         const fileName = `${ticketId}/before_${Date.now()}.jpg`;
         const { error } = await supabaseAdmin.storage
@@ -112,7 +109,6 @@ async function uploadMediaToStorage(mediaUrl: string, ticketId: string, mediaKey
         }
 
         const { data: { publicUrl } } = supabaseAdmin.storage.from(BUCKET_NAME).getPublicUrl(fileName);
-        console.log('[WA WEBHOOK] Photo stored at:', publicUrl);
         return publicUrl;
     } catch (err) {
         console.error('[WA WEBHOOK] Media upload error:', err);
@@ -185,19 +181,16 @@ async function uploadVideoToStorage(videoUrl: string, ticketId: string, mediaKey
     try {
         const res = await fetchWithRetry(videoUrl);
         const encryptedBuffer = Buffer.from(await res.arrayBuffer());
-        console.log('[WA WEBHOOK] Video downloaded size:', encryptedBuffer.length, 'bytes');
 
         let videoBuffer: Buffer;
         if (mediaKeyBase64) {
             videoBuffer = decryptWhatsAppMedia(encryptedBuffer, mediaKeyBase64, 'video');
-            console.log('[WA WEBHOOK] Video decrypted size:', videoBuffer.length, 'bytes');
         } else {
             videoBuffer = encryptedBuffer;
         }
 
         // Compress before storing — H.264 CRF 28, max 720p, AAC 64k
         const compressed = await compressVideo(videoBuffer);
-        console.log('[WA WEBHOOK] Video compressed size:', compressed.length, 'bytes');
 
         const fileName = `${ticketId}/before_${Date.now()}.mp4`;
         const { error } = await supabaseAdmin.storage
@@ -210,7 +203,6 @@ async function uploadVideoToStorage(videoUrl: string, ticketId: string, mediaKey
         }
 
         const { data: { publicUrl } } = supabaseAdmin.storage.from(VIDEO_BUCKET).getPublicUrl(fileName);
-        console.log('[WA WEBHOOK] Video stored at:', publicUrl);
         return publicUrl;
     } catch (err) {
         console.error('[WA WEBHOOK] Video upload error:', err);
@@ -260,7 +252,6 @@ async function processIncomingMessage(
 ) {
     try {
         const mediaType = isImage ? 'image' : isVideo ? 'video' : 'text';
-        console.log('[WA WEBHOOK] Processing | From:', senderPhone, '| Type:', mediaType, '| Text:', messageText);
 
         // ── Look up user by phone ─────────────────────────────────────────────
         const last10 = senderPhone.slice(-10);
@@ -300,7 +291,6 @@ async function processIncomingMessage(
             propertyOptions = (allProps || []).map(p => ({
                 id: p.id, name: p.name, organization_id: p.organization_id,
             }));
-            console.log('[WA WEBHOOK] org_super_admin detected — showing all', propertyOptions.length, 'org properties');
         } else {
             // Regular user: only their assigned properties
             const { data: memberships } = await supabaseAdmin
@@ -521,7 +511,6 @@ async function processIncomingMessage(
                     .from('tickets')
                     .update({ photo_before_url: photoUrl })
                     .eq('id', ticket.id);
-                console.log('[WA WEBHOOK] Photo saved:', photoUrl);
             }
         }
 
@@ -534,7 +523,6 @@ async function processIncomingMessage(
                     .from('tickets')
                     .update({ video_before_url: storedVideoUrl })
                     .eq('id', ticket.id);
-                console.log('[WA WEBHOOK] Video saved:', storedVideoUrl);
             }
         }
 
@@ -613,7 +601,6 @@ async function processIncomingMessage(
             deepLink: `/tickets/${ticket.id}?from=requests`,
         });
 
-        console.log('[WA WEBHOOK] ✅ Ticket created:', ticket.id, '| Ticket#:', ticketNumber);
     } catch (err: any) {
         const fs = require('fs');
         fs.appendFileSync('tmp_wa_error.log', `[${new Date().toISOString()}] Error: ${err.stack}\n`);
@@ -633,7 +620,6 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        console.log('[WA WEBHOOK] Received:', JSON.stringify(body).slice(0, 800));
 
         const event = body.event || body.type;
         const msgData = body.data || body;
@@ -721,7 +707,6 @@ export async function POST(request: NextRequest) {
                 .maybeSingle();
 
             if (existingTicket) {
-                console.log('[WA WEBHOOK] Duplicate detected, ignoring:', msgId);
                 return NextResponse.json({ ok: true });
             }
         }

@@ -111,7 +111,7 @@ export default function PPMCompliance({ organizationId, propertyId }: Props) {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-xl font-black text-slate-900">PPM Compliance Dashboard</h2>
+                    <h2 className="text-xl font-black text-slate-900">Planned Preventive Maintenance Compliance</h2>
                     <p className="text-xs text-slate-500 mt-0.5">Full-year compliance overview</p>
                 </div>
                 {/* Year selector */}

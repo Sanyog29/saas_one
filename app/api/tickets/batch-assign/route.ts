@@ -100,11 +100,6 @@ export async function POST(request: NextRequest) {
         }
 
         // Audit Event (PRD 8)
-        console.log('[Audit] ticket.assignment_saved', {
-            tickets: results.map(t => t.id),
-            actor: user.id,
-            timestamp: now
-        });
 
         return NextResponse.json({
             success: true,

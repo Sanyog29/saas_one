@@ -58,26 +58,37 @@ export async function GET(request: NextRequest) {
             // Fire once when 27 ≤ minutes_until_due ≤ 30 (one cron-cycle window)
             if (minutesUntilDue < 27 || minutesUntilDue > 30) continue;
 
-            const assignedUsers: string[] = Array.isArray(template.assigned_to)
+            const assignedUsers: string[] = Array.isArray(template.assigned_to) && template.assigned_to.length > 0
                 ? template.assigned_to
                 : [];
 
-            for (const userId of assignedUsers) {
-                try {
-                    await NotificationService.send({
-                        userId,
-                        propertyId: template.property_id,
-                        organizationId: template.organization_id ?? undefined,
-                        type: 'SOP_REMINDER',
-                        title: 'Checklist Due Soon',
-                        message: `"${template.title}" is due in 30 minutes.`,
-                        deepLink: `/properties/${template.property_id}/sop?via=notification`,
-                    });
-                    notificationsSent++;
-                } catch (notifErr: any) {
-                    // One failed notification must not stop the rest
-                    console.error(`[SOP Reminders] Failed to notify user ${userId} for template ${template.id}:`, notifErr.message);
-                }
+            let recipientIds: string[] = assignedUsers;
+
+            // If no specific users assigned, notify ALL active property members
+            if (recipientIds.length === 0) {
+                const { data: allMembers } = await supabaseAdmin
+                    .from('property_memberships')
+                    .select('user_id')
+                    .eq('property_id', template.property_id)
+                    .eq('is_active', true);
+                recipientIds = (allMembers || []).map((m: any) => String(m.user_id));
+            }
+
+            if (recipientIds.length === 0) continue;
+
+            try {
+                await NotificationService.sendToMany(recipientIds, {
+                    propertyId: template.property_id,
+                    organizationId: template.organization_id ?? undefined,
+                    type: 'SOP_REMINDER',
+                    title: 'Checklist Due Soon 📋',
+                    message: `"${template.title}" is due in 30 minutes.`,
+                    deepLink: `/properties/${template.property_id}/sop?via=notification`,
+                    priority: 'HIGH',
+                });
+                notificationsSent += recipientIds.length;
+            } catch (notifErr: any) {
+                console.error(`[SOP Reminders] Failed for template ${template.id}:`, notifErr.message);
             }
         }
 

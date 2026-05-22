@@ -15,6 +15,7 @@ const fontUI = "font-inter";
 
 export default function HeroSection() {
     const [isNight, setIsNight] = useState(false);
+    const [mounted, setMounted] = useState(false);
 
     // NOTE: Removed click state 'activeCard' in favor of CSS group-hover for smoother performance and "Hover" requirement.
     // However, if we want complex exit animations, we can use state. 
@@ -22,6 +23,7 @@ export default function HeroSection() {
     // Let's use State for AnimatePresence support on hover.
 
     useEffect(() => {
+        setMounted(true);
         const checkTime = () => {
             const hour = new Date().getHours();
             setIsNight(hour >= 18 || hour < 6);
@@ -51,7 +53,7 @@ export default function HeroSection() {
                         className="absolute inset-0"
                     >
                         <Image
-                            src={isNight ? "/landing-hero-night.jpg" : "/landing-hero-day.jpg"}
+                            src={!mounted ? "/landing-hero-day.jpg" : (isNight ? "/landing-hero-night.jpg" : "/landing-hero-day.jpg")}
                             alt="Modern Office Building"
                             fill
                             className="object-cover object-center"
@@ -64,8 +66,8 @@ export default function HeroSection() {
             </div>
 
             {/* Content Overlay */}
-            <div className="absolute inset-0 z-20 flex flex-col justify-between pt-4 md:pt-6 lg:pt-8 px-8 md:px-12 lg:px-14 pb-12 md:pb-16">
-                <header className="flex justify-between items-center w-full pointer-events-auto bg-transparent -mt-[10px]">
+            <div className="absolute inset-0 z-20 flex flex-col justify-between pt-6 md:pt-8 lg:pt-10 px-8 md:px-12 lg:px-14 pb-12 md:pb-16 pointer-events-none">
+                <header className="flex justify-between items-center w-full pointer-events-auto bg-transparent">
                     <div className="flex items-center text-white">
                         {/* Brand Logo */}
                         <div className="flex items-center group cursor-pointer">

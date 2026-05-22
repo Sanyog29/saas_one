@@ -163,7 +163,7 @@ export default function TicketCard({
                 repeat: Infinity,
                 ease: "easeInOut"
             } : {}}
-            className={`@container w-full h-full bg-white rounded-2xl p-[clamp(0.5rem,4cqw,1.25rem)] cursor-pointer transition-all hover:shadow-lg flex flex-col gap-[clamp(0.5rem,3cqw,1.25rem)] ${isCritical ? 'border-2' : ''}`}
+            className={`@container relative w-full h-full bg-white rounded-2xl p-3 cursor-pointer transition-all hover:shadow-md flex flex-col gap-2 ${isCritical ? 'border-2' : ''}`}
             style={{
                 scrollMarginTop: '100px',
                 ...(isCritical
@@ -173,26 +173,23 @@ export default function TicketCard({
                         : { border: '1px solid #e5e7eb' })
             }}
         >
-            {/* Header: Title, Photo + Actions */}
-            <div className="flex items-start justify-between gap-[clamp(0.5rem,3cqw,1.5rem)]">
-                <div className="flex-1 flex items-start gap-[clamp(0.5rem,3cqw,1.25rem)] min-w-0">
-                    {/* Photo Thumbnail */}
-                    {photoUrl && (
-                        <div className="shrink-0">
-                            <Image
-                                src={photoUrl}
-                                alt="Site photo"
-                                width={64}
-                                height={64}
-                                unoptimized
-                                className="w-[clamp(3.5rem,14cqw,4.5rem)] h-[auto] aspect-square rounded-xl object-cover"
-                            />
-                        </div>
-                    )}
+            {/* Photo Thumbnail in absolute top-left corner */}
+            {photoUrl && (
+                <div className="absolute top-3 left-3 w-12 h-12 z-40 group cursor-pointer">
+                    <img
+                        src={photoUrl}
+                        alt="Site photo"
+                        className="w-12 h-12 object-cover rounded-md shadow-sm border border-gray-200 transition-all duration-300 origin-top-left relative group-hover:scale-[4] group-hover:shadow-2xl"
+                    />
+                </div>
+            )}
 
+            {/* Header: Title + Actions */}
+            <div className={`flex items-start justify-between gap-[clamp(0.5rem,3cqw,1.5rem)] relative z-20 ${photoUrl ? 'pl-16 min-h-[48px]' : ''}`}>
+                <div className="flex-1 flex items-start gap-[clamp(0.5rem,3cqw,1.25rem)] min-w-0">
                     {/* Title */}
-                    <div className="flex-1 space-y-2 min-w-0">
-                        <h3 className="text-[clamp(0.9375rem,4.5cqw,1.125rem)] font-semibold text-gray-900 line-clamp-2 leading-snug min-w-0">
+                    <div className="flex-1 space-y-1 min-w-0 pt-0.5 relative z-30">
+                        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 hover:line-clamp-none transition-all leading-snug min-w-0" title={title}>
                             {title}
                         </h3>
                     </div>
@@ -235,11 +232,11 @@ export default function TicketCard({
             </div>
 
             {/* Badges Flow */}
-            <div className="flex flex-wrap items-center gap-[clamp(0.4rem,2cqw,0.75rem)]">
+            <div className="flex flex-wrap items-center gap-1.5">
                 <span
                     className={`
-                        px-[clamp(0.5rem,2cqw,0.75rem)] py-[clamp(0.2rem,1cqw,0.25rem)] rounded-full 
-                        text-[clamp(0.65rem,2.5cqw,0.75rem)] font-bold uppercase border
+                        px-2 py-0.5 rounded-full 
+                        text-[10px] font-bold uppercase border
                         ${PRIORITY_STYLES[priority]}
                     `}
                 >
@@ -248,8 +245,8 @@ export default function TicketCard({
 
                 <span
                     className={`
-                        px-[clamp(0.5rem,2cqw,0.75rem)] py-[clamp(0.2rem,1cqw,0.25rem)] rounded-full 
-                        text-[clamp(0.65rem,2.5cqw,0.75rem)] font-medium uppercase
+                        px-2 py-0.5 rounded-full 
+                        text-[10px] font-medium uppercase
                         ${STATUS_STYLES[status]}
                     `}
                 >
@@ -266,7 +263,7 @@ export default function TicketCard({
                 )}
 
                 {hasMaterialRequest && (
-                    <span className="inline-flex items-center gap-1 px-[clamp(0.4rem,1.5cqw,0.6rem)] py-[clamp(0.15rem,0.5cqw,0.25rem)] bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-full text-[clamp(0.6rem,2.2cqw,0.7rem)] font-bold shadow-sm">
+                    <span className="inline-flex items-center gap-1 px-[clamp(0.4rem,1.5cqw,0.6rem)] py-[clamp(0.15rem,0.5cqw,0.25rem)] bg-fuchsia-100 text-fuchsia-700 border border-fuchsia-200 rounded-full text-[clamp(0.6rem,2.2cqw,0.7rem)] font-bold shadow-sm">
                         <Box className="w-[clamp(0.6rem,2cqw,0.75rem)] h-[clamp(0.6rem,2cqw,0.75rem)]" />
                         Materials
                     </span>
@@ -275,7 +272,7 @@ export default function TicketCard({
 
             {/* Raised By Information */}
             {raisedBy && (
-                <div className="flex items-center gap-[clamp(0.4rem,1.5cqw,0.5rem)]">
+                <div className="flex items-center gap-1.5">
                     <span className="text-[clamp(0.75rem,3cqw,0.875rem)] text-gray-600">Raised By:</span>
                     <div className="flex items-center gap-1.5 text-indigo-700">
                         <div className="w-5 h-5 rounded-full flex-shrink-0 border border-indigo-200 overflow-hidden bg-indigo-50">
@@ -294,7 +291,7 @@ export default function TicketCard({
 
             {/* Assignee Information */}
             {assignedTo && status !== 'OPEN' && (
-                <div className="flex items-center gap-[clamp(0.4rem,1.5cqw,0.5rem)]">
+                <div className="flex items-center gap-1.5">
                     <span className="text-[clamp(0.75rem,3cqw,0.875rem)] text-gray-600">Serving Request:</span>
                     <div className="flex items-center gap-1.5">
                         <div className="w-5 h-5 rounded-full flex-shrink-0 border border-gray-200 overflow-hidden">
@@ -346,25 +343,25 @@ export default function TicketCard({
             )}
 
             {/* Footer Metadata + CTA */}
-            <div className="mt-auto flex flex-col @sm:flex-row @sm:items-center justify-between gap-[clamp(0.75rem,3cqw,1.25rem)] pt-[clamp(0.75rem,3cqw,1.25rem)] border-t border-gray-100 min-w-0">
-                <div className="flex flex-col gap-1.5 min-w-0">
-                    <div className="flex items-center gap-[clamp(0.5rem,2cqw,0.75rem)] text-[clamp(0.6rem,2cqw,0.75rem)] text-text-tertiary">
-                        <span className="font-mono bg-gray-50 px-[0.4rem] py-[0.15rem] rounded text-gray-600">{ticketNumber}</span>
+            <div className="mt-auto flex flex-col @sm:flex-row @sm:items-center justify-between gap-3 pt-3 border-t border-gray-100 min-w-0">
+                <div className="flex flex-col gap-1 min-w-0">
+                    <div className="flex items-center gap-2 text-[10px] text-text-tertiary">
+                        <span className="font-mono bg-gray-50 px-1 py-0.5 rounded text-gray-600">{ticketNumber}</span>
                         <span className="text-gray-200">•</span>
                         <span className="font-medium">{formattedDate}</span>
                     </div>
                     {/* Live elapsed timer */}
-                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black w-fit ${timerColor}`}>
-                        <Timer className="w-3 h-3 shrink-0" />
+                    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-black w-fit ${timerColor}`}>
+                        <Timer className="w-2.5 h-2.5 shrink-0" />
                         {isClosed ? `Closed after ${formatElapsed(elapsedSec)}` : formatElapsed(elapsedSec)}
                     </div>
                 </div>
 
                 <button
                     className="
-                        w-full @sm:w-auto px-[clamp(1rem,4cqw,1.5rem)] py-[clamp(0.4rem,2cqw,0.6rem)]
+                        w-full @sm:w-auto px-4 py-1.5
                         bg-blue-600 text-white rounded-xl
-                        text-[clamp(0.75rem,3cqw,0.875rem)] font-bold hover:bg-blue-700
+                        text-xs font-bold hover:bg-blue-700
                         transition-all active:scale-[0.98] shadow-sm shadow-blue-200
                     "
                     onClick={(e) => {

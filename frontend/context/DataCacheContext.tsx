@@ -87,13 +87,19 @@ export function DataCacheProvider({ children }: { children: React.ReactNode }) {
                 delete next[userSpecificKey];
                 return next;
             });
-            if (isPersistentKey(key)) localStorage.removeItem(`cache:${userSpecificKey}`);
+            if (isPersistentKey(key)) {
+                try { localStorage.removeItem(`cache:${userSpecificKey}`); } catch {}
+            }
         } else {
             setCache({});
             // Clear all cache: keys from localStorage (all users/guests) for absolute safety on logout
-            Object.keys(localStorage)
-                .filter(k => k.startsWith('cache:'))
-                .forEach(k => localStorage.removeItem(k));
+            try {
+                Object.keys(localStorage)
+                    .filter(k => k.startsWith('cache:'))
+                    .forEach(k => {
+                        try { localStorage.removeItem(k); } catch {}
+                    });
+            } catch {}
         }
     }, [getUserKey]);
 

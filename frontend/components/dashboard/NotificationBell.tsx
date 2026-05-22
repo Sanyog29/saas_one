@@ -51,7 +51,7 @@ export default function NotificationBell({ align = 'right' }: NotificationBellPr
     }, [supabase]);
 
     useEffect(() => {
-        let channel: any;
+        let channel: ReturnType<typeof supabase.channel>;
 
         const init = async () => {
             await fetchNotifications();

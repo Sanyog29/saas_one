@@ -57,6 +57,8 @@ const VMSAdminDashboard: React.FC<VMSAdminDashboardProps> = ({ propertyId }) => 
                 params.append('date', yesterday.toISOString().split('T')[0]);
             } else if (dateFilter === 'week') {
                 params.append('date', 'week');
+            } else if (dateFilter === 'month') {
+                params.append('date', 'month');
             } else if (dateFilter === 'custom' && customDate) {
                 params.append('date', customDate);
             }

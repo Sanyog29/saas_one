@@ -22,7 +22,12 @@ interface SOPReportSectionProps {
 }
 
 const SOPReportSection: React.FC<SOPReportSectionProps> = ({ propertyId, isAdmin }) => {
-    const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+    // Force initial date to Asia/Kolkata
+    const [selectedDate, setSelectedDate] = useState(() => {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }); // en-CA gives YYYY-MM-DD
+        return formatter.format(now);
+    });
     const [isLoading, setIsLoading] = useState(true);
     const [summaries, setSummaries] = useState<ReportSummary[]>([]);
     const supabase = createClient();
@@ -54,15 +59,25 @@ const SOPReportSection: React.FC<SOPReportSectionProps> = ({ propertyId, isAdmin
                 const doneCount = templateCompletions.filter(c => c.status === 'completed').length;
                 
                 // Calculate expected slots
+                // Calculate expected slots (Inclusive of start, exclusive of end if overlap)
                 let expectedSlots = 1;
                 const hourlyMatch = t.frequency?.match(/^every_(\d+)_hours?$/);
                 if (hourlyMatch && t.start_time && t.end_time) {
                     const intervalH = parseInt(hourlyMatch[1], 10);
                     const [sH, sM] = t.start_time.split(':').map(Number);
                     const [eH, eM] = t.end_time.split(':').map(Number);
-                    const mins = (eH * 60 + eM) - (sH * 60 + sM);
-                    expectedSlots = Math.floor(mins / (intervalH * 60));
-                    if (expectedSlots < 1) expectedSlots = 1;
+                    
+                    const startMins = sH * 60 + sM;
+                    const endMins_raw = eH * 60 + eM;
+                    const isOvernight = endMins_raw <= startMins;
+                    const endMins = isOvernight ? endMins_raw + 1440 : endMins_raw;
+                    
+                    // Count slots where [slotStart, slotStart + interval] fits in window
+                    let count = 0;
+                    for (let t_mins = startMins; t_mins + intervalH * 60 <= endMins; t_mins += intervalH * 60) {
+                        count++;
+                    }
+                    expectedSlots = Math.max(1, count);
                 }
 
                 return {

@@ -43,13 +43,15 @@ export async function GET(
         const missing = templateItems.filter((ti: any) => !existingIds.has(ti.id));
 
         if (missing.length > 0) {
+            const completionItems = missing.map((ti: any) => ({
+                completion_id: completionId,
+                checklist_item_id: ti.id,
+                is_checked: false
+            }));
+
             await supabaseAdmin
                 .from('sop_completion_items')
-                .insert(missing.map((ti: any) => ({
-                    completion_id: completionId,
-                    checklist_item_id: ti.id,
-                    is_checked: false,
-                })));
+                .insert(completionItems);
 
             const { data: healed } = await supabaseAdmin
                 .from('sop_completions')
@@ -144,22 +146,29 @@ export async function PUT(
                     
                     // Use completion_date to distinguish between logical shifts
                     const logicalDate = fullComp.completion_date;
-                    const indiaDate = new Intl.DateTimeFormat('en-CA', {
+                    const indiaDateFormatter = new Intl.DateTimeFormat('en-CA', {
                         timeZone: 'Asia/Kolkata',
                         year: 'numeric',
                         month: '2-digit',
                         day: '2-digit'
-                    }).format(now);
-                    const todayStr = indiaDate;
+                    });
+                    const todayStr = indiaDateFormatter.format(now);
+                    const yesterdayStr = indiaDateFormatter.format(new Date(now.getTime() - 86400000));
                     
-                    const isHistorical = logicalDate < todayStr;
+                    const isCurrentlyEarlyMorning = isOvernight && currentMins < endM;
+                    const isHistorical = isCurrentlyEarlyMorning 
+                        ? logicalDate < yesterdayStr 
+                        : logicalDate < todayStr;
+
                     const isFuture = logicalDate > todayStr;
 
                     if (isHistorical) {
                         // Past day checklist is definitely late
                         updates.is_late = true;
                     } else if (!isFuture) {
-                        // It is for TODAY. Only mark late if past end time and before next start
+                        // It is for TODAY (or currently active logical shift). 
+                        // Only mark late if past end time and before next start.
+                        // If it's early morning, it's never "after window" because we are in it.
                         const isAfterWindow = isOvernight
                             ? (currentMins >= endM && currentMins < startM)
                             : (currentMins >= endM);

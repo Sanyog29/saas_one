@@ -137,109 +137,137 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const { material_id, status } = body;
+        const { material_id, status, reason } = body;
 
-        if (!['pending', 'ordered', 'delivered', 'cancelled'].includes(status)) {
+        const ALLOWED_STATUSES = ['pending', 'pending_approval', 'approved', 'rejected', 'ordered', 'delivered', 'cancelled', 'reverted'];
+        if (!ALLOWED_STATUSES.includes(status)) {
             return NextResponse.json({ error: 'Invalid status' }, { status: 400 });
         }
 
         const adminSupabase = createAdminClient();
 
+        // Fetch request with line items
         const { data: requestRecord, error: fetchErr } = await adminSupabase
             .from('material_requests')
-            .select('*')
+            .select('*, line_items:material_request_items(*)')
             .eq('id', material_id)
-            .eq('ticket_id', ticketId)
             .single();
 
         if (fetchErr || !requestRecord) {
+            console.error('Fetch error:', fetchErr);
             return NextResponse.json({ error: 'Request not found' }, { status: 404 });
         }
 
-        // Only allow update if assignee, requester, or master admin
-        // But since this is from specific UI we'll rely on RLS logic parity here and use Admin
-        // Wait, to be safe: Let's do user permissions check
+        // Permission check
         const isAssignee = requestRecord.assignee_uid === user.id;
-        const isRequester = requestRecord.requested_by === user.id;
-        const { data: masterAdmin } = await adminSupabase.from('users').select('is_master_admin').eq('id', user.id).single();
+        const { data: membership } = await adminSupabase
+            .from('organization_memberships')
+            .select('role')
+            .eq('user_id', user.id)
+            .eq('organization_id', requestRecord.organization_id)
+            .single();
         
-        if (!isAssignee && !isRequester && !(masterAdmin?.is_master_admin)) {
+        const isHO = ['org_super_admin', 'master_admin', 'procurement'].includes(membership?.role || '');
+        
+        if (!isAssignee && !isHO) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+
+        // Prepare update data
+        const updateData: any = { status };
+        let logAction = status;
+        let logNewValue = status;
+
+        if (status === 'approved') {
+            updateData.approved_at = new Date().toISOString();
+            updateData.approved_by = user.id;
+        } else if (status === 'rejected') {
+            updateData.rejected_at = new Date().toISOString();
+            updateData.rejection_reason = reason;
+        } else if (status === 'ordered') {
+            updateData.ordered_at = new Date().toISOString();
+        } else if (status === 'delivered') {
+            updateData.delivered_at = new Date().toISOString();
+        } else if (status === 'cancelled') {
+            updateData.cancelled_at = new Date().toISOString();
+            updateData.cancellation_reason = reason;
+        } else if (status === 'reverted') {
+            // Revert logic: move back one step
+            const currentStatus = requestRecord.status;
+            if (currentStatus === 'delivered') {
+                updateData.status = 'ordered';
+                updateData.delivered_at = null;
+            } else if (currentStatus === 'ordered') {
+                updateData.status = 'approved';
+                updateData.ordered_at = null;
+            } else {
+                return NextResponse.json({ error: 'Cannot revert from current status' }, { status: 400 });
+            }
+            logAction = `undo_${currentStatus}`;
+            logNewValue = updateData.status;
         }
 
         const { data: updatedReq, error: updateErr } = await adminSupabase
             .from('material_requests')
-            .update({ 
-                status,
-                ordered_at: status === 'ordered' ? new Date().toISOString() : undefined,
-                delivered_at: status === 'delivered' ? new Date().toISOString() : undefined,
-                cancelled_at: status === 'cancelled' ? new Date().toISOString() : undefined
-            })
+            .update(updateData)
             .eq('id', material_id)
             .select()
             .single();
 
         if (updateErr) {
+            console.error('Update error:', updateErr);
             return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
         }
 
         // --- NEW: Procurement Tracking Integration ---
         
         // 1. Log to procurement_activity_log
-        await adminSupabase.from('procurement_activity_log').insert({
-            material_request_id: material_id,
-            user_id: user.id,
-            action: status === 'ordered' ? 'ordered' : (status === 'delivered' ? 'delivered' : (status === 'cancelled' ? 'cancelled' : 'updated')),
-            old_value: requestRecord.status,
-            new_value: status,
-            metadata: { 
-                ticket_id: ticketId,
-                client_ip: request.headers.get('x-forwarded-for') || 'unknown'
-            }
-        });
+        try {
+            await adminSupabase.from('procurement_activity_log').insert({
+                material_request_id: material_id,
+                user_id: user.id,
+                action: logAction,
+                old_value: requestRecord.status,
+                new_value: logNewValue,
+                metadata: { 
+                    ticket_id: ticketId,
+                    reason: reason || null
+                }
+            });
+        } catch (e) {
+            console.error('Log error (non-blocking):', e);
+        }
 
-        // 2. Automate Procurement Order record
+        // 2. Automate Procurement Order record (only on real 'ordered' status, not reverts)
         if (status === 'ordered') {
+            const items = requestRecord.line_items?.length > 0 
+                ? requestRecord.line_items 
+                : (Array.isArray(requestRecord.items) ? requestRecord.items : []);
+
             await adminSupabase.from('procurement_orders').insert({
                 material_request_id: material_id,
                 property_id: requestRecord.property_id,
                 organization_id: requestRecord.organization_id,
                 ordered_by: user.id,
-                vendor_name: 'Pending Assignment', // Could be updated later via full PO flow
-                items: requestRecord.items,
-                total_amount: requestRecord.total_estimated_cost || 0,
+                vendor_name: 'Pending Assignment',
+                items: items,
+                total_amount: requestRecord.total_amount || 0,
                 delivery_status: 'pending'
             });
-        } else if (status === 'delivered') {
-            // Update order status if it exists
-            await adminSupabase.from('procurement_orders')
-                .update({ 
-                    delivery_status: 'delivered',
-                    actual_delivery: new Date().toISOString().split('T')[0]
-                })
-                .eq('material_request_id', material_id);
         }
 
-        // 3. Add a timeline update or comment
+        // 3. Add a chat comment
+        const displayStatus = status === 'reverted' ? `UNDO ${requestRecord.status.toUpperCase()}` : status.toUpperCase();
         await adminSupabase.from('ticket_comments').insert({
             ticket_id: ticketId,
             user_id: user.id,
-            comment: `📦 Material Request Status Updated: ${status.toUpperCase()}${status === 'ordered' ? ' (Order Generated)' : ''}`,
+            comment: `📦 Material Request: ${displayStatus}${reason ? ` - ${reason}` : ''}`,
             is_internal: true,
             metadata: {
                 system_update: true,
                 material_request_id: material_id,
-                status_change: status
+                status_change: updateData.status
             }
-        });
-
-        // 4. Also add log activity to ticket
-        await adminSupabase.from('ticket_activity_log').insert({
-            ticket_id: ticketId,
-            user_id: user.id,
-            action: 'material_status_changed',
-            old_value: requestRecord.status,
-            new_value: status
         });
 
         return NextResponse.json({ success: true, material_request: updatedReq });

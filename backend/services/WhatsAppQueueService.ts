@@ -16,6 +16,20 @@ export class WhatsAppQueueService {
      * The Supabase DB webhook fires per-row and sends each message independently.
      */
     static async enqueue(payload: WhatsAppQueuePayload): Promise<void> {
+        // Check global system config
+        const { data: config } = await supabaseAdmin
+            .from('system_config')
+            .select('value')
+            .eq('key', 'whatsapp_notifications_enabled')
+            .single();
+
+        const isEnabled = config?.value === true;
+
+        if (!isEnabled) {
+            console.log('[WhatsAppQueue] Service is globally disabled via system_config. Skipping enqueue for:', payload.eventType);
+            return;
+        }
+        
         if (payload.userIds.length === 0) return;
 
         const { data: users } = await supabaseAdmin

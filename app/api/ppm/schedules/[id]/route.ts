@@ -28,7 +28,7 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const { status, done_date, remark, verification_status } = body;
+        const { status, done_date, remark, verification_status, vendor_id, vendor_name, vendor_phone, vendor_contact_person, completed_by } = body;
 
         const validStatuses = ['pending', 'done', 'postponed', 'skipped'];
         if (status && !validStatuses.includes(status)) {
@@ -42,15 +42,31 @@ export async function PATCH(
             .eq('id', id)
             .single();
 
+        const updatePayload: any = {
+            ...(status !== undefined && { status }),
+            ...(done_date !== undefined && { done_date }),
+            ...(remark !== undefined && { remark }),
+            ...(verification_status !== undefined && { verification_status }),
+            ...(vendor_id !== undefined && { vendor_id }),
+            ...(vendor_name !== undefined && { vendor_name }),
+            ...(vendor_phone !== undefined && { vendor_phone }),
+            ...(vendor_contact_person !== undefined && { vendor_contact_person }),
+            updated_at: new Date().toISOString(),
+        };
+
+        // If marking as done, record who completed it and when
+        if (status === 'done') {
+            updatePayload.completed_by = completed_by || user.id;
+            updatePayload.completed_at = new Date().toISOString();
+        } else if (status !== undefined && status !== 'done') {
+            // Clear completion info if un-marking as done
+            updatePayload.completed_by = null;
+            updatePayload.completed_at = null;
+        }
+
         const { data, error } = await supabase
             .from('ppm_schedules')
-            .update({
-                ...(status !== undefined && { status }),
-                ...(done_date !== undefined && { done_date }),
-                ...(remark !== undefined && { remark }),
-                ...(verification_status !== undefined && { verification_status }),
-                updated_at: new Date().toISOString(),
-            })
+            .update(updatePayload)
             .eq('id', id)
             .select()
             .single();

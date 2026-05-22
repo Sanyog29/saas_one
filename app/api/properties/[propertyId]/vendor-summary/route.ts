@@ -13,14 +13,9 @@ export async function GET(
 ) {
     const { propertyId } = await params;
 
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
-
     const supabase = await createClient();
-    const { data: { user }, error: authError } = token 
-        ? await supabase.auth.getUser(token)
-        : await supabase.auth.getUser();
-
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
     if (authError || !user) {
         console.error('[Vendor API] Auth error:', authError?.message || 'No user found');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -52,7 +47,7 @@ export async function GET(
     // Directly query vendor_daily_revenue with property_id + date filter
     let revenueQuery = supabaseAdmin
         .from('vendor_daily_revenue')
-        .select('vendor_id, revenue_amount, revenue_date')
+        .select('vendor_id, revenue_amount')
         .eq('property_id', propertyId);
 
     if (period === 'today') revenueQuery = revenueQuery.eq('revenue_date', today);

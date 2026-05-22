@@ -1,11 +1,12 @@
 'use client';
 import { useState } from 'react';
-import { CalendarDays, BarChart2, FileText, Shield, Wrench } from 'lucide-react';
+import { CalendarDays, BarChart2, FileText, Shield, Wrench, SearchCheck } from 'lucide-react';
 import PPMCalendar from './PPMCalendar';
 import PPMReports from './PPMReports';
 import AMCContracts from './AMCContracts';
 import PPMCompliance from './PPMCompliance';
 import VendorManagement from '@/frontend/components/vendors/VendorManagement';
+import AuditDashboard from '@/frontend/components/audit/AuditDashboard';
 
 interface Props {
     organizationId: string;
@@ -13,7 +14,7 @@ interface Props {
     properties?: { id: string; name: string }[];
 }
 
-type TabId = 'calendar' | 'reports' | 'amc' | 'compliance' | 'vendors';
+type TabId = 'calendar' | 'reports' | 'amc' | 'compliance' | 'audit' | 'vendors';
 
 export default function PPMModule({ organizationId, propertyId, properties = [] }: Props) {
     const [tab, setTab] = useState<TabId>('calendar');
@@ -21,8 +22,9 @@ export default function PPMModule({ organizationId, propertyId, properties = [] 
     const tabs = [
         { id: 'calendar', label: 'Calendar', icon: CalendarDays },
         { id: 'reports', label: 'Reports', icon: BarChart2 },
-        { id: 'amc', label: 'AMC Contracts', icon: FileText },
+        { id: 'amc', label: 'Annual Maintenance Contracts', icon: FileText },
         { id: 'compliance', label: 'Compliance', icon: Shield },
+        { id: 'audit', label: 'Digital Audit', icon: SearchCheck },
         { id: 'vendors', label: 'Vendors', icon: Wrench },
     ];
 
@@ -48,11 +50,16 @@ export default function PPMModule({ organizationId, propertyId, properties = [] 
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-hidden">
+            <div className="flex-1 overflow-auto">
                 {tab === 'calendar' && <PPMCalendar organizationId={organizationId} propertyId={propertyId} properties={properties} />}
                 {tab === 'reports' && <PPMReports organizationId={organizationId} propertyId={propertyId} properties={properties} />}
                 {tab === 'amc' && <AMCContracts organizationId={organizationId} propertyId={propertyId} properties={properties} />}
                 {tab === 'compliance' && <PPMCompliance organizationId={organizationId} propertyId={propertyId} />}
+                {tab === 'audit' && (
+                    <div className="p-6 bg-slate-900 min-h-full">
+                        <AuditDashboard organizationId={organizationId} propertyId={propertyId} />
+                    </div>
+                )}
                 {tab === 'vendors' && <VendorManagement organizationId={organizationId} propertyId={propertyId} properties={properties} />}
             </div>
         </div>

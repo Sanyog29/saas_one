@@ -28,6 +28,7 @@ import MasterAdminChatbot from './MasterAdminChatbot';
 import ResolverStatsList from '@/frontend/components/mst/ResolverStatsList';
 import { MessageSquareCode } from 'lucide-react';
 import WhatsAppTemplatesManager from '@/frontend/components/admin/WhatsAppTemplatesManager';
+import WhatsAppSystemControl from '@/frontend/components/ops/WhatsAppSystemControl';
 
 type Tab = 'overview' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates';
 
@@ -760,47 +761,52 @@ const OverviewGrid = ({ stats }: { stats: any }) => {
                 })}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="glass-panel p-8">
-                    <h3 className="text-2xl font-display font-semibold text-text-primary mb-6">Regional Performance</h3>
-                    <div className="space-y-6">
-                        {[
-                            { name: 'North America', status: 'Optimal', load: 45 },
-                            { name: 'European Union', status: 'Maintenance', load: 88 },
-                            { name: 'Asia Pacific', status: 'Optimal', load: 12 },
-                        ].map((reg, i) => (
-                            <div key={i} className="space-y-2">
-                                <div className="flex justify-between text-xs font-body font-medium tracking-widest text-text-secondary">
-                                    <span>{reg.name}</span>
-                                    <span className={reg.load > 80 ? 'text-error' : 'text-success'}>{reg.status}</span>
-                                </div>
-                                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                                    <div className={`h-full ${reg.load > 80 ? 'bg-error' : 'bg-success'} rounded-full`} style={{ width: `${reg.load}%` }} />
-                                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <WhatsAppSystemControl />
+                <div className="lg:col-span-2">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
+                        <div className="glass-panel p-8 h-full">
+                            <h3 className="text-2xl font-display font-semibold text-text-primary mb-6">Regional Performance</h3>
+                            <div className="space-y-6">
+                                {[
+                                    { name: 'North America', status: 'Optimal', load: 45 },
+                                    { name: 'European Union', status: 'Maintenance', load: 88 },
+                                    { name: 'Asia Pacific', status: 'Optimal', load: 12 },
+                                ].map((reg, i) => (
+                                    <div key={i} className="space-y-2">
+                                        <div className="flex justify-between text-xs font-body font-medium tracking-widest text-text-secondary">
+                                            <span>{reg.name}</span>
+                                            <span className={reg.load > 80 ? 'text-error' : 'text-success'}>{reg.status}</span>
+                                        </div>
+                                        <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className={`h-full ${reg.load > 80 ? 'bg-error' : 'bg-success'} rounded-full`} style={{ width: `${reg.load}%` }} />
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
-                    </div>
-                </div>
+                        </div>
 
-                <div className="glass-panel p-8">
-                    <h3 className="text-2xl font-display font-semibold text-text-primary mb-6">System Health</h3>
-                    <div className="space-y-4">
-                        {[
-                            { id: 'AUTH-SV', label: 'Auth Middleware', status: 'Healthy' },
-                            { id: 'DB-IDX', label: 'Global Indexes', status: 'Warning' },
-                            { id: 'OAUTH-API', label: 'OAuth Gateway', status: 'Healthy' }
-                        ].map((svc, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 premium-list">
-                                <div className="flex items-center gap-3">
-                                    <span className="text-[10px] font-body font-medium text-text-tertiary px-2 py-0.5 border border-border/10 rounded-md tracking-widest">{svc.id}</span>
-                                    <span className="text-sm font-body font-medium text-text-secondary">{svc.label}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <div className={`w-1.5 h-1.5 rounded-full ${svc.status === 'Healthy' ? 'bg-success' : 'bg-warning'}`} />
-                                    <span className="text-xs font-body font-medium text-text-tertiary">{svc.status}</span>
-                                </div>
+                        <div className="glass-panel p-8 h-full">
+                            <h3 className="text-2xl font-display font-semibold text-text-primary mb-6">System Health</h3>
+                            <div className="space-y-4">
+                                {[
+                                    { id: 'AUTH-SV', label: 'Auth Middleware', status: 'Healthy' },
+                                    { id: 'DB-IDX', label: 'Global Indexes', status: 'Warning' },
+                                    { id: 'OAUTH-API', label: 'OAuth Gateway', status: 'Healthy' }
+                                ].map((svc, i) => (
+                                    <div key={i} className="flex items-center justify-between p-4 premium-list">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-[10px] font-body font-medium text-text-tertiary px-2 py-0.5 border border-border/10 rounded-md tracking-widest">{svc.id}</span>
+                                            <span className="text-sm font-body font-medium text-text-secondary">{svc.label}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-1.5 h-1.5 rounded-full ${svc.status === 'Healthy' ? 'bg-success' : 'bg-warning'}`} />
+                                            <span className="text-xs font-body font-medium text-text-tertiary">{svc.status}</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1623,7 +1629,7 @@ const CreateUserModal = ({ onClose, onCreated, organizations, showToast }: {
                         <div>
                             <h3 className="text-2xl font-black text-slate-900 mb-2">User Created!</h3>
                             <p className="text-sm text-slate-500">
-                                Share these credentials with the user securely. <br />
+                                Share these login details with the user securely. <br />
                                 <span className="text-rose-500 font-bold">This password will not be shown again.</span>
                             </p>
                         </div>

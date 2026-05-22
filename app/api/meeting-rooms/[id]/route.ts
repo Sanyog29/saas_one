@@ -58,6 +58,18 @@ export async function PATCH(
         if (status !== undefined) updateData.status = status;
         if (propertyId !== undefined) updateData.property_id = propertyId;
 
+        // Recalculate organization_id if property is changing
+        if (propertyId !== undefined && propertyId !== room.property_id) {
+            const { data: newProperty } = await supabase
+                .from('properties')
+                .select('organization_id')
+                .eq('id', propertyId)
+                .single();
+            if (newProperty) {
+                updateData.organization_id = newProperty.organization_id;
+            }
+        }
+
         const { data: updated, error: updateError } = await supabase
             .from('meeting_rooms')
             .update(updateData)

@@ -12,11 +12,9 @@ export async function POST(request: NextRequest) {
     // Get authenticated user
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-        console.log('[SessionStart] Unauthorized request');
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    console.log('[SessionStart] Starting session for user:', user.id);
 
     // Get user agent from request
     const userAgent = request.headers.get('user-agent') || null;
@@ -47,7 +45,6 @@ export async function POST(request: NextRequest) {
             .select('id');
 
         if (closedSessions && closedSessions.length > 0) {
-            console.log('[SessionStart] Closed', closedSessions.length, 'previous open sessions');
 
             // Recalculate duration for closed sessions
             for (const session of closedSessions) {
@@ -71,7 +68,6 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: insertError.message }, { status: 500 });
         }
 
-        console.log('[SessionStart] Created new session:', newSession.id, 'for property:', propertyId);
 
         return NextResponse.json({
             session_id: newSession.id,

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/frontend/utils/supabase/client';
 import Skeleton from '@/frontend/components/ui/Skeleton';
 import { motion } from 'framer-motion';
-import { ChevronLeft, User, Calendar, CheckCircle2, Circle, Camera, Clock, Eye, Video, Play, ThumbsDown, Minus, ThumbsUp, Paperclip, Loader2 } from 'lucide-react';
+import { ChevronLeft, User, Calendar, CheckCircle2, Circle, Camera, Clock, Eye, Video, Play, ThumbsDown, Minus, ThumbsUp, Paperclip, Loader2, X } from 'lucide-react';
 import ImagePreviewModal from '@/frontend/components/shared/ImagePreviewModal';
 import VideoPreviewModal from '@/frontend/components/shared/VideoPreviewModal';
 import CameraCaptureModal from '@/frontend/components/shared/CameraCaptureModal';
@@ -204,6 +204,33 @@ const SOPCompletionDetail: React.FC<SOPCompletionDetailProps> = ({ completionId,
             setUploadLoading(null);
         }
     }, [activeVideoItemId, completionId, propertyId, supabase]);
+
+    const handleRemoveMedia = useCallback(async (itemId: string, type: 'photo' | 'video') => {
+        if (!completionId || !itemId) return;
+        setUploadLoading(itemId);
+        try {
+            const updatePayload = type === 'photo' ? { photo_url: null } : { video_url: null };
+
+            const { error } = await supabase
+                .from('sop_completion_items')
+                .update(updatePayload)
+                .eq('id', itemId);
+
+            if (error) throw error;
+
+            setCompletion((prev: any) => ({
+                ...prev,
+                items: prev.items.map((it: any) =>
+                    it.id === itemId ? { ...it, ...updatePayload } : it
+                ),
+            }));
+            setToast({ message: `${type === 'photo' ? 'Photo' : 'Video'} removed successfully`, type: 'success' });
+        } catch (err: any) {
+            setToast({ message: err.message || 'Failed to remove media', type: 'error' });
+        } finally {
+            setUploadLoading(null);
+        }
+    }, [completionId, supabase]);
 
     const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, itemId: string) => {
         const file = e.target.files?.[0];
@@ -423,13 +450,23 @@ const SOPCompletionDetail: React.FC<SOPCompletionDetailProps> = ({ completionId,
                                         {(item.photo_url || item.video_url) && (
                                             <div className="flex flex-wrap gap-2 md:gap-3 mb-2">
                                                 {item.photo_url && (
-                                                    <div className="relative w-full max-w-[200px] md:max-w-xs aspect-video rounded-lg md:rounded-xl overflow-hidden shadow-md border border-slate-100 group/img cursor-pointer"
-                                                        onClick={() => setPreviewImageUrl(item.photo_url)}
-                                                    >
-                                                        <img src={item.photo_url} alt="Audit Proof" className="w-full h-full object-cover" />
-                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-all flex items-center justify-center">
-                                                            <div className="p-2 bg-white/20 rounded-full text-white"><Eye size={20} /></div>
+                                                    <div className="relative w-full max-w-[200px] md:max-w-xs aspect-video rounded-lg md:rounded-xl overflow-hidden shadow-md border border-slate-100 group/img">
+                                                        <div 
+                                                            className="w-full h-full cursor-pointer"
+                                                            onClick={() => setPreviewImageUrl(item.photo_url)}
+                                                        >
+                                                            <img src={item.photo_url} alt="Audit Proof" className="w-full h-full object-cover" />
+                                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-all flex items-center justify-center">
+                                                                <div className="p-2 bg-white/20 rounded-full text-white"><Eye size={20} /></div>
+                                                            </div>
                                                         </div>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'photo'); }}
+                                                            className="absolute top-2 right-2 w-7 h-7 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
+                                                            title="Delete photo"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
                                                         <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 rounded text-[8px] text-white font-bold flex items-center gap-1">
                                                             <Camera size={8} />Photo
                                                         </div>
@@ -441,13 +478,23 @@ const SOPCompletionDetail: React.FC<SOPCompletionDetailProps> = ({ completionId,
                                                     </div>
                                                 )}
                                                 {item.video_url && (
-                                                    <div className="relative w-full max-w-[200px] md:max-w-xs aspect-video rounded-lg md:rounded-xl overflow-hidden shadow-md border border-slate-100 group/vid cursor-pointer"
-                                                        onClick={() => setPreviewVideoUrl(item.video_url)}
-                                                    >
-                                                        <video src={item.video_url} className="w-full h-full object-cover" muted playsInline />
-                                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover/vid:bg-black/50 transition-all">
-                                                            <div className="p-2 bg-white/20 rounded-full text-white"><Play size={20} /></div>
+                                                    <div className="relative w-full max-w-[200px] md:max-w-xs aspect-video rounded-lg md:rounded-xl overflow-hidden shadow-md border border-slate-100 group/vid">
+                                                        <div
+                                                            className="w-full h-full cursor-pointer"
+                                                            onClick={() => setPreviewVideoUrl(item.video_url)}
+                                                        >
+                                                            <video src={item.video_url} className="w-full h-full object-cover" muted playsInline />
+                                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover/vid:bg-black/50 transition-all">
+                                                                <div className="p-2 bg-white/20 rounded-full text-white"><Play size={20} /></div>
+                                                            </div>
                                                         </div>
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'video'); }}
+                                                            className="absolute top-2 right-2 w-7 h-7 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
+                                                            title="Delete video"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
                                                         <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/60 rounded text-[8px] text-white font-bold flex items-center gap-1">
                                                             <Video size={8} />Video
                                                         </div>

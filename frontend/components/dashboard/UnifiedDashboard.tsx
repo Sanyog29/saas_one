@@ -7,6 +7,7 @@ import MasterAdminDashboard from './MasterAdminDashboard';
 import SoftServiceManagerDashboard from './SoftServiceManagerDashboard';
 import SuperTenantDashboard from './SuperTenantDashboard';
 import VendorDashboard from '@/frontend/components/vendors/VendorDashboard';
+import ProcurementDashboard from './ProcurementDashboard';
 import Loader from '@/frontend/components/ui/Loader';
 import { useAppSession } from '@/frontend/hooks/useAppSession';
 import { AlertCircle } from 'lucide-react';
@@ -34,6 +35,11 @@ const UnifiedDashboard = () => {
 
     if (role === 'org_super_admin' || role === 'org_admin') {
         return <OrgAdminDashboard />;
+    }
+
+    // Procurement role - global dashboard
+    if (role === 'procurement') {
+        return <ProcurementDashboard />;
     }
 
     // Super Tenant — multi-property analytics dashboard

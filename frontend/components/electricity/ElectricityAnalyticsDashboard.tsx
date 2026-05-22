@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     TrendingUp, Download, Zap, AlertTriangle,
-    BarChart3, Plus, X, IndianRupee, Activity, ChevronDown, ShieldCheck
+    BarChart3, Plus, X, IndianRupee, Activity, ChevronDown, ShieldCheck, Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams } from 'next/navigation';
@@ -49,10 +49,12 @@ interface ElectricityAnalyticsDashboardProps {
     properties?: { id: string; name: string }[];
 }
 
+const isValidId = (id?: string) => !!id && id !== 'undefined' && id !== 'null' && id !== 'all';
+
 const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps> = ({ propertyId: propIdFromProps, orgId, properties = [] }) => {
     const params = useParams();
     const propertyId = propIdFromProps || (params?.propertyId as string);
-    const supabase = createClient();
+    const supabase = useMemo(() => createClient(), []);
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
 
     // UI State
@@ -74,16 +76,26 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
         month: ElectricityReading[];
         prevMonth: ElectricityReading[];
         trend: ElectricityReading[];
-    }>({ today: [], month: [], prevMonth: [], trend: [] });
+        custom: ElectricityReading[];
+    }>({ today: [], month: [], prevMonth: [], trend: [], custom: [] });
+
+    // Date Range Filter State
+    const todayStr = new Date().toISOString().split('T')[0];
+    const [dateFrom, setDateFrom] = useState<string>('');
+    const [dateTo, setDateTo] = useState<string>('');
+    const [isCustomRange, setIsCustomRange] = useState(false);
 
     const [activeTariff, setActiveTariff] = useState<number>(0);
     const [isLoading, setIsLoading] = useState(true);
 
     // Fetch Initial Data
     const fetchData = useCallback(async () => {
-        if (!propertyId && !orgId) return;
+        if (!isValidId(propertyId) && !isValidId(orgId)) return;
         
-        const cacheKey = `electricity-analytics-${propertyId || orgId}`;
+        const supabase = createClient();
+        const cacheKey = isCustomRange && dateFrom && dateTo
+            ? `electricity-analytics-${propertyId || orgId}-${dateFrom}-${dateTo}`
+            : `electricity-analytics-${propertyId || orgId}`;
         const cached = getCachedData(cacheKey);
 
         if (cached) {
@@ -93,28 +105,33 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
             setActiveTariff(cached.activeTariff);
             setRawReadings(cached.rawReadings);
             setIsLoading(false);
-        } else {
-            setIsLoading(true);
+            return;
         }
+
+        setIsLoading(true);
 
         let metersData: ElectricityMeter[] = [];
         let activeTariffValue = 0;
-        let readingsData = { today: [] as ElectricityReading[], month: [] as ElectricityReading[], prevMonth: [] as ElectricityReading[], trend: [] as ElectricityReading[] };
+        let readingsData = { today: [] as ElectricityReading[], month: [] as ElectricityReading[], prevMonth: [] as ElectricityReading[], trend: [] as ElectricityReading[], custom: [] as ElectricityReading[] };
         let propData: { name: string } | null = property;
 
         try {
             // 1. Property Name
-            if (propertyId && propertyId !== 'undefined') {
-                const { data: propData } = await supabase.from('properties').select('name').eq('id', propertyId).single();
+            if (isValidId(propertyId)) {
+                const { data: fetchedPropData } = await supabase.from('properties').select('name').eq('id', propertyId).single();
+                propData = fetchedPropData;
                 setProperty(propData);
             }
 
             // 2. Meters
-            const metersRes = await fetch(propertyId && propertyId !== 'undefined'
-                ? `/api/properties/${propertyId}/electricity-meters`
-                : `/api/organizations/${orgId}/electricity-meters`);
+            let metersRes = null;
+            if (isValidId(propertyId)) {
+                metersRes = await fetch(`/api/properties/${propertyId}/electricity-meters`);
+            } else if (isValidId(orgId)) {
+                metersRes = await fetch(`/api/organizations/${orgId}/electricity-meters`);
+            }
 
-            if (metersRes.ok) {
+            if (metersRes && metersRes.ok) {
                 metersData = await metersRes.json();
                 if (Array.isArray(metersData)) {
                     setMeters(metersData);
@@ -123,9 +140,9 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
 
             // 3. Tariff
             const today = new Date().toISOString().split('T')[0];
-            if (propertyId && propertyId !== 'undefined') {
+            if (isValidId(propertyId)) {
                 const tariffRes = await fetch(`/api/properties/${propertyId}/grid-tariffs?date=${today}`);
-                if (tariffRes.ok) {
+                if (tariffRes && tariffRes.ok) {
                     const t = await tariffRes.json();
                     activeTariffValue = t?.rate_per_unit || 0;
                     setActiveTariff(activeTariffValue);
@@ -133,33 +150,45 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
             }
 
             // 4. Readings (Batch or separate)
-            const readingsBaseUrl = (propertyId && propertyId !== 'undefined')
+            const readingsBaseUrl = isValidId(propertyId)
                 ? `/api/properties/${propertyId}/electricity-readings`
-                : `/api/organizations/${orgId}/electricity-readings`;
+                : isValidId(orgId)
+                    ? `/api/organizations/${orgId}/electricity-readings`
+                    : null;
 
-            const dates = {
-                today: today,
-                monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-                prevMonthStart: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0],
-                prevMonthEnd: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0],
-                trendStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-            };
+            if (readingsBaseUrl) {
+                const dates = {
+                    today: today,
+                    monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+                    prevMonthStart: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0],
+                    prevMonthEnd: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0],
+                    trendStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                };
 
-            const handleFetch = (url: string) => fetch(url).then(r => r.ok ? r.json() : []).catch(() => []);
-            const [todayR, monthR, prevMonthR, trendR] = await Promise.all([
-                handleFetch(`${readingsBaseUrl}?startDate=${dates.today}&endDate=${dates.today}`),
-                handleFetch(`${readingsBaseUrl}?startDate=${dates.monthStart}`),
-                handleFetch(`${readingsBaseUrl}?startDate=${dates.prevMonthStart}&endDate=${dates.prevMonthEnd}`),
-                handleFetch(`${readingsBaseUrl}?startDate=${dates.trendStart}`)
-            ]);
+                const handleFetch = (url: string) => fetch(url).then(r => r.ok ? r.json() : []).catch(() => []);
+                const fetchTasks: Promise<ElectricityReading[]>[] = [
+                    handleFetch(`${readingsBaseUrl}?startDate=${dates.today}&endDate=${dates.today}`),
+                    handleFetch(`${readingsBaseUrl}?startDate=${dates.monthStart}`),
+                    handleFetch(`${readingsBaseUrl}?startDate=${dates.prevMonthStart}&endDate=${dates.prevMonthEnd}`),
+                    handleFetch(`${readingsBaseUrl}?startDate=${dates.trendStart}`)
+                ];
 
-            readingsData = {
-                today: Array.isArray(todayR) ? todayR : [],
-                month: Array.isArray(monthR) ? monthR : [],
-                prevMonth: Array.isArray(prevMonthR) ? prevMonthR : [],
-                trend: Array.isArray(trendR) ? trendR : []
-            };
-            setRawReadings(readingsData);
+                // If custom range is active, also fetch custom range data
+                if (isCustomRange && dateFrom && dateTo) {
+                    fetchTasks.push(handleFetch(`${readingsBaseUrl}?startDate=${dateFrom}&endDate=${dateTo}`));
+                }
+
+                const [todayR, monthR, prevMonthR, trendR, customR] = await Promise.all(fetchTasks);
+
+                readingsData = {
+                    today: Array.isArray(todayR) ? todayR : [],
+                    month: Array.isArray(monthR) ? monthR : [],
+                    prevMonth: Array.isArray(prevMonthR) ? prevMonthR : [],
+                    trend: Array.isArray(trendR) ? trendR : [],
+                    custom: isCustomRange && Array.isArray(customR) ? customR : []
+                };
+                setRawReadings(readingsData);
+            }
 
             // Update Cache
             setCachedData(cacheKey, {
@@ -174,7 +203,8 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
         } finally {
             setIsLoading(false);
         }
-    }, [propertyId, orgId, supabase]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [propertyId, orgId, supabase, dateFrom, dateTo, isCustomRange]);
 
     useEffect(() => {
         fetchData();
@@ -187,9 +217,6 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
             return r.meter_id === selectedMeterId;
         };
 
-        // Sum pre-computed final_units per entry — each entry already stores
-        // (closing − opening) × multiplier correctly at log time.
-        // Span approach inflates when multiple meters have non-chaining readings.
         const calc = (readings: ElectricityReading[]) => {
             return readings.filter(filterFn).reduce((acc, r) => {
                 let cost = r.computed_cost || 0;
@@ -206,31 +233,69 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
         const today = calc(rawReadings.today);
         const month = calc(rawReadings.month);
         const prevMonth = calc(rawReadings.prevMonth);
+        const custom = calc(rawReadings.custom);
 
-        // Averages (Month)
-        const uniqueDays = new Set(rawReadings.month.filter(filterFn).map(r => r.reading_date)).size || 1;
-        const avgDailyCost = month.cost / uniqueDays;
-        const avgDailyUnits = month.units / uniqueDays;
+        // Averages
+        const avgCalc = (readings: ElectricityReading[]) => {
+            const uniqueDays = new Set(readings.filter(filterFn).map(r => r.reading_date)).size || 1;
+            const totals = calc(readings);
+            return { cost: totals.cost / uniqueDays, units: totals.units / uniqueDays };
+        };
+
+        const monthAvgs = avgCalc(rawReadings.month);
+        const customAvgs = isCustomRange ? avgCalc(rawReadings.custom) : monthAvgs;
 
         return {
             today,
             month,
             prevMonth,
-            averages: { cost: avgDailyCost, units: avgDailyUnits }
+            custom,
+            averages: isCustomRange ? customAvgs : monthAvgs
         };
-    }, [rawReadings, viewMode, selectedMeterId, activeTariff]);
+    }, [rawReadings, viewMode, selectedMeterId, activeTariff, isCustomRange]);
 
     // Derived Trend Data
     const chartData = useMemo(() => {
-        const days = trendPeriod === '7D' ? 7 : 30;
-        const result: TrendPoint[] = [];
-        const now = new Date();
-
         const filterFn = (r: ElectricityReading) => {
             if (viewMode === 'combined') return true;
             return r.meter_id === selectedMeterId;
         };
 
+        // Custom range: iterate from dateFrom to dateTo
+        if (isCustomRange && dateFrom && dateTo) {
+            const result: TrendPoint[] = [];
+            const relevantReadings = rawReadings.custom.filter(filterFn);
+            const start = new Date(dateFrom);
+            const end = new Date(dateTo);
+            const dayMs = 24 * 60 * 60 * 1000;
+            const totalDays = Math.round((end.getTime() - start.getTime()) / dayMs) + 1;
+
+            for (let i = 0; i < totalDays; i++) {
+                const d = new Date(start.getTime() + i * dayMs);
+                const dateStr = d.toISOString().split('T')[0];
+                const label = d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+
+                const dayReadings = relevantReadings.filter(r => r.reading_date === dateStr);
+                const dayTotals = dayReadings.reduce((acc, r) => {
+                    let cost = r.computed_cost || 0;
+                    if (cost === 0 && activeTariff > 0) {
+                        cost = (r.final_units ?? r.computed_units ?? 0) * activeTariff;
+                    }
+                    return {
+                        cost: acc.cost + cost,
+                        units: acc.units + (r.final_units ?? r.computed_units ?? 0)
+                    };
+                }, { cost: 0, units: 0 });
+
+                result.push({ date: label, cost: dayTotals.cost, units: dayTotals.units });
+            }
+            return result;
+        }
+
+        // Default: last 7 or 30 days
+        const days = trendPeriod === '7D' ? 7 : 30;
+        const result: TrendPoint[] = [];
+        const now = new Date();
         const relevantReadings = rawReadings.trend.filter(filterFn);
 
         for (let i = days - 1; i >= 0; i--) {
@@ -245,21 +310,16 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                 if (cost === 0 && activeTariff > 0) {
                     cost = (r.final_units ?? r.computed_units ?? 0) * activeTariff;
                 }
-
                 return {
                     cost: acc.cost + cost,
                     units: acc.units + (r.final_units ?? r.computed_units ?? 0)
                 };
             }, { cost: 0, units: 0 });
 
-            result.push({
-                date: label,
-                cost: dayTotals.cost,
-                units: dayTotals.units
-            });
+            result.push({ date: label, cost: dayTotals.cost, units: dayTotals.units });
         }
         return result;
-    }, [rawReadings.trend, trendPeriod, viewMode, selectedMeterId]);
+    }, [rawReadings.trend, rawReadings.custom, trendPeriod, viewMode, selectedMeterId, isCustomRange, dateFrom, dateTo, activeTariff]);
 
     // Format Helpers
     const fmtCost = (val: number, units?: number) => {
@@ -272,8 +332,12 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
     };
 
     // Current Display Values based on Toggles
-    const displayCost = costTimeframe === 'today' ? metrics.today.cost : metrics.month.cost;
-    const displayUnits = unitsTimeframe === 'today' ? metrics.today.units : metrics.month.units;
+    const displayCost = isCustomRange
+        ? metrics.custom.cost
+        : (costTimeframe === 'today' ? metrics.today.cost : metrics.month.cost);
+    const displayUnits = isCustomRange
+        ? metrics.custom.units
+        : (unitsTimeframe === 'today' ? metrics.today.units : metrics.month.units);
 
     if (isLoading) return (
         <div className="space-y-8 animate-pulse">
@@ -420,6 +484,52 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                             OCR Insights
                         </button>
                     </div>
+
+                    {/* Date Range Filter */}
+                    <div className="flex items-center gap-2 mt-3">
+                        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5">
+                            <Calendar className="w-4 h-4 text-slate-400" />
+                            <input
+                                type="date"
+                                value={dateFrom}
+                                max={dateTo || todayStr}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                                className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none focus:ring-0"
+                            />
+                            <span className="text-xs text-slate-400">to</span>
+                            <input
+                                type="date"
+                                value={dateTo}
+                                min={dateFrom}
+                                max={todayStr}
+                                onChange={(e) => setDateTo(e.target.value)}
+                                className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none focus:ring-0"
+                            />
+                        </div>
+                        <button
+                            onClick={() => {
+                                if (dateFrom && dateTo) {
+                                    setIsCustomRange(true);
+                                }
+                            }}
+                            disabled={!dateFrom || !dateTo}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-white hover:bg-primary-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Apply
+                        </button>
+                        {isCustomRange && (
+                            <button
+                                onClick={() => {
+                                    setIsCustomRange(false);
+                                    setDateFrom('');
+                                    setDateTo('');
+                                }}
+                                className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
+                            >
+                                Reset
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Scope Toggle */}
@@ -472,10 +582,16 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                                         ELECTRICITY<br />COST
                                     </span>
                                 </div>
-                                <div className="flex bg-emerald-100/50 rounded-lg p-1">
-                                    <button onClick={() => setCostTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'today' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Today</button>
-                                    <button onClick={() => setCostTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'month' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>This Month</button>
-                                </div>
+                                {isCustomRange ? (
+                                    <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-emerald-600 shadow-sm">
+                                        Custom Range
+                                    </span>
+                                ) : (
+                                    <div className="flex bg-emerald-100/50 rounded-lg p-1">
+                                        <button onClick={() => setCostTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'today' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Today</button>
+                                        <button onClick={() => setCostTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'month' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>This Month</button>
+                                    </div>
+                                )}
                             </div>
                             <div className="mt-4">
                                 <div className="text-3xl font-black text-slate-800 tracking-tight">
@@ -483,7 +599,9 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                                 </div>
                                 <div className="h-1.5 w-12 bg-emerald-500 rounded-full mt-4 mb-4" />
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    {costTimeframe === 'today' ? 'Total today' : 'Total this month'}
+                                    {isCustomRange
+                                        ? `${dateFrom} to ${dateTo}`
+                                        : (costTimeframe === 'today' ? 'Total today' : 'Total this month')}
                                 </p>
                             </div>
                         </div>
@@ -506,10 +624,16 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                                         UNITS<br />CONSUMED
                                     </span>
                                 </div>
-                                <div className="flex bg-blue-100/50 rounded-lg p-1">
-                                    <button onClick={() => setUnitsTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${unitsTimeframe === 'today' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-blue-600'}`}>Today</button>
-                                    <button onClick={() => setUnitsTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${unitsTimeframe === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-blue-600'}`}>This Month</button>
-                                </div>
+                                {isCustomRange ? (
+                                    <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-blue-600 shadow-sm">
+                                        Custom Range
+                                    </span>
+                                ) : (
+                                    <div className="flex bg-blue-100/50 rounded-lg p-1">
+                                        <button onClick={() => setUnitsTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${unitsTimeframe === 'today' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-blue-600'}`}>Today</button>
+                                        <button onClick={() => setUnitsTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${unitsTimeframe === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-blue-600'}`}>This Month</button>
+                                    </div>
+                                )}
                             </div>
                             <div className="mt-4">
                                 <div className="text-3xl font-black text-slate-800 tracking-tight">
@@ -517,7 +641,9 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                                 </div>
                                 <div className="h-1.5 w-12 bg-blue-500 rounded-full mt-4 mb-4" />
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    {unitsTimeframe === 'today' ? 'Total consumption' : 'Total consumption'}
+                                    {isCustomRange
+                                        ? `${dateFrom} to ${dateTo}`
+                                        : (unitsTimeframe === 'today' ? 'Total consumption' : 'Total consumption')}
                                 </p>
                             </div>
                         </div>
@@ -561,7 +687,11 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                     <div>
                         <h3 className="text-lg font-bold text-slate-900">Consumption Trends</h3>
-                        <p className="text-sm text-slate-500">Analyze usage patterns over time</p>
+                        <p className="text-sm text-slate-500">
+                            {isCustomRange
+                                ? `Showing data from ${dateFrom} to ${dateTo}`
+                                : 'Analyze usage patterns over time'}
+                        </p>
                     </div>
                     <div className="flex items-center gap-4">
                         {/* Metric Toggle */}

@@ -92,8 +92,8 @@ export async function GET(
             supabase.from('tickets').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('created_at', periodFilter || '1970-01-01').eq('status', 'pending_validation'),
             // 6. Resolved/Closed (Every non-active outcome in the cohort)
             supabase.from('tickets').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('created_at', periodFilter || '1970-01-01').in('status', resolvedStatuses),
-            // 7. SLA Breached
-            supabase.from('tickets').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('created_at', periodFilter || '1970-01-01').eq('sla_breached', true),
+            // 7. SLA Breached (deadline passed and still active)
+            supabase.from('tickets').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('created_at', periodFilter || '1970-01-01').or(`sla_deadline.lt.${new Date().toISOString()},sla_breached.eq.true`).not('status', 'in', '("resolved","closed")'),
             // 8. Urgent Open
             supabase.from('tickets').select('id', { count: 'exact', head: true }).in('property_id', propertyIds).gte('created_at', periodFilter || '1970-01-01').in('priority', urgentPriorities).not('status', 'in', `(${resolvedStatuses.map(s => `"${s}"`).join(',')},"pending_validation")`),
             // 9. Validation Features

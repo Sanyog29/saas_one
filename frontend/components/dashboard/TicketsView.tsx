@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { CheckCircle2, Filter, Plus, X, Loader2, Activity, Search, Calendar, User, ChevronDown, Check } from 'lucide-react';
+import { CheckCircle2, Filter, Plus, X, Loader2, Activity, Search, Calendar, User, ChevronDown, Check, Building2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Custom styled dropdown to replace native <select>
@@ -89,6 +89,7 @@ interface Ticket {
     assigned_to?: string;
     organization: { id: string; name: string; code: string };
     property: { id: string; name: string; code: string } | null;
+    floor_number?: number | string | null;
     property_id?: string;
     creator: { id: string; full_name: string; email: string; property_memberships?: { role: string; property_id: string }[] };
     assignee: { id: string; full_name: string; email: string; user_photo_url?: string | null } | null;
@@ -133,10 +134,17 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
     const [raisedByFilter, setRaisedByFilter] = useState(searchParams.get('raisedBy') || 'all');
     const [resolvedByFilter, setResolvedByFilter] = useState(searchParams.get('resolvedBy') || 'all');
     const [assignedToFilter, setAssignedToFilter] = useState(searchParams.get('assignedTo') || 'all');
+    const [floorFilter, setFloorFilter] = useState(searchParams.get('floor') || 'all');
     const [allAssignees, setAllAssignees] = useState<{ id: string; name: string }[]>([]);
+    const [allFloors, setAllFloors] = useState<(string | number)[]>([]);
+    const [hasUnspecified, setHasUnspecified] = useState(false);
+
+    const isHighAdmin = membership?.org_role === 'org_super_admin' || 
+                        membership?.org_role === 'owner' ||
+                        membership?.properties.some(p => p.role === 'property_admin');
     
     // Note: The cacheKey logic heavily depends on the filter values so changes will cleanly bypass legacy state cache instances
-    const cacheKey = `tickets-${propertyId ?? organizationId ?? 'all'}-${statusFilter}-${categoryFilter}-${raisedByFilter}-${assignedToFilter}-${searchQuery}-${dateFrom}-${dateTo}`;
+    const cacheKey = `tickets-${propertyId ?? organizationId ?? 'all'}-${statusFilter}-${categoryFilter}-${raisedByFilter}-${resolvedByFilter}-${assignedToFilter}-${floorFilter}-${sortBy}-${searchQuery}-${dateFrom}-${dateTo}`;
 
     // SWR (Stale-While-Revalidate): Show cached data INSTANTLY, revalidate silently in background
     const cachedTickets = getCachedData(cacheKey);
@@ -250,6 +258,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
         setOrDelete('raisedBy', raisedByFilter, 'all');
         setOrDelete('resolvedBy', resolvedByFilter, 'all');
         setOrDelete('assignedTo', assignedToFilter, 'all');
+        setOrDelete('floor', floorFilter, 'all');
 
         if (changed) {
             const newUrl = `${pathname}?${currentParams.toString()}`;
@@ -291,7 +300,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
     useEffect(() => {
         const currentParams = JSON.stringify({
             statusFilter, propertyId, organizationId,
-            raisedByFilter, assignedToFilter, categoryFilter,
+            raisedByFilter, assignedToFilter, floorFilter, categoryFilter,
             searchQuery, dateFrom, dateTo
         });
 
@@ -315,7 +324,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
         }, searchQuery ? 300 : 0); // Only debounce for text search
 
         return () => clearTimeout(timer);
-    }, [statusFilter, propertyId, organizationId, raisedByFilter, assignedToFilter, categoryFilter, searchQuery, dateFrom, dateTo]);
+    }, [statusFilter, propertyId, organizationId, raisedByFilter, resolvedByFilter, assignedToFilter, floorFilter, sortBy, categoryFilter, searchQuery, dateFrom, dateTo]);
 
     const buildUrl = (offset: number, limitOverride?: number) => {
         const params = new URLSearchParams();
@@ -324,6 +333,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
         else if (statusFilter === 'internal') params.set('isInternal', 'true');
         else if (statusFilter === 'sla_breached') params.set('slaBreached', 'true');
         else if (statusFilter === 'pending_validation') params.set('status', 'pending_validation');
+        else if (statusFilter === 'materials_required') params.set('materialsRequired', 'true');
         else if (statusFilter !== 'all') params.set('status', statusFilter);
 
         if (propertyId) params.set('propertyId', propertyId);
@@ -335,6 +345,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
         if (dateFrom) params.set('dateFrom', dateFrom);
         if (dateTo) params.set('dateTo', dateTo);
         if (searchQuery.trim()) params.set('search', searchQuery.trim());
+        if (floorFilter !== 'all') params.set('floorNumber', floorFilter);
 
         params.set('limit', String(limitOverride || PAGE_SIZE));
         params.set('offset', String(offset));
@@ -366,7 +377,14 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
         }
         try {
             const res = await fetch(buildUrl(offset, limitOverride));
-            if (!res.ok) return;
+            if (!res.ok) {
+                console.error('[TicketsView] API error:', res.status, res.statusText);
+                if (isInitial) {
+                    setTickets([]);
+                    setTotalCount(0);
+                }
+                return;
+            }
             const data = await res.json();
             const fetched: Ticket[] = data.tickets || [];
             const total: number = data.total ?? fetched.length;
@@ -399,6 +417,8 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
             const data = await res.json();
             setAllCreators((data.creators || []).map((u: any) => ({ id: u.id, name: u.full_name })));
             setAllAssignees((data.assignees || []).map((u: any) => ({ id: u.id, name: u.full_name })));
+            setAllFloors(data.floors || []);
+            setHasUnspecified(data.hasUnspecified || false);
         } catch (error) {
             console.error('Error fetching filter options:', error);
         }
@@ -522,7 +542,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
 
     const raisedByUsers = allCreators;
 
-    const hasActiveFilters = dateFrom !== '' || dateTo !== '' || raisedByFilter !== 'all' || resolvedByFilter !== 'all' || assignedToFilter !== 'all' || sortBy !== 'newest';
+    const hasActiveFilters = dateFrom !== '' || dateTo !== '' || raisedByFilter !== 'all' || resolvedByFilter !== 'all' || assignedToFilter !== 'all' || floorFilter !== 'all' || sortBy !== 'newest';
 
     const filteredTickets = useMemo(() => {
         // dateFrom, dateTo, raisedByFilter, assignedToFilter, categoryFilter, searchQuery
@@ -558,6 +578,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
                             <option value="waitlist">Waitlist</option>
                             <option value="sla_breached">SLA Breached</option>
                             <option value="pending_validation">Pending Validation</option>
+                            <option value="materials_required">{isHighAdmin ? 'Material Requested' : 'Material Assigned'}</option>
                             <option value="tenant_raised">Client Raised</option>
                             <option value="internal">Internal</option>
                         </select>
@@ -690,15 +711,30 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
                     />
                 )}
 
+                {/* Floor Filter */}
+                {allFloors.length > 0 && (
+                    <FilterDropdown
+                        value={floorFilter}
+                        onChange={setFloorFilter}
+                        options={[
+                            { value: 'all', label: 'All Floors' },
+                            ...(hasUnspecified ? [{ value: 'unspecified', label: 'Unspecified' }] : []),
+                            ...allFloors.map(f => ({ value: String(f), label: f === 0 ? 'Ground Floor' : f === -1 ? 'Basement 1' : f === -2 ? 'Basement 2' : `Floor ${f}` }))
+                        ]}
+                        icon={<Building2 className="w-3.5 h-3.5" />}
+                    />
+                )}
+
                 {/* Clear Filters */}
                 {hasActiveFilters && (
                     <button
-                        onClick={() => { setDateFrom(''); setDateTo(''); setRaisedByFilter('all'); setResolvedByFilter('all'); setAssignedToFilter('all'); setSortBy('newest'); }}
+                        onClick={() => { setDateFrom(''); setDateTo(''); setRaisedByFilter('all'); setResolvedByFilter('all'); setAssignedToFilter('all'); setFloorFilter('all'); setSortBy('newest'); }}
                         className="h-9 px-4 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-full transition-all border border-rose-200 bg-white shadow-sm"
                     >
                         Clear Filters
                     </button>
                 )}
+
             </div>
 
             {/* Tickets List */}

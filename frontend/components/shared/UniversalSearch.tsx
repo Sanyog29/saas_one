@@ -43,16 +43,16 @@ const MODULES = [
     { id: 'm-dash', label: 'Dashboard', sublabel: 'Overview & Statistics', route: '/dashboard', type: 'module' as const, keywords: ['overview', 'stats', 'home'], icon: LayoutDashboard },
     { id: 'm-tick', label: 'Tickets', sublabel: 'Manage requests & issues', route: '/dashboard?tab=requests', type: 'module' as const, keywords: ['requests', 'complaints', 'issues'], icon: Ticket },
     { id: 'm-flow', label: 'Flow Map', sublabel: 'Ticket lifecycle visualizer', route: '/flow-map', type: 'module' as const, keywords: ['process', 'topology', 'link'], icon: GitMerge },
-    { id: 'm-inv', label: 'Inventory', sublabel: 'Stock & procurement', route: '/dashboard?tab=stock_reports', type: 'module' as const, keywords: ['stock', 'items', 'warehouse'], icon: Package },
+    { id: 'm-inv', label: 'Stock', sublabel: 'Stock & buying', route: '/dashboard?tab=stock_reports', type: 'module' as const, keywords: ['stock', 'items', 'warehouse'], icon: Package },
     { id: 'm-user', label: 'Staff & Users', sublabel: 'Manage team members', route: '/dashboard?tab=users', type: 'module' as const, keywords: ['people', 'employees', 'directory'], icon: Users },
     { id: 'm-prop', label: 'Properties', sublabel: 'Building management', route: '/dashboard?tab=properties', type: 'module' as const, keywords: ['buildings', 'sites', 'locations'], icon: Building2 },
     { id: 'm-repo', label: 'Reports', sublabel: 'Analytics & exports', route: '/dashboard?tab=reports', type: 'module' as const, keywords: ['stats', 'export', 'data'], icon: FileBarChart },
-    { id: 'm-dies', label: 'Diesel', sublabel: 'Fuel tracking & logs', route: '/dashboard?tab=diesel', type: 'module' as const, keywords: ['fuel', 'generator', 'dg'], icon: Fuel },
+    { id: 'm-dies', label: 'Diesel', sublabel: 'Fuel tracking & logs', route: '/dashboard?tab=diesel', type: 'module' as const, keywords: ['fuel', 'generator', 'dg', 'diesel generator'], icon: Fuel },
     { id: 'm-elec', label: 'Electricity', sublabel: 'Energy consumption', route: '/dashboard?tab=electricity', type: 'module' as const, keywords: ['power', 'meters', 'utility'], icon: Zap },
-    { id: 'm-ppm', label: 'PPM', sublabel: 'Preventative maintenance', route: '/dashboard?tab=ppm', type: 'module' as const, keywords: ['maintenance', 'schedule', 'periodic'], icon: Wrench },
+    { id: 'm-ppm', label: 'Planned Preventive Maintenance', sublabel: 'Routine maintenance schedule', route: '/dashboard?tab=ppm', type: 'module' as const, keywords: ['maintenance', 'schedule', 'periodic', 'ppm'], icon: Wrench },
     { id: 'm-room', label: 'Meeting Rooms', sublabel: 'Booking & management', route: '/dashboard?tab=rooms', type: 'module' as const, keywords: ['booking', 'calendar', 'office'], icon: Calendar },
     { id: 'm-vend', label: 'Vendors', sublabel: 'Partner management', route: '/dashboard?tab=vendors', type: 'module' as const, keywords: ['suppliers', 'partners', 'external'], icon: Handshake },
-    { id: 'm-che', label: 'Checklist', sublabel: 'Daily inspections', route: '/dashboard?tab=checklist', type: 'module' as const, keywords: ['inspections', 'audit', 'daily'], icon: ClipboardCheck },
+    { id: 'm-che', label: 'Checklist', sublabel: 'Daily inspections', route: '/dashboard?tab=checklist', type: 'module' as const, keywords: ['inspections', 'audit', 'daily', 'sop'], icon: ClipboardCheck },
     { id: 'm-sett', label: 'Settings', sublabel: 'System configuration', route: '/dashboard?tab=settings', type: 'module' as const, keywords: ['config', 'profile', 'admin'], icon: Settings }
 ];
 

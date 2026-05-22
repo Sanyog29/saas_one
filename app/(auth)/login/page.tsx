@@ -370,7 +370,8 @@ function AuthContent() {
                             alt="Autopilot Logo"
                             width={260}
                             height={90}
-                            className="object-contain dark:invert transition-smooth"
+                            className="object-contain transition-smooth"
+                            priority
                         />
                     </div>
 

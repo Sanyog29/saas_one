@@ -24,8 +24,7 @@ export async function GET(request: NextRequest) {
         let query = supabase
             .from('meeting_room_bookings')
             .select('*, meeting_room:meeting_rooms(name, photo_url, location), tenant:users!user_id(full_name, email)')
-            .order('booking_date', { ascending: true })
-            .order('start_time', { ascending: true });
+            .order('created_at', { ascending: false });
 
         if (propertyId) query = query.eq('property_id', propertyId);
         if (tenantId) query = query.eq('user_id', tenantId);
@@ -82,19 +81,36 @@ export async function POST(request: NextRequest) {
         const [endH, endM] = endTime.split(':').map(Number);
         const durationHours = (endH * 60 + endM - startH * 60 - startM) / 60;
 
-        // 3. Check credit balance
-        const { data: credit } = await supabaseAdmin
-            .from('meeting_room_credits')
-            .select('id, remaining_hours')
-            .eq('property_id', propertyId)
+        // 3. Check credit balance (Check Company first, then User)
+        const { data: companyMember } = await supabaseAdmin
+            .from('company_members')
+            .select('company_id')
             .eq('user_id', user.id)
-            .single();
+            .maybeSingle();
+
+        let creditQuery = supabaseAdmin
+            .from('meeting_room_credits')
+            .select('id, remaining_hours, company_id, user_id')
+            .eq('property_id', propertyId);
+
+        if (companyMember?.company_id) {
+            creditQuery = creditQuery.eq('company_id', companyMember.company_id);
+        } else {
+            creditQuery = creditQuery.eq('user_id', user.id);
+        }
+
+        const { data: credit } = await creditQuery.maybeSingle();
 
         // Only enforce credits if a record exists (admins without a record can still book)
-        if (credit && credit.remaining_hours < durationHours) {
+        if (credit) {
+          const remaining = credit.remaining_hours !== null && credit.remaining_hours !== undefined ? Number(credit.remaining_hours) : 0;
+          const needed = Number(durationHours);
+          console.log('Credit check - remaining:', remaining, 'needed:', needed, 'company_id:', credit.company_id);
+          if (remaining < needed) {
             return NextResponse.json({
-                error: `Insufficient meeting room credits. You need ${durationHours}h but only have ${credit.remaining_hours}h remaining.`
+              error: `Insufficient ${credit.company_id ? 'company ' : ''}meeting room credits. You need ${needed}h but only have ${remaining}h remaining.`
             }, { status: 402 });
+          }
         }
 
         // 4. Check for overlaps (double check)
@@ -116,13 +132,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Room is already booked for this time slot' }, { status: 409 });
         }
 
-        // 3. Create booking
+        // 5. Fetch organization_id for consistency
+        const { data: property } = await supabaseAdmin
+            .from('properties')
+            .select('organization_id')
+            .eq('id', propertyId)
+            .single();
+
+        // 6. Create booking
         const { data: booking, error: insertError } = await supabase
             .from('meeting_room_bookings')
             .insert({
                 meeting_room_id: meetingRoomId,
                 property_id: propertyId,
+                organization_id: property?.organization_id || null,
                 user_id: user.id,
+                company_id: companyMember?.company_id || null, // Link booking to company too
                 booking_date: date,
                 start_time: startTime,
                 end_time: endTime,
@@ -136,24 +161,28 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Failed to create booking' }, { status: 500 });
         }
 
-        // Deduct credits if tenant has a credit record
+        // Deduct credits atomically if tenant has a credit record (either individual or company)
         if (credit) {
-            const newRemaining = Math.max(0, credit.remaining_hours - durationHours);
-            await supabaseAdmin
-                .from('meeting_room_credits')
-                .update({ remaining_hours: newRemaining, updated_at: new Date().toISOString() })
-                .eq('id', credit.id);
+            const { data: deductionResult, error: deductionError } = await supabaseAdmin.rpc(
+                'deduct_meeting_room_credit',
+                {
+                    p_credit_id: credit.id,
+                    p_hours: durationHours,
+                    p_booking_id: booking.id,
+                    p_user_id: user.id,
+                    p_notes: `Booking deduction (${credit.company_id ? 'Company' : 'Individual'}): ${durationHours}h`
+                }
+            );
 
-            await supabaseAdmin.from('meeting_room_credit_log').insert({
-                credit_id: credit.id,
-                user_id: user.id,
-                action: 'deducted',
-                hours_changed: -durationHours,
-                hours_after: newRemaining,
-                booking_id: booking.id,
-                performed_by: user.id,
-                notes: `Booking deduction: ${durationHours}h`,
-            });
+            if (deductionError || !deductionResult) {
+                // Rollback: delete the booking since credit deduction failed
+                await supabaseAdmin.from('meeting_room_bookings').delete().eq('id', booking.id);
+                const errorMessage = deductionError ? `RPC Error: ${deductionError.message} | Details: ${deductionError.details} | Hint: ${deductionError.hint}` : 'RPC returned false/null';
+                console.error('Deduction failed:', errorMessage);
+                return NextResponse.json({
+                    error: `Insufficient ${credit.company_id ? 'company ' : ''}meeting room credits. You need ${durationHours}h but only have ${credit.remaining_hours}h remaining. [Debug: ${errorMessage}]`
+                }, { status: 402 });
+            }
         }
 
         // Trigger notification asynchronously
