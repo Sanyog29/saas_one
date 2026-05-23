@@ -54,15 +54,31 @@ export async function PATCH(
             updated_at: new Date().toISOString(),
         };
 
-        // If marking as done, record who completed it and when
+        let finalAttachments = existing.attachments || {};
+        
         if (status === 'done') {
-            updatePayload.completed_by = completed_by || user.id;
-            updatePayload.completed_at = new Date().toISOString();
+            const completingUserId = completed_by || user.id;
+            
+            // Fetch the completing user's full name
+            const { data: completingUser } = await supabaseAdmin
+                .from('users')
+                .select('full_name')
+                .eq('id', completingUserId)
+                .single();
+
+            finalAttachments = {
+                ...finalAttachments,
+                completed_by: completingUserId,
+                completed_by_name: completingUser?.full_name || 'Team Member',
+                completed_at: new Date().toISOString()
+            };
         } else if (status !== undefined && status !== 'done') {
             // Clear completion info if un-marking as done
-            updatePayload.completed_by = null;
-            updatePayload.completed_at = null;
+            const { completed_by, completed_by_name, completed_at, ...restAttachments } = finalAttachments;
+            finalAttachments = restAttachments;
         }
+
+        updatePayload.attachments = finalAttachments;
 
         const { data, error } = await supabase
             .from('ppm_schedules')

@@ -334,10 +334,10 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                     </button>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-3 justify-end flex-1 pl-4">
                     {/* Property selector removed — managed by global layout */}
                     {/* Legend */}
-                    <div className="hidden md:flex items-center gap-3 text-xs font-semibold">
+                    <div className="hidden md:flex flex-wrap items-center gap-3 text-xs font-semibold">
                         {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
                             <span key={key} className="flex items-center gap-1.5">
                                 <span className={`w-2.5 h-2.5 rounded-full ${cfg.color}`} />
@@ -346,7 +346,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                         ))}
                     </div>
                     {/* Frequency Legend */}
-                    <div className="hidden lg:flex items-center gap-3 text-xs font-semibold pl-3 border-l border-slate-200">
+                    <div className="hidden lg:flex flex-wrap items-center gap-3 text-xs font-semibold pl-3 border-l border-slate-200">
                         {Object.entries(FREQUENCY_CONFIG).map(([key, cfg]) => (
                             <span key={key} className="flex items-center gap-1.5">
                                 <span className={`w-2.5 h-2.5 rounded-full ${cfg.bg.replace('bg-', 'bg-').replace('50', '500')}`} />
@@ -356,7 +356,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                     </div>
                     <button
                         onClick={() => setShowUpload(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primary/90 transition-all"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-bold rounded-xl hover:bg-primary/90 transition-all flex-shrink-0 ml-2"
                     >
                         <Upload className="w-4 h-4" />
                         Upload Excel
@@ -482,9 +482,9 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                                 {task.location && <p className="text-[10px] text-slate-500">📍 {task.location}</p>}
                                                 <p className={`text-[10px] font-bold mt-0.5 ${fcfg.text}`}>{fcfg.label}</p>
                                                 {task.remark && <p className="text-[10px] text-slate-500 italic mt-1">"{task.remark}"</p>}
-                                                {task.status === 'done' && task.completed_by_user && (
+                                                {task.status === 'done' && task.attachments?.completed_by_name && (
                                                     <p className="text-[10px] text-emerald-600 font-bold mt-1">
-                                                        Completed by {task.completed_by_user.full_name}
+                                                        Completed by {task.attachments.completed_by_name}
                                                     </p>
                                                 )}
                                                 {task.verification_status === 'submitted' && (
@@ -533,10 +533,10 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                 {selectedTask.location && <p><span className="font-bold">Location:</span> {selectedTask.location}</p>}
                                 {selectedTask.maker && <p><span className="font-bold">Maker:</span> {selectedTask.maker} {selectedTask.checker ? `· Checker: ${selectedTask.checker}` : ''}</p>}
                                 <p><span className="font-bold">Planned:</span> {new Date(selectedTask.planned_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                                {selectedTask.status === 'done' && selectedTask.completed_by_user && (
+                                {selectedTask.status === 'done' && selectedTask.attachments?.completed_by_name && (
                                     <p className="text-emerald-700 font-semibold">
-                                        <span className="font-bold">Completed by:</span> {selectedTask.completed_by_user.full_name}
-                                        {selectedTask.completed_at && ` · ${new Date(selectedTask.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                                        <span className="font-bold">Completed by:</span> {selectedTask.attachments.completed_by_name}
+                                        {selectedTask.attachments.completed_at && ` · ${new Date(selectedTask.attachments.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
                                     </p>
                                 )}
                             </div>

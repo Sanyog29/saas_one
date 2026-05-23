@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
         let query = supabase
             .from('ppm_schedules')
-            .select('*, maintenance_vendors(id, company_name, contact_person, phone, is_active), completed_by_user:users!completed_by(full_name, email)')
+            .select('*, maintenance_vendors(id, company_name, contact_person, phone, is_active)')
             .eq('organization_id', organizationId)
             .gte('planned_date', startDate)
             .lte('planned_date', endDate)
