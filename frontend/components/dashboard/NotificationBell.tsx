@@ -28,6 +28,7 @@ export default function NotificationBell({ align = 'right' }: NotificationBellPr
     const [isOpen, setIsOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const supabase = useMemo(() => createClient(), []);
     const router = useRouter();
 
@@ -51,17 +52,17 @@ export default function NotificationBell({ align = 'right' }: NotificationBellPr
     }, [supabase]);
 
     useEffect(() => {
-        let channel: ReturnType<typeof supabase.channel>;
+        let isMounted = true;
 
         const init = async () => {
             await fetchNotifications();
 
             // Get user again for real-time filter
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            if (!isMounted || !user) return;
 
             // Subscribe to real-time updates for THIS user only
-            channel = supabase
+            const channel = supabase
                 .channel(`notif-bell-${user.id}`)
                 .on(
                     'postgres_changes',
@@ -78,6 +79,9 @@ export default function NotificationBell({ align = 'right' }: NotificationBellPr
                     }
                 )
                 .subscribe();
+
+            console.log('Subscribing notification channel (NotificationBell)');
+            channelRef.current = channel;
         };
 
         init();
@@ -91,7 +95,12 @@ export default function NotificationBell({ align = 'right' }: NotificationBellPr
         document.addEventListener("mousedown", handleClickOutside);
 
         return () => {
-            if (channel) supabase.removeChannel(channel);
+            isMounted = false;
+            if (channelRef.current) {
+                console.log('Removing notification channel (NotificationBell)');
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, [fetchNotifications, supabase]);

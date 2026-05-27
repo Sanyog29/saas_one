@@ -160,9 +160,9 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
                 return d.getMonth() === monthDate.getMonth() && d.getFullYear() === monthDate.getFullYear();
             });
             const total = mt.length;
-            const closed = mt.filter(t => t.status === 'resolved' || t.status === 'closed').length;
+            const closed = mt.filter(t => t.status === 'resolved' || t.status === 'closed' || t.status === 'pending_validation').length;
             const pending = mt.filter(t => t.status === 'pending_validation').length;
-            const open = total - closed - pending;
+            const open = total - closed;
             const rate = total > 0 ? (closed / total) * 100 : 0;
             const cats: Record<string, number> = {};
             mt.forEach(t => { const c = t.category || 'Other'; cats[c] = (cats[c] || 0) + 1; });
@@ -176,6 +176,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
         const periodTotal = monthsStats.reduce((s, m) => s + m.total, 0);
         const periodClosed = monthsStats.reduce((s, m) => s + m.closed, 0);
         const periodOpen = monthsStats.reduce((s, m) => s + m.open, 0);
+        const periodPending = monthsStats.reduce((s, m) => s + m.pending, 0);
         const periodRate = periodTotal > 0 ? (periodClosed / periodTotal) * 100 : 0;
         const periodCats: Record<string, number> = {};
         tickets.filter(t => {
@@ -284,6 +285,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
             periodTotal,
             periodClosed,
             periodOpen,
+            periodPending,
             periodRate,
             periodTopCategories,
             latestStats,
@@ -292,7 +294,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
             sparklines: {
                 allTime: getDailyTrend(tickets),
                 period: getDailyTrend(periodTickets),
-                closed: getDailyTrend(periodTickets.filter(t => t.status === 'resolved' || t.status === 'closed')),
+                closed: getDailyTrend(periodTickets.filter(t => t.status === 'resolved' || t.status === 'closed' || t.status === 'pending_validation')),
                 open: getDailyTrend(periodTickets.filter(t => t.status !== 'resolved' && t.status !== 'closed' && t.status !== 'pending_validation')),
             }
         });
@@ -332,7 +334,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
                         datasets: [
                             { label: 'Total', data: monthsStats.map((m: MonthStats) => m.total), backgroundColor: '#475569', borderRadius: 2, barPercentage: 0.75, categoryPercentage: 0.7 },
                             { label: 'Closed', data: monthsStats.map((m: MonthStats) => m.closed), backgroundColor: '#22C55E', borderRadius: 2, barPercentage: 0.75, categoryPercentage: 0.7 },
-                            { label: 'Open', data: monthsStats.map((m: MonthStats) => m.open + m.pending), backgroundColor: '#F97316', borderRadius: 2, barPercentage: 0.75, categoryPercentage: 0.7 }
+                            { label: 'Open', data: monthsStats.map((m: MonthStats) => m.open), backgroundColor: '#F97316', borderRadius: 2, barPercentage: 0.75, categoryPercentage: 0.7 }
                         ]
                     },
                     options: {
@@ -582,7 +584,7 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
         </div>
     );
 
-    const { property, allTimeTotal, monthsStats, periodTotal, periodClosed, periodOpen, periodRate, periodTopCategories, latestStats, firstStats } = dashboardData;
+    const { property, allTimeTotal, monthsStats, periodTotal, periodClosed, periodOpen, periodPending, periodRate, periodTopCategories, latestStats, firstStats } = dashboardData;
     const bestMonth = [...monthsStats].sort((a: MonthStats, b: MonthStats) => b.rate - a.rate)[0] as MonthStats;
     const topPeriodCat = periodTopCategories[0] || { name: 'N/A', count: 0 };
     const periodRateStr = periodRate.toFixed(1) + '%';
@@ -702,41 +704,41 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-                    {/* All-time total */}
+                    {/* KPI 1: Period total */}
                     <div className="relative bg-[#F8FAFC] border-t-[3px] border-[#1e3a8a] py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between">
                         <div className="relative z-10">
-                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">TOTAL TICKETS MANAGED</p>
-                            <h2 className="text-[28px] leading-none font-bold text-[#1e3a8a] mb-1">{allTimeTotal}</h2>
-                            <p className="text-[9px] text-[#94a3b8] font-medium">All time · {label} shown below</p>
-                        </div>
-                        <div className="absolute right-0 bottom-0 w-[45%] h-[40%] opacity-40"><canvas id={`${idPrefix}-sparkline1`}></canvas></div>
-                    </div>
-                    {/* Period total */}
-                    <div className="relative bg-[#F8FAFC] border-t-[3px] border-[#22c55e] py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between">
-                        <div className="relative z-10">
-                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">PERIOD TICKETS</p>
-                            <h2 className="text-[28px] leading-none font-bold text-[#22c55e] mb-1">{periodTotal}</h2>
-                            <p className="text-[9px] text-[#94a3b8] font-medium">{periodClosed} closed · {periodOpen} open</p>
+                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">TOTAL TICKETS ({label})</p>
+                            <h2 className="text-[28px] leading-none font-bold text-[#1e3a8a] mb-1">{periodTotal}</h2>
+                            <p className="text-[9px] text-[#94a3b8] font-medium">All time total: {allTimeTotal}</p>
                         </div>
                         <div className="absolute right-0 bottom-0 w-[45%] h-[40%] opacity-40"><canvas id={`${idPrefix}-sparkline2`}></canvas></div>
                     </div>
-                    {/* Period closure rate */}
-                    <div className={`relative bg-[#F8FAFC] border-t-[3px] ${periodRate >= 95 ? 'border-[#22c55e]' : 'border-[#eab308]'} py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between`}>
+                    {/* KPI 2: Period Open */}
+                    <div className="relative bg-[#F8FAFC] border-t-[3px] border-[#f97316] py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between">
                         <div className="relative z-10">
-                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">PERIOD CLOSURE RATE</p>
-                            <h2 className={`text-[28px] leading-none font-bold mb-1 ${periodRate >= 95 ? 'text-[#22c55e]' : 'text-[#1e3a8a]'}`}>{periodRateStr}</h2>
-                            <p className="text-[9px] text-[#94a3b8] font-medium">Best: {bestMonth?.shortLabel} {bestMonth?.rate.toFixed(1)}%</p>
+                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">OPEN / WIP TICKETS</p>
+                            <h2 className="text-[28px] leading-none font-bold text-[#f97316] mb-1">{periodOpen}</h2>
+                            <p className="text-[9px] text-[#94a3b8] font-medium">Requires attention</p>
+                        </div>
+                        <div className="absolute right-0 bottom-0 w-[45%] h-[40%] opacity-40"><canvas id={`${idPrefix}-sparkline4`}></canvas></div>
+                    </div>
+                    {/* KPI 3: Period Closed */}
+                    <div className="relative bg-[#F8FAFC] border-t-[3px] border-[#22c55e] py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between">
+                        <div className="relative z-10">
+                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">CLOSED TICKETS</p>
+                            <h2 className="text-[28px] leading-none font-bold text-[#22c55e] mb-1">{periodClosed}</h2>
+                            <p className="text-[9px] text-[#94a3b8] font-medium">Includes pending validation</p>
                         </div>
                         <div className="absolute right-0 bottom-0 w-[45%] h-[40%] opacity-40"><canvas id={`${idPrefix}-sparkline3`}></canvas></div>
                     </div>
-                    {/* Open tickets latest month */}
-                    <div className="relative bg-[#F8FAFC] border-t-[3px] border-[#f97316] py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between">
+                    {/* KPI 4: Period closure rate */}
+                    <div className={`relative bg-[#F8FAFC] border-t-[3px] ${periodRate >= 95 ? 'border-[#22c55e]' : 'border-[#eab308]'} py-3 px-4 shadow-sm border-x border-b border-[#e2e8f0] overflow-hidden flex justify-between`}>
                         <div className="relative z-10">
-                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">OPEN TICKETS ({latestStats?.shortLabel?.toUpperCase()})</p>
-                            <h2 className="text-[28px] leading-none font-bold text-[#1e3a8a] mb-1">{latestStats?.open ?? 0}</h2>
-                            <p className="text-[9px] text-[#94a3b8] font-medium">Requires immediate attention</p>
+                            <p className="text-[10px] uppercase tracking-wider text-[#64748b] font-bold mb-1">CLOSURE RATE</p>
+                            <h2 className={`text-[28px] leading-none font-bold mb-1 ${periodRate >= 95 ? 'text-[#22c55e]' : 'text-[#1e3a8a]'}`}>{periodRateStr}</h2>
+                            <p className="text-[9px] text-[#94a3b8] font-medium">Target: 95%</p>
                         </div>
-                        <div className="absolute right-0 bottom-0 w-[45%] h-[40%] opacity-40"><canvas id={`${idPrefix}-sparkline4`}></canvas></div>
+                        <div className="absolute right-0 bottom-0 w-[45%] h-[40%] opacity-40"><canvas id={`${idPrefix}-sparkline1`}></canvas></div>
                     </div>
                 </div>
 

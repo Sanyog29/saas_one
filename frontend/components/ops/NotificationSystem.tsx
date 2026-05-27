@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, X, Info, AlertTriangle, CheckCircle, Share, PlusSquare } from 'lucide-react';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -31,7 +31,7 @@ function useIOSInstallPrompt() {
             || ('standalone' in window.navigator && (window.navigator as any).standalone === true);
 
         // Only show if iOS + not installed + user hasn't dismissed it this session
-        const dismissed = sessionStorage.getItem('ios_install_dismissed');
+        const dismissed = localStorage.getItem('ios_install_dismissed');
         if (isIOS && !isStandalone && !dismissed) {
             // Delay slightly so it doesn't pop up immediately on load
             // Use a local variable to check mount status for safe async update
@@ -48,7 +48,7 @@ function useIOSInstallPrompt() {
 
     const dismiss = () => {
         setShouldShow(false);
-        sessionStorage.setItem('ios_install_dismissed', '1');
+        localStorage.setItem('ios_install_dismissed', '1');
     };
 
     return { shouldShow, dismiss };
@@ -76,7 +76,7 @@ function useNotificationPermission() {
         if (Notification.permission === 'default' && !isIOS) {
             let isMounted = true;
             const timer = setTimeout(() => {
-                const dismissed = sessionStorage.getItem('notif_prompt_dismissed');
+                const dismissed = localStorage.getItem('notif_prompt_dismissed');
                 if (dismissed) return;
                 if (isMounted) setShouldShowPrompt(true);
             }, 5000);
@@ -100,7 +100,7 @@ function useNotificationPermission() {
 
     const dismiss = () => {
         setShouldShowPrompt(false);
-        sessionStorage.setItem('notif_prompt_dismissed', '1');
+        localStorage.setItem('notif_prompt_dismissed', '1');
     };
 
     return { permission, shouldShowPrompt, requestPermission, dismiss };
@@ -111,6 +111,7 @@ function useNotificationPermission() {
  */
 export default function NotificationSystem() {
     const [notifications, setNotifications] = useState<Notification[]>([]);
+    const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
     const supabase = createClient();
     const router = useRouter();
 
@@ -135,9 +136,11 @@ export default function NotificationSystem() {
     };
 
     useEffect(() => {
+        let isMounted = true;
+
         const setupSubscription = async () => {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user) return;
+            if (!isMounted || !user) return;
 
             // Subscribe to real-time notifications for THIS user only
             const channel = supabase
@@ -163,14 +166,19 @@ export default function NotificationSystem() {
                 )
                 .subscribe();
 
-            return channel;
+            console.log('Subscribing notification channel (NotificationSystem)');
+            channelRef.current = channel;
         };
 
-        let activeChannel: any;
-        setupSubscription().then(channel => activeChannel = channel);
+        setupSubscription();
 
         return () => {
-            if (activeChannel) supabase.removeChannel(activeChannel);
+            isMounted = false;
+            if (channelRef.current) {
+                console.log('Removing notification channel (NotificationSystem)');
+                supabase.removeChannel(channelRef.current);
+                channelRef.current = null;
+            }
         };
     }, []);
 

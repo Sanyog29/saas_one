@@ -51,6 +51,7 @@ export async function proxy(request: NextRequest) {
         '/_next',
         '/favicon.ico',
         '/manifest.json', // Allow manifest file for PWA
+        '/firebase-messaging-sw.js', // Allow service worker
     ]
 
     // Check if current path is public
@@ -139,6 +140,6 @@ export const config = {
          * - api routes (each handles its own auth - adding middleware here adds ~200-500ms per request)
          * - public folder files
          */
-        '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|/api/.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp|json|webmanifest)$).*)',
+        '/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|firebase-messaging-sw.js|/api/.*|.*\\.(?:svg|png|jpg|jpeg|gif|webp|json|webmanifest)$).*)',
     ],
 }

@@ -77,7 +77,7 @@ export default function RequestsReportPage() {
     const [displayLimit, setDisplayLimit] = useState(15);
     const [isDownloading, setIsDownloading] = useState(false);
     const [downloadProgress, setDownloadProgress] = useState(0);
-    const [reportFilter, setReportFilter] = useState<'all' | 'open' | 'pending_validation' | 'internal'>('all');
+    const [reportFilter, setReportFilter] = useState<'all' | 'open' | 'pending_validation' | 'internal' | 'external'>('all');
     const isCancelledRef = useRef(false);
     const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
     const [isDownloadingSelected, setIsDownloadingSelected] = useState(false);
@@ -140,6 +140,7 @@ export default function RequestsReportPage() {
             if (reportFilter === 'open') return !['closed', 'resolved', 'pending_validation'].includes(t.status);
             if (reportFilter === 'pending_validation') return t.status === 'pending_validation';
             if (reportFilter === 'internal') return t.internal === true;
+            if (reportFilter === 'external') return t.internal === false || t.internal === null;
             return true;
         });
         const floorCountMap: Record<string, number> = {};
@@ -221,6 +222,7 @@ export default function RequestsReportPage() {
         const statusPart = reportFilter === 'open' ? 'Open_WIP_Ticket'
             : reportFilter === 'pending_validation' ? 'Needs_Review'
             : reportFilter === 'internal' ? 'Internal'
+            : reportFilter === 'external' ? 'Client'
             : 'All_Tickets';
         const periodPart = dateMode === 'custom' && customStart && customEnd
             ? `${customStart}_to_${customEnd}`
@@ -1164,10 +1166,11 @@ export default function RequestsReportPage() {
         if (reportFilter === 'open') return !['closed', 'resolved', 'pending_validation'].includes(t.status);
         if (reportFilter === 'pending_validation') return t.status === 'pending_validation';
         if (reportFilter === 'internal') return t.internal === true;
+        if (reportFilter === 'external') return t.internal === false || t.internal === null;
         return true; // 'all'
     }) : [];
 
-    const filterLabel = reportFilter === 'open' ? 'Open & In Progress' : reportFilter === 'pending_validation' ? 'Pending Validation' : reportFilter === 'internal' ? 'Internal Tickets' : 'All Tickets';
+    const filterLabel = reportFilter === 'open' ? 'Open & In Progress' : reportFilter === 'pending_validation' ? 'Pending Validation' : reportFilter === 'internal' ? 'Internal Tickets' : reportFilter === 'external' ? 'Client Tickets' : 'All Tickets';
 
     // Group filtered tickets by floor for display
     const ticketsByFloor: Record<string, TicketData[]> = {};
@@ -1176,6 +1179,13 @@ export default function RequestsReportPage() {
         if (!ticketsByFloor[floor]) ticketsByFloor[floor] = [];
         ticketsByFloor[floor].push(ticket);
     });
+
+    // Dynamic KPIs based on filtered tickets
+    const filtTotal = filteredTickets.length;
+    const filtClosed = filteredTickets.filter(t => t.status === 'closed' || t.status === 'resolved').length;
+    const filtPending = filteredTickets.filter(t => t.status === 'pending_validation').length;
+    const filtOpen = filteredTickets.filter(t => !['closed', 'resolved', 'pending_validation'].includes(t.status)).length;
+    const filtRate = filtTotal > 0 ? ((filtClosed / filtTotal) * 100).toFixed(1) : '0';
 
     return (
         <>
@@ -1362,6 +1372,12 @@ export default function RequestsReportPage() {
                                     </button>
                                 )}
                                 <button
+                                    onClick={() => setReportFilter('external')}
+                                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${reportFilter === 'external' ? 'bg-white text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                >
+                                    Client / Tenant
+                                </button>
+                                <button
                                     onClick={() => setReportFilter('internal')}
                                     className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${reportFilter === 'internal' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                                 >
@@ -1378,7 +1394,7 @@ export default function RequestsReportPage() {
                                 export csv
                             </button>
                             {isDownloading ? (
-                                <div className="flex items-center bg-[#D4C3B0] text-white px-4 py-2 rounded-full text-sm font-semibold shadow-sm gap-3">
+                                <div className="flex items-center bg-[#1e1e2e] text-white px-4 py-2 rounded-full text-sm font-semibold shadow-sm gap-3">
                                     <div className="flex items-center gap-2">
                                         <Loader2 className="w-4 h-4 animate-spin" />
                                         <span>Downloading {downloadProgress}%</span>
@@ -1388,7 +1404,7 @@ export default function RequestsReportPage() {
                                             e.stopPropagation();
                                             isCancelledRef.current = true;
                                         }}
-                                        className="hover:bg-black/10 rounded-full p-1 transition-colors"
+                                        className="hover:bg-white/20 rounded-full p-1 transition-colors"
                                         title="Stop downloading"
                                     >
                                         <X className="w-4 h-4" />
@@ -1397,7 +1413,7 @@ export default function RequestsReportPage() {
                             ) : (
                                 <button
                                     onClick={handleDirectDownloadPDF}
-                                    className="flex items-center gap-2 bg-[#D4C3B0] text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-[#C4B3A0] transition-colors shadow-sm disabled:opacity-50"
+                                    className="flex items-center gap-2 bg-[#1e1e2e] text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-[#2d2d3d] transition-colors shadow-sm disabled:opacity-50"
                                     disabled={!reportData || filteredTickets.length === 0}
                                 >
                                     <Download className="w-4 h-4" />
@@ -1405,16 +1421,6 @@ export default function RequestsReportPage() {
                                     {isDownloading && <span className="ml-1">({downloadProgress}%)</span>}
                                 </button>
                             )}
-                            {/* Executive Dashboard PDF */}
-                            <button
-                                onClick={handleExecutivePDF}
-                                disabled={!reportData || isDownloadingExec}
-                                className="flex items-center gap-2 bg-[#1e1e2e] text-white px-4 py-2 rounded-full text-sm font-semibold hover:bg-[#2d2d3d] transition-colors shadow-sm disabled:opacity-50"
-                                title="Generate Executive Impact Dashboard PDF"
-                            >
-                                {isDownloadingExec ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
-                                Executive Report
-                            </button>
 
                             {/* Download Selected PDF button */}
                             {isDownloadingSelected ? (
@@ -1490,26 +1496,26 @@ export default function RequestsReportPage() {
                                         {/* KPI Cards */}
                                         <div className="grid grid-cols-4 gap-4 mb-6 kpi-grid">
                                             <div className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border-2 border-slate-300 kpi-card">
-                                                <span className="text-3xl font-black text-[#1e293b] mb-1">{reportData.kpis.totalSnags}</span>
+                                                <span className="text-3xl font-black text-[#1e293b] mb-1">{filtTotal}</span>
                                                 <span className="text-[10px] uppercase tracking-widest font-black text-slate-400">Total Tickets</span>
                                             </div>
                                             <div className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border-2 border-emerald-400 kpi-card">
-                                                <span className="text-3xl font-black text-emerald-600 mb-1">{reportData.kpis.closedSnags}</span>
+                                                <span className="text-3xl font-black text-emerald-600 mb-1">{filtClosed}</span>
                                                 <span className="text-[10px] uppercase tracking-widest font-black text-emerald-600/70">Closed</span>
                                             </div>
                                             <div className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border-2 border-amber-400 kpi-card">
-                                                <span className="text-3xl font-black text-amber-600 mb-1">{reportData.kpis.openSnags}</span>
+                                                <span className="text-3xl font-black text-amber-600 mb-1">{filtOpen}</span>
                                                 <span className="text-[10px] uppercase tracking-widest font-black text-amber-600/70">Open / WIP</span>
                                             </div>
                                             <div className="flex flex-col items-center justify-center p-6 text-center bg-white rounded-xl border-2 border-slate-300 kpi-card">
                                                 {reportData.kpis.isValidationEnabled ? (
                                                     <>
-                                                        <span className="text-3xl font-black text-[#AA895F] mb-1">{reportData.kpis.pendingValidationCount}</span>
+                                                        <span className="text-3xl font-black text-[#AA895F] mb-1">{filtPending}</span>
                                                         <span className="text-[10px] uppercase tracking-widest font-black text-[#AA895F]/70">Pending Validation</span>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <span className="text-3xl font-black text-[#1e293b] mb-1">{reportData.kpis.closureRate}%</span>
+                                                        <span className="text-3xl font-black text-[#1e293b] mb-1">{filtRate}%</span>
                                                         <span className="text-[10px] uppercase tracking-widest font-black text-slate-400">Closure Rate</span>
                                                     </>
                                                 )}
