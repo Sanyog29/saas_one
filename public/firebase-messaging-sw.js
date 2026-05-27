@@ -14,7 +14,7 @@ self.addEventListener('activate', (event) => {
 
 // ─── Firebase Init ────────────────────────────────────────────────────────────────
 firebase.initializeApp({
-    apiKey: "AIzaSyBg_kCQu-zs9NNxu-rowj-2j1zGLD9_IVQ",
+    apiKey: "AIzaSyC4qQTo0vM71suNGbtGtjOWIdK8bPzqe98",
     authDomain: "web-notification-52467.firebaseapp.com",
     projectId: "web-notification-52467",
     messagingSenderId: "758776193487",
