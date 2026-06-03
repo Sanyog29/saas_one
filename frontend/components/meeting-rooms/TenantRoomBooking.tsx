@@ -32,6 +32,27 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
     const [isSearching, setIsSearching] = useState(!getCachedData(roomsCacheKey));
     const [myBookings, setMyBookings] = useState<any[]>(() => getCachedData(historyCacheKey) || []);
     
+    // Slots state
+    const slotsCacheKey = `meeting-room-slots`;
+    const [slots, setSlots] = useState<any[]>(() => getCachedData(slotsCacheKey) || []);
+
+    const fetchSlots = useCallback(async () => {
+        try {
+            const res = await fetch('/api/meeting-room-slots');
+            const data = await res.json();
+            if (res.ok) {
+                setSlots(data.slots || []);
+                setCachedData(slotsCacheKey, data.slots || []);
+            }
+        } catch (err) {
+            console.error('Error fetching slots:', err);
+        }
+    }, [setCachedData, slotsCacheKey]);
+
+    useEffect(() => {
+        if (slots.length === 0) fetchSlots();
+    }, [fetchSlots, slots.length]);
+
     const wheelRef = useRef<HTMLDivElement>(null);
     const [pendingBooking, setPendingBooking] = useState<{ room: any; slot: any } | null>(null);
     const [isBooking, setIsBooking] = useState(false);
@@ -387,6 +408,7 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
                                 <RoomCard
                                     key={room.id}
                                     room={room}
+                                    slots={slots}
                                     selectedDate={formatLocalDate(selectedDate)}
                                     onBook={handleBook}
                                 />

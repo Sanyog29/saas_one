@@ -2,13 +2,14 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
-import { Plus, Loader2, Search, Filter, Calendar as CalendarIcon, LayoutGrid, Zap, Building2 } from 'lucide-react';
+import { Plus, Loader2, Search, Filter, Calendar as CalendarIcon, LayoutGrid, Zap, Building2, Clock } from 'lucide-react';
 import RoomCard from './RoomCard';
 import RoomFormModal from './RoomFormModal';
 import AdminBookingList from './AdminBookingList';
 import TenantRoomBooking from './TenantRoomBooking';
 import AdminCreditsPanel from './AdminCreditsPanel';
 import CompanyKanban from '../companies/CompanyKanban';
+import AdminSlotManager from './AdminSlotManager';
 
 interface Room {
     id: string;
@@ -33,7 +34,7 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
     const [isLoading, setIsLoading] = useState(!getCachedData(cacheKey));
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
-    const [activeTab, setActiveTab] = useState<'rooms' | 'bookings' | 'book' | 'credits' | 'companies'>('rooms');
+    const [activeTab, setActiveTab] = useState<'rooms' | 'bookings' | 'slots' | 'book' | 'credits' | 'companies'>('rooms');
     const [organizationId, setOrganizationId] = useState<string>('');
 
     // Modal state
@@ -140,6 +141,13 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
                             <span className="truncate">Company Credits</span>
                         </button>
                         <button
+                            onClick={() => setActiveTab('slots')}
+                            className={`flex flex-1 items-center justify-center gap-0.5 md:gap-2 px-0.5 md:px-6 py-2 rounded-lg md:rounded-xl text-[6.5px] md:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'slots' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Clock className="w-2.5 h-2.5 md:w-3.5 md:h-3.5" />
+                            <span className="truncate">Slots</span>
+                        </button>
+                        <button
                             onClick={() => setActiveTab('book')}
                             className={`flex flex-1 items-center justify-center gap-0.5 md:gap-2 px-0.5 md:px-6 py-2 rounded-lg md:rounded-xl text-[6.5px] md:text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'book' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                         >
@@ -225,6 +233,8 @@ const AdminRoomManager: React.FC<AdminRoomManagerProps> = ({ propertyId, user })
                 <AdminCreditsPanel propertyId={propertyId} />
             ) : activeTab === 'companies' ? (
                 <CompanyKanban propertyId={propertyId} organizationId={organizationId} />
+            ) : activeTab === 'slots' ? (
+                <AdminSlotManager />
             ) : (
                 <TenantRoomBooking propertyId={propertyId} user={user} hideHeader={true} />
             )}
