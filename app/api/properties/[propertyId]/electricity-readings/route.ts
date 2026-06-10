@@ -92,8 +92,18 @@ async function computeReadingWithCost(supabase: any, propertyId: string, reading
     let tariffRate = 0;
     let tariffId = null;
 
-    // Get active multiplier if not explicitly provided AND no value override was sent
-    if (!multiplierId && !reading.multiplier_value_used && reading.meter_id) {
+    // Priority for multiplier value:
+    // 1. If multiplier_value_used is explicitly provided (e.g., from CSV import), use ONLY that value
+    // 2. If multiplier_id is provided but NOT multiplier_value_used, fetch the value from DB
+    // 3. If neither is provided, fetch from active multiplier for the meter
+
+    if (reading.multiplier_value_used !== undefined && reading.multiplier_value_used !== null) {
+        // CSV/Import provided explicit multiplier value - use it DIRECTLY
+        // This value should NOT be multiplied by CT/PT ratios from meter multiplier
+        multiplierValue = reading.multiplier_value_used;
+        // Don't fetch meter multiplier - use the CSV value as-is
+    } else if (!multiplierId && reading.meter_id) {
+        // No explicit multiplier provided, fetch active multiplier from meter
         const { data: multiplierData } = await supabase
             .rpc('get_active_multiplier', {
                 p_meter_id: reading.meter_id,
@@ -105,7 +115,7 @@ async function computeReadingWithCost(supabase: any, propertyId: string, reading
             multiplierValue = multiplierData[0].multiplier_value || 1;
         }
     } else if (multiplierId) {
-        // Fetch the multiplier value
+        // Fetch the multiplier value from the provided multiplier_id
         const { data: mult } = await supabase
             .from('meter_multipliers')
             .select('multiplier_value')

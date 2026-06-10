@@ -71,13 +71,20 @@ export async function GET(request: NextRequest) {
 
         // Fetch users using admin client (bypasses RLS)
         if (propertyId) {
+            // First get the orgId for this property
+            const { data: propertyData } = await adminClient
+                .from('properties')
+                .select('organization_id')
+                .eq('id', propertyId)
+                .single();
+
             const { data, error } = await adminClient
                 .from('property_memberships')
                 .select(`
                     role,
                     is_active,
                     created_at,
-                    property:properties (id, name),
+                    property:properties (id, name, organization_id),
                     user:users (id, full_name, email, user_photo_url, phone)
                 `)
                 .eq('property_id', propertyId)
@@ -93,12 +100,13 @@ export async function GET(request: NextRequest) {
                 propertyRole: item.role,
                 propertyName: item.property?.name,
                 propertyId: item.property?.id,
+                organizationId: item.property?.organization_id,
                 is_active: item.is_active,
                 joined_at: item.created_at,
                 phone: item.user.phone
             })).sort((a: any, b: any) => a.full_name.localeCompare(b.full_name))
 
-            return NextResponse.json({ users })
+            return NextResponse.json({ users, organizationId: propertyData?.organization_id })
         }
 
         // Org-level: fetch both org memberships and property memberships

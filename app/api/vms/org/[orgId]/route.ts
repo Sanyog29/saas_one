@@ -37,7 +37,7 @@ export async function GET(
     }
 
     // Date filter
-    if (date) {
+    if (date && date !== 'all') {
         let filterType = date;
         let customStr = undefined;
         if (!['today', 'yesterday', 'week', 'month'].includes(date)) {
@@ -64,7 +64,7 @@ export async function GET(
     let statsStart: string | null = null;
     let statsEnd: string | null = null;
 
-    if (date) {
+    if (date && date !== 'all') {
         let filterType = date;
         let customStr = undefined;
         if (!['today', 'yesterday', 'week', 'month'].includes(date)) {

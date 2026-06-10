@@ -25,45 +25,56 @@ interface VisitorLog {
     status: string;
 }
 
-type DateFilter = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+type DateFilter = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';
 
 const VMSAdminDashboard: React.FC<VMSAdminDashboardProps> = ({ propertyId }) => {
     const [visitors, setVisitors] = useState<VisitorLog[]>([]);
     const [stats, setStats] = useState({ total_today: 0, checked_in: 0, checked_out: 0 });
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'checked_in' | 'checked_out'>('all');
     const [dateFilter, setDateFilter] = useState<DateFilter>('today');
     const [customDate, setCustomDate] = useState('');
     const [selectedVisitor, setSelectedVisitor] = useState<VisitorLog | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
 
+    // Debounce search query - wait 300ms after user stops typing before searching
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
     useEffect(() => {
         fetchVisitors();
         const interval = setInterval(fetchVisitors, 30000);
         return () => clearInterval(interval);
-    }, [propertyId, statusFilter, dateFilter, customDate]);
+    }, [propertyId, statusFilter, dateFilter, customDate, debouncedSearch]);
 
     const fetchVisitors = async () => {
         try {
             const params = new URLSearchParams({ status: statusFilter });
 
             // Apply date filter
-            if (dateFilter === 'today') {
-                params.append('date', 'today');
-            } else if (dateFilter === 'yesterday') {
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                params.append('date', yesterday.toISOString().split('T')[0]);
-            } else if (dateFilter === 'week') {
-                params.append('date', 'week');
-            } else if (dateFilter === 'month') {
-                params.append('date', 'month');
-            } else if (dateFilter === 'custom' && customDate) {
-                params.append('date', customDate);
+            if (dateFilter !== 'all') {
+                if (dateFilter === 'today') {
+                    params.append('date', 'today');
+                } else if (dateFilter === 'yesterday') {
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    params.append('date', yesterday.toISOString().split('T')[0]);
+                } else if (dateFilter === 'week') {
+                    params.append('date', 'week');
+                } else if (dateFilter === 'month') {
+                    params.append('date', 'month');
+                } else if (dateFilter === 'custom' && customDate) {
+                    params.append('date', customDate);
+                }
             }
 
-            if (searchQuery) params.append('search', searchQuery);
+            if (debouncedSearch) params.append('search', debouncedSearch);
 
             const response = await fetch(`/api/vms/${propertyId}?${params}`);
             const data = await response.json();
@@ -336,7 +347,7 @@ const VMSAdminDashboard: React.FC<VMSAdminDashboardProps> = ({ propertyId }) => 
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search by ID or Name"
+                                placeholder="Name, ID or mobile"
                                 className="pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:border-slate-400 focus:ring-0 w-48"
                             />
                         </form>
@@ -348,6 +359,7 @@ const VMSAdminDashboard: React.FC<VMSAdminDashboardProps> = ({ propertyId }) => 
                                 onChange={(e) => setDateFilter(e.target.value as DateFilter)}
                                 className="appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                             >
+                                <option value="all">All Time</option>
                                 <option value="today">Today</option>
                                 <option value="yesterday">Yesterday</option>
                                 <option value="week">This Week</option>

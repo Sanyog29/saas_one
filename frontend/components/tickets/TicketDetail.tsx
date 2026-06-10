@@ -226,9 +226,18 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
     // SLA helpers
     const slaDeadline = parseDate(ticket?.sla_deadline as string);
     const resolvedAt = parseDate(ticket?.resolved_at as string);
-    const isResolved = ['resolved', 'closed'].includes(ticket?.status as string);
-    const referenceTime = isResolved && resolvedAt ? resolvedAt : new Date();
-    const isSLABreached = Boolean(ticket?.sla_breached) || (slaDeadline !== null && slaDeadline < referenceTime);
+    // Normalize status for comparison
+    const normalizedTicketStatus = (ticket?.status as string || '').toLowerCase().replace(/\s+/g, '_');
+    const isResolved = ['resolved', 'closed'].includes(normalizedTicketStatus);
+    const isPendingValidation = normalizedTicketStatus === 'pending_validation';
+
+    // For pending_validation, work is done by our side - show resolution info
+    // For resolved/closed, use resolved time. For active tickets, use current time.
+    const referenceTime = isResolved && resolvedAt ? resolvedAt : (isPendingValidation ? (resolvedAt || new Date()) : new Date());
+
+    // SLA is only "active" for open/assigned/in_progress tickets
+    // For pending_validation, show that MST side has completed
+    const isSLABreached = Boolean(ticket?.sla_breached) || (slaDeadline !== null && slaDeadline < referenceTime && !isPendingValidation);
     const breachMs = slaDeadline && isSLABreached ? referenceTime.getTime() - slaDeadline.getTime() : 0;
 
     const formatDuration = (ms: number): string => {
@@ -237,6 +246,18 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
         const h = Math.floor(totalMins / 60);
         const m = totalMins % 60;
         return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    };
+
+    // Format time in local format
+    const formatLocalTime = (date: Date | null) => {
+        if (!date) return 'Pending';
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
     };
 
     const openUpload = (type: 'before' | 'after') => {
@@ -325,9 +346,10 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                             }`}>
                             {(ticket.priority as string)?.charAt(0).toUpperCase() + (ticket.priority as string)?.slice(1)} Priority
                         </span>
-                        <span className={`px-3 py-1 rounded-full text-sm ${ticket.status === 'resolved' ? 'bg-green-500/20 text-green-400' :
-                            ticket.status === 'in_progress' ? 'bg-cyan-500/20 text-cyan-400' :
-                                'bg-gray-500/20 text-gray-400'
+                        <span className={`px-3 py-1 rounded-full text-sm ${normalizedTicketStatus === 'resolved' ? 'bg-green-500/20 text-green-400' :
+                            normalizedTicketStatus === 'in_progress' ? 'bg-cyan-500/20 text-cyan-400' :
+                                normalizedTicketStatus === 'pending_validation' ? 'bg-violet-500/20 text-violet-400' :
+                                    'bg-gray-500/20 text-gray-400'
                             }`}>
                             {(ticket.status as string)?.replace(/_/g, ' ')}
                         </span>
@@ -361,25 +383,33 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
 
                 {/* SLA Breach Section — shown whenever sla_deadline exists */}
                 {slaDeadline && (
-                    <div className={`border rounded-xl p-6 ${isSLABreached
-                        ? 'bg-red-500/10 border-red-500/40'
-                        : 'bg-[#161b22] border-[#30363d]'}`}>
+                    <div className={`border rounded-xl p-6 ${isPendingValidation
+                        ? 'bg-violet-500/10 border-violet-500/40'
+                        : isSLABreached
+                            ? 'bg-red-500/10 border-red-500/40'
+                            : 'bg-[#161b22] border-[#30363d]'}`}>
                         {/* Header */}
                         <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
                             <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isSLABreached ? 'bg-red-500/20' : 'bg-green-500/20'}`}>
-                                    <AlertTriangle className={`w-5 h-5 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`} />
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isPendingValidation ? 'bg-violet-500/20' : isSLABreached ? 'bg-red-500/20' : 'bg-green-500/20'}`}>
+                                    {isPendingValidation ? (
+                                        <CheckCircle className="w-5 h-5 text-violet-400" />
+                                    ) : (
+                                        <AlertTriangle className={`w-5 h-5 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`} />
+                                    )}
                                 </div>
                                 <div>
-                                    <span className={`text-[10px] font-black uppercase tracking-widest ${isSLABreached ? 'text-red-500' : 'text-slate-400'}`}>
-                                        {isSLABreached ? 'Late' : 'On Track'}
+                                    <span className={`text-[10px] font-black uppercase tracking-widest ${isPendingValidation ? 'text-violet-400' : isSLABreached ? 'text-red-500' : 'text-slate-400'}`}>
+                                        {isPendingValidation ? 'Work Completed' : isSLABreached ? 'Late' : 'On Track'}
                                     </span>
                                     <p className="text-sm text-gray-500">
-                                        {isSLABreached
-                                            ? isResolved
-                                                ? 'Ticket was resolved after the SLA deadline'
-                                                : 'Service Level Agreement has not been met'
-                                            : 'Ticket is within the agreed service time'}
+                                        {isPendingValidation
+                                            ? 'MST has completed the work. Awaiting client validation.'
+                                            : isSLABreached
+                                                ? isResolved
+                                                    ? 'Ticket was resolved after the SLA deadline'
+                                                    : 'Service Level Agreement has not been met'
+                                                : 'Ticket is within the agreed service time'}
                                     </p>
                                 </div>
                             </div>
@@ -389,6 +419,12 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                                     <div className="text-base font-black text-white">{(ticket?.sla_hours as number) || 24}h</div>
                                     <div className="text-[9px] text-gray-500 uppercase tracking-wide">SLA Target</div>
                                 </div>
+                                {isPendingValidation && resolvedAt && (
+                                    <div className="px-3 py-2 bg-violet-500/15 border border-violet-500/30 rounded-lg text-center">
+                                        <div className="text-base font-black text-violet-400">Completed</div>
+                                        <div className="text-[9px] text-gray-500 uppercase tracking-wide">At {formatLocalTime(resolvedAt)}</div>
+                                    </div>
+                                )}
                                 {isSLABreached && (
                                     <div className="px-3 py-2 bg-red-500/15 border border-red-500/30 rounded-lg text-center">
                                         <div className="text-base font-black text-red-400">{formatDuration(breachMs)}</div>
@@ -446,21 +482,38 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                                     </div>
                                 )}
 
-                                {/* Deadline row — highlighted red if breached */}
-                                <div className={`flex items-center gap-3 rounded-lg px-3 py-2 -ml-2 ${isSLABreached ? 'bg-red-500/10' : 'bg-green-500/10'}`}>
-                                    <div className={`w-3.5 h-3.5 rounded-full border-2 border-[#0d1117] flex-shrink-0 z-10 ${isSLABreached ? 'bg-red-500' : 'bg-green-500'}`} />
-                                    <div className="flex-1 flex items-center justify-between min-w-0">
-                                        <span className={`text-sm font-bold ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
-                                            SLA Deadline {isSLABreached ? '— Missed' : '— Met'}
-                                        </span>
-                                        <span className={`text-xs font-bold ml-2 flex-shrink-0 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
-                                            {slaDeadline?.toLocaleString()}
-                                        </span>
+                                {/* Pending Validation - Work Completed by MST */}
+                                {isPendingValidation && resolvedAt && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-3.5 h-3.5 rounded-full bg-violet-500 border-2 border-[#0d1117] flex-shrink-0 z-10" />
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <span className="text-sm text-violet-400 font-medium">
+                                                Work Completed by MST
+                                            </span>
+                                            <span className="text-xs text-violet-400/70 ml-2 flex-shrink-0">
+                                                {formatLocalTime(resolvedAt)}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
+
+                                {/* Deadline row — highlighted only for active tickets that breached */}
+                                {!isPendingValidation && (
+                                    <div className={`flex items-center gap-3 rounded-lg px-3 py-2 -ml-2 ${isSLABreached ? 'bg-red-500/10' : 'bg-green-500/10'}`}>
+                                        <div className={`w-3.5 h-3.5 rounded-full border-2 border-[#0d1117] flex-shrink-0 z-10 ${isSLABreached ? 'bg-red-500' : 'bg-green-500'}`} />
+                                        <div className="flex-1 flex items-center justify-between min-w-0">
+                                            <span className={`text-sm font-bold ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
+                                                SLA Deadline {isSLABreached ? '— Missed' : '— Met'}
+                                            </span>
+                                            <span className={`text-xs font-bold ml-2 flex-shrink-0 ${isSLABreached ? 'text-red-400' : 'text-green-400'}`}>
+                                                {slaDeadline?.toLocaleString()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Resolved (if applicable) */}
-                                {!!resolvedAt && (
+                                {!!resolvedAt && !isPendingValidation && (
                                     <div className="flex items-center gap-3">
                                         <div className="w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-[#0d1117] flex-shrink-0 z-10" />
                                         <div className="flex-1 flex items-center justify-between min-w-0">

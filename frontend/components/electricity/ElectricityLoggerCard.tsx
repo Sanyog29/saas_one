@@ -26,6 +26,7 @@ interface MeterMultiplier {
     pt_ratio_secondary: number;
     meter_constant: number;
     effective_from: string;
+    effective_to?: string | null;
     reason?: string;
 }
 
@@ -121,19 +122,26 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
     const numericClosing = closingReading === '' ? 0 : parseFloat(closingReading);
     const hasValidReading = !isNaN(numericClosing) && closingReading !== '' && numericClosing > openingReading;
 
-    // Set default multiplier
+    // Set default multiplier and pre-fill editor when first loaded
     useEffect(() => {
         if (multipliers.length > 0 && !selectedMultiplierId) {
             const active = multipliers[0]; // First is most recent
             setSelectedMultiplierId(active.id);
-            setSelectedMultiplierValue(active.multiplier_value || 1);
+            setSelectedMultiplierValue(active.multiplier_value ?? 1);
 
-            // Pre-fill editor
-            setEditCtPrimary(active.ct_ratio_primary?.toString() || '200');
-            setEditCtSecondary(active.ct_ratio_secondary?.toString() || '5');
-            setEditPtPrimary(active.pt_ratio_primary?.toString() || '11000');
-            setEditPtSecondary(active.pt_ratio_secondary?.toString() || '110');
-            setEditMeterConstant(active.meter_constant?.toString() || '1');
+            // Pre-fill editor with safe defaults (handle null/undefined)
+            const safeCtPrimary = active.ct_ratio_primary != null ? String(active.ct_ratio_primary) : '200';
+            const safeCtSecondary = active.ct_ratio_secondary != null ? String(active.ct_ratio_secondary) : '5';
+            const safePtPrimary = active.pt_ratio_primary != null ? String(active.pt_ratio_primary) : '11000';
+            const safePtSecondary = active.pt_ratio_secondary != null ? String(active.pt_ratio_secondary) : '110';
+            const safeMeterConstant = active.meter_constant != null && !isNaN(Number(active.meter_constant)) ? String(active.meter_constant) : '1';
+
+            setEditCtPrimary(safeCtPrimary);
+            setEditCtSecondary(safeCtSecondary);
+            setEditPtPrimary(safePtPrimary);
+            setEditPtSecondary(safePtSecondary);
+            setEditMeterConstant(safeMeterConstant);
+            // Keep effective_from as default (today) - user can change it manually
         }
     }, [multipliers, selectedMultiplierId]);
 
@@ -307,15 +315,17 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
         if (!onMultiplierSave) return;
         setIsSavingMultiplier(true);
 
-        const cP = parseFloat(editCtPrimary) || 0;
-        const cS = parseFloat(editCtSecondary) || 1;
-        const pP = parseFloat(editPtPrimary) || 0;
-        const pS = parseFloat(editPtSecondary) || 1;
-        const mC = parseFloat(editMeterConstant) || 0;
-
-        const computedVal = (cP / (cS || 1)) * (pP / (pS || 1)) * mC;
+        // Parse as numbers with safe defaults
+        const cP = parseFloat(editCtPrimary) || 200;
+        const cS = parseFloat(editCtSecondary) || 5;
+        const pP = parseFloat(editPtPrimary) || 11000;
+        const pS = parseFloat(editPtSecondary) || 110;
+        const mC = parseFloat(editMeterConstant) || 1;
 
         try {
+            // If selected multiplier is from the list, we're editing it directly
+            const updateExistingId = selectedMultiplierId;
+
             await onMultiplierSave(meter.id, {
                 meter_id: meter.id,
                 ct_ratio_primary: cP,
@@ -323,9 +333,10 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                 pt_ratio_primary: pP,
                 pt_ratio_secondary: pS,
                 meter_constant: mC,
-                multiplier_value: computedVal,
                 effective_from: editEffectiveFrom,
-                reason: editReason
+                reason: editReason,
+                updateExistingId, // If provided, update this specific multiplier
+                retroactivelyUpdate: true // Apply new multiplier to existing readings
             });
             setIsFlipped(false);
         } catch (error) {

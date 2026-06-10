@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Users, LogIn, LogOut, Search, FileDown,
     User, Truck, Building2, X, ChevronDown, MapPin
@@ -32,7 +32,7 @@ interface Property {
     name: string;
 }
 
-type DateFilter = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
+type DateFilter = 'today' | 'yesterday' | 'week' | 'month' | 'custom' | 'all';
 
 const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }) => {
     const [visitors, setVisitors] = useState<VisitorLog[]>([]);
@@ -40,6 +40,7 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
     const [stats, setStats] = useState({ total_visitors: 0, checked_in: 0, checked_out: 0 });
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'checked_in' | 'checked_out'>('all');
     const [dateFilter, setDateFilter] = useState<DateFilter>('today');
     const [customDate, setCustomDate] = useState('');
@@ -47,11 +48,19 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
     const [selectedVisitor, setSelectedVisitor] = useState<VisitorLog | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
 
+    // Debounce search query - wait 300ms after user stops typing before searching
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
     const fetchVisitors = useCallback(async () => {
         try {
             const params = new URLSearchParams({ status: statusFilter, date: dateFilter });
             if (dateFilter === 'custom' && customDate) params.set('customDate', customDate);
-            if (searchQuery) params.set('search', searchQuery);
+            if (debouncedSearch) params.set('search', debouncedSearch);
             if (propertyFilter) params.set('propertyId', propertyFilter);
 
             const res = await fetch(`/api/vms/org/${orgId}?${params}`);
@@ -67,13 +76,13 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
         } finally {
             setIsLoading(false);
         }
-    }, [orgId, statusFilter, dateFilter, customDate, searchQuery, propertyFilter]);
+    }, [orgId, statusFilter, dateFilter, customDate, debouncedSearch, propertyFilter]);
 
     useEffect(() => {
         fetchVisitors();
         const interval = setInterval(fetchVisitors, 30000);
         return () => clearInterval(interval);
-    }, [fetchVisitors]);
+    }, [fetchVisitors, debouncedSearch]);
 
     const handleForceCheckout = async (visitor: VisitorLog) => {
         if (!confirm(`Force checkout ${visitor.name}?`)) return;
@@ -175,7 +184,7 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
                         </div>
                         <div>
                             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                {dateFilter === 'today' ? 'Total Today' : dateFilter === 'yesterday' ? 'Total Yesterday' : dateFilter === 'week' ? 'Total This Week' : dateFilter === 'month' ? 'Total This Month' : 'Total Visitors'}
+                                {dateFilter === 'all' ? 'Total All Time' : dateFilter === 'today' ? 'Total Today' : dateFilter === 'yesterday' ? 'Total Yesterday' : dateFilter === 'week' ? 'Total This Week' : dateFilter === 'month' ? 'Total This Month' : 'Total'}
                             </p>
                             <p className="text-3xl font-black text-slate-900">{stats.total_visitors}</p>
                         </div>
@@ -256,6 +265,7 @@ const VMSOrgVisitorDashboard: React.FC<VMSOrgVisitorDashboardProps> = ({ orgId }
                                 onChange={(e) => setDateFilter(e.target.value as DateFilter)}
                                 className="appearance-none pl-3 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                             >
+                                <option value="all">All Time</option>
                                 <option value="today">Today</option>
                                 <option value="yesterday">Yesterday</option>
                                 <option value="week">This Week</option>

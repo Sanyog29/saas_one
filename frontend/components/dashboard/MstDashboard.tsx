@@ -1138,10 +1138,13 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
                                     status={
                                         ['closed', 'resolved'].includes(ticket.status) ? 'COMPLETED' :
                                             ticket.status === 'in_progress' ? 'IN_PROGRESS' :
-                                                ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
+                                                ticket.status === 'pending_validation' ? 'PENDING_VALIDATION' :
+                                                    ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
                                     }
                                     ticketNumber={ticket.ticket_number}
                                     createdAt={ticket.created_at}
+                                    resolvedAt={(ticket as any).resolved_at}
+                                    updatedAt={(ticket as any).updated_at}
                                     assignedTo={ticket.assignee?.full_name}
                                     assigneePhotoUrl={(ticket.assignee as any)?.user_photo_url}
                                     photoUrl={ticket.photo_before_url}
@@ -1423,10 +1426,13 @@ const RequestsTab = ({
                                         status={
                                             ['closed', 'resolved'].includes(ticket.status) ? 'COMPLETED' :
                                                 ticket.status === 'in_progress' ? 'IN_PROGRESS' :
-                                                    ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
+                                                    ticket.status === 'pending_validation' ? 'PENDING_VALIDATION' :
+                                                        ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
                                         }
                                         ticketNumber={ticket.ticket_number}
                                         createdAt={ticket.created_at}
+                                        resolvedAt={(ticket as any).resolved_at}
+                                        updatedAt={(ticket as any).updated_at}
                                         assignedTo={ticket.assignee?.full_name}
                                         assigneePhotoUrl={(ticket.assignee as any)?.user_photo_url}
                                         photoUrl={ticket.photo_before_url}

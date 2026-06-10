@@ -1047,11 +1047,14 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
                                     status={
                                         ['closed', 'resolved'].includes(ticket.status) ? 'COMPLETED' :
                                             ticket.status === 'in_progress' ? 'IN_PROGRESS' :
-                                                ticket.assigned_to === userId ? 'ASSIGNED' : // Explicit check for my assignment
-                                                    ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
+                                                ticket.status === 'pending_validation' ? 'PENDING_VALIDATION' :
+                                                    ticket.assigned_to === userId ? 'ASSIGNED' : // Explicit check for my assignment
+                                                        ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
                                     }
                                     ticketNumber={ticket.ticket_number}
                                     createdAt={ticket.created_at}
+                                    resolvedAt={(ticket as any).resolved_at}
+                                    updatedAt={(ticket as any).updated_at}
                                     assignedTo={ticket.assignee?.full_name}
                                     assigneePhotoUrl={(ticket.assignee as any)?.user_photo_url}
                                     photoUrl={ticket.photo_before_url}
@@ -1181,10 +1184,13 @@ const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick,
                                     status={
                                         ['closed', 'resolved'].includes(ticket.status) ? 'COMPLETED' :
                                             ticket.status === 'in_progress' ? 'IN_PROGRESS' :
-                                                ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
+                                                ticket.status === 'pending_validation' ? 'PENDING_VALIDATION' :
+                                                    ticket.assigned_to ? 'ASSIGNED' : 'OPEN'
                                     }
                                     ticketNumber={ticket.ticket_number}
                                     createdAt={ticket.created_at}
+                                    resolvedAt={(ticket as any).resolved_at}
+                                    updatedAt={(ticket as any).updated_at}
                                     assignedTo={ticket.assignee?.full_name}
                                     assigneePhotoUrl={(ticket.assignee as any)?.user_photo_url}
                                     photoUrl={ticket.photo_before_url}
@@ -1244,6 +1250,8 @@ const TasksTab = ({ tickets = [], onTicketClick, onEditClick }: { tickets: any[]
                                     status={ticket.status === 'in_progress' ? 'IN_PROGRESS' : 'ASSIGNED'}
                                     ticketNumber={ticket.ticket_number}
                                     createdAt={ticket.created_at}
+                                    resolvedAt={(ticket as any).resolved_at}
+                                    updatedAt={(ticket as any).updated_at}
                                     assignedTo="You"
                                     photoUrl={ticket.photo_before_url}
                                     raisedByTenant={(ticket.creator?.property_memberships || []).some((m: TicketCreatorMembership) => m.property_id === ticket.property_id && ['tenant', 'super_tenant'].includes((m.role || '').toLowerCase()))}

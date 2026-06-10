@@ -106,8 +106,8 @@ export async function GET(
     const applyCommonFilters = (q: any) => {
         let filteredQ = q;
 
-        // Apply date filter
-        if (date) {
+        // Apply date filter only if not "all"
+        if (date && date !== 'all') {
             let filterType = date;
             let customStr = undefined;
             if (!['today', 'yesterday', 'week', 'month'].includes(date)) {
@@ -118,9 +118,9 @@ export async function GET(
             filteredQ = filteredQ.gte('checkin_time', bounds.start).lte('checkin_time', bounds.end);
         }
 
-        // Apply search filter
+        // Apply search filter (searches visitor_id, name, and mobile)
         if (search) {
-            filteredQ = filteredQ.or(`visitor_id.ilike.%${search}%,name.ilike.%${search}%`);
+            filteredQ = filteredQ.or(`visitor_id.ilike.%${search}%,name.ilike.%${search}%,mobile.ilike.%${search}%`);
         }
 
         return filteredQ;

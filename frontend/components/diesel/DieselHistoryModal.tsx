@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
     X, History, Calendar, Fuel, Clock,
     ArrowRight, IndianRupee, Zap, Droplets,
-    Filter, Download, Search, ChevronLeft, ChevronRight, Edit2, Save, AlertTriangle
+    Filter, Download, Search, ChevronLeft, ChevronRight, Edit2, Save, AlertTriangle, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -67,6 +67,111 @@ const DieselHistoryModal: React.FC<DieselHistoryModalProps> = ({
 
     // Filters
     const [selectedGeneratorId, setSelectedGeneratorId] = useState<string>('all');
+
+    // Delete Mode State
+    const [deleteMode, setDeleteMode] = useState(false);
+    const [selectedReadings, setSelectedReadings] = useState<Set<string>>(new Set());
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+    // Get available months for selection
+    const availableMonths = React.useMemo(() => {
+        const months = new Map<string, { label: string; count: number }>();
+        readings.forEach(r => {
+            const date = new Date(r.reading_date);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            const existing = months.get(key);
+            months.set(key, { label, count: (existing?.count || 0) + 1 });
+        });
+        return Array.from(months.entries()).map(([key, value]) => ({ key, ...value }));
+    }, [readings]);
+
+    const [selectedMonth, setSelectedMonth] = React.useState<string>('all');
+
+    // Filter readings by selected month
+    const filteredReadings = React.useMemo(() => {
+        if (selectedMonth === 'all') return readings;
+        return readings.filter(r => {
+            const date = new Date(r.reading_date);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            return key === selectedMonth;
+        });
+    }, [readings, selectedMonth]);
+
+    // Toggle select all for filtered readings
+    const toggleSelectAll = () => {
+        if (selectedReadings.size === filteredReadings.length) {
+            setSelectedReadings(new Set());
+        } else {
+            setSelectedReadings(new Set(filteredReadings.map(r => r.id)));
+        }
+    };
+
+    // Toggle individual selection
+    const toggleSelect = (id: string) => {
+        const newSet = new Set(selectedReadings);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
+        }
+        setSelectedReadings(newSet);
+    };
+
+    // Select all in a month (toggle)
+    const selectMonth = (monthKey: string) => {
+        const idsInMonth = readings
+            .filter(r => {
+                const date = new Date(r.reading_date);
+                const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                return key === monthKey;
+            })
+            .map(r => r.id);
+
+        // Check if ALL readings in this month are already selected
+        const allSelected = idsInMonth.every(id => selectedReadings.has(id));
+
+        if (allSelected) {
+            // Deselect all in this month
+            const newSet = new Set(selectedReadings);
+            idsInMonth.forEach(id => newSet.delete(id));
+            setSelectedReadings(newSet);
+        } else {
+            // Select all in this month (add to existing selection)
+            const newSet = new Set(selectedReadings);
+            idsInMonth.forEach(id => newSet.add(id));
+            setSelectedReadings(newSet);
+        }
+    };
+
+    // Bulk delete readings
+    const handleBulkDelete = async () => {
+        if (selectedReadings.size === 0) return;
+        if (!confirm(`Delete ${selectedReadings.size} selected reading(s)? This cannot be undone.`)) return;
+
+        setIsBulkDeleting(true);
+        let deleted = 0;
+        let failed = 0;
+
+        for (const id of selectedReadings) {
+            try {
+                const res = await fetch(`/api/properties/${propertyId}/diesel-readings?id=${id}`, {
+                    method: 'DELETE'
+                });
+                if (res.ok) deleted++;
+                else failed++;
+            } catch {
+                failed++;
+            }
+        }
+
+        setReadings(prev => prev.filter(r => !selectedReadings.has(r.id)));
+        setSelectedReadings(new Set());
+        setDeleteMode(false);
+        setIsBulkDeleting(false);
+
+        alert(`Deleted ${deleted} reading(s)${failed > 0 ? `. ${failed} failed.` : '.'}`);
+    };
 
     // Inline Edit State
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -355,8 +460,78 @@ const DieselHistoryModal: React.FC<DieselHistoryModalProps> = ({
                             >
                                 <X className="w-6 h-6" />
                             </button>
+
+                            {/* Delete Mode Toggle */}
+                            <button
+                                onClick={() => {
+                                    setDeleteMode(!deleteMode);
+                                    setSelectedReadings(new Set());
+                                }}
+                                className={`p-2 rounded-full transition-colors ${deleteMode
+                                    ? 'bg-red-500 text-white'
+                                    : isDark
+                                        ? 'hover:bg-red-500/20 text-red-400'
+                                        : 'hover:bg-red-50 text-red-500'
+                                    }`}
+                            >
+                                <Trash2 className="w-5 h-5" />
+                            </button>
+
+                            {/* Bulk Delete Button */}
+                            {deleteMode && selectedReadings.size > 0 && (
+                                <button
+                                    onClick={handleBulkDelete}
+                                    disabled={isBulkDeleting}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs font-bold rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                    <span>Delete {selectedReadings.size}</span>
+                                </button>
+                            )}
                         </div>
                     </div>
+
+                    {/* Month Selection for Bulk Delete */}
+                    {deleteMode && availableMonths.length > 0 && (
+                        <div className={`px-6 py-3 flex flex-wrap items-center gap-2 ${isDark ? 'bg-red-500/10 border-b border-red-500/30' : 'bg-red-50 border-b border-red-200'}`}>
+                            <span className="text-xs font-bold text-red-600 uppercase tracking-wide">Select Month:</span>
+                            <button
+                                onClick={() => { setSelectedMonth('all'); setSelectedReadings(new Set()); }}
+                                className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${selectedMonth === 'all' ? 'bg-red-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-100'}`}
+                            >
+                                All
+                            </button>
+                            {availableMonths.map(m => {
+                                // Get IDs in this month
+                                const idsInMonth = readings
+                                    .filter(r => {
+                                        const date = new Date(r.reading_date);
+                                        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` === m.key;
+                                    })
+                                    .map(r => r.id);
+                                // Check if ALL are selected
+                                const allSelected = idsInMonth.length > 0 && idsInMonth.every(id => selectedReadings.has(id));
+                                // Check if SOME are selected (partial)
+                                const someSelected = idsInMonth.some(id => selectedReadings.has(id));
+
+                                return (
+                                    <button
+                                        key={m.key}
+                                        onClick={() => selectMonth(m.key)}
+                                        className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${
+                                            allSelected
+                                                ? 'bg-red-500 text-white'
+                                                : someSelected
+                                                    ? 'bg-red-200 text-red-700 border border-red-400'
+                                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-100'
+                                        }`}
+                                    >
+                                        {m.label} ({m.count})
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
 
                     {/* Content - Logbook List */}
                     <div className={`flex-1 overflow-auto ${isDark ? 'bg-[#161b22]' : 'bg-white'}`}>
@@ -477,10 +652,23 @@ const DieselHistoryModal: React.FC<DieselHistoryModalProps> = ({
                                                     </div>
                                                 ) : (
                                                     // VIEW MODE (Collapsed Row)
-                                                    <div key={r.id} className={`group relative flex items-center p-3 rounded-2xl border transition-all ${isDark
-                                                        ? 'bg-[#0d1117] border-[#30363d] hover:border-slate-600'
-                                                        : 'bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm'
+                                                    <div key={r.id} className={`group relative flex items-center p-3 rounded-2xl border transition-all ${selectedReadings.has(r.id)
+                                                        ? isDark
+                                                            ? 'bg-red-500/10 border-red-500/50'
+                                                            : 'bg-red-50 border-red-300'
+                                                        : isDark
+                                                            ? 'bg-[#0d1117] border-[#30363d] hover:border-slate-600'
+                                                            : 'bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm'
                                                         }`}>
+                                                        {/* Delete Checkbox */}
+                                                        {deleteMode && (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedReadings.has(r.id)}
+                                                                onChange={() => toggleSelect(r.id)}
+                                                                className="w-4 h-4 rounded border-slate-400 cursor-pointer mr-3"
+                                                            />
+                                                        )}
                                                         {/* Time/Generator Identity */}
                                                         <div className="w-1/3 flex flex-col pl-2">
                                                             <span className={`text-sm font-black ${isDark ? 'text-white' : 'text-slate-900'}`}>

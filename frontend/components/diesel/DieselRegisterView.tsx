@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-    ChevronLeft, ChevronRight, Zap, Clock, Fuel, Edit2, Save, X, AlertTriangle, Trash2
+    ChevronLeft, ChevronRight, Zap, Clock, Fuel, Edit2, Save, X, AlertTriangle, Trash2, Filter
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -63,6 +63,11 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<Partial<Reading>>({});
     const [isSaving, setIsSaving] = useState(false);
+
+    // Delete Mode State
+    const [deleteMode, setDeleteMode] = useState(false);
+    const [selectedReadings, setSelectedReadings] = useState<Set<string>>(new Set());
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
     // Fetch Generators on mount
     useEffect(() => {
@@ -198,6 +203,57 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
         }
     };
 
+    // Toggle select all
+    const toggleSelectAll = () => {
+        if (selectedReadings.size === readings.length) {
+            setSelectedReadings(new Set());
+        } else {
+            setSelectedReadings(new Set(readings.map(r => r.id)));
+        }
+    };
+
+    // Toggle individual selection
+    const toggleSelect = (id: string) => {
+        const newSet = new Set(selectedReadings);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedReadings(newSet);
+    };
+
+    // Select/deselect month
+    const selectMonth = (monthKey: string) => {
+        const idsInMonth = readings.filter(r => {
+            const date = new Date(r.reading_date);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            return key === monthKey;
+        }).map(r => r.id);
+        const allSelected = idsInMonth.every(id => selectedReadings.has(id));
+        const newSet = new Set(selectedReadings);
+        if (allSelected) idsInMonth.forEach(id => newSet.delete(id));
+        else idsInMonth.forEach(id => newSet.add(id));
+        setSelectedReadings(newSet);
+    };
+
+    // Bulk delete
+    const handleBulkDelete = async () => {
+        if (selectedReadings.size === 0) return;
+        if (!confirm(`Delete ${selectedReadings.size} reading(s)?`)) return;
+        setIsBulkDeleting(true);
+        let deleted = 0, failed = 0;
+        for (const id of selectedReadings) {
+            try {
+                const res = await fetch(`/api/properties/${propertyId}/diesel-readings?id=${id}`, { method: 'DELETE' });
+                if (res.ok) deleted++; else failed++;
+            } catch { failed++; }
+        }
+        setSelectedReadings(new Set());
+        setDeleteMode(false);
+        setIsBulkDeleting(false);
+        fetchReadings();
+        if (onDataChange) onDataChange();
+        alert(`Deleted ${deleted} reading(s)${failed > 0 ? `. ${failed} failed.` : '.'}`);
+    };
+
     // Get day name
     const getDayName = (dateStr: string) => new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short' });
 
@@ -239,6 +295,7 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                 <table className="w-full">
                     <thead className={`sticky top-0 z-10 ${isDark ? 'bg-[#0d1117]' : 'bg-slate-50'}`}>
                         <tr>
+                            {deleteMode && <th className={thClass} style={{width: 40}}><input type="checkbox" checked={readings.length > 0 && selectedReadings.size === readings.length} onChange={toggleSelectAll} className="w-4 h-4" /></th>}
                             <th className={thClass}>Date</th>
                             <th className={`${thClass} hidden md:table-cell`}>Day</th>
                             <th className={thClass}>Opening (kWh)</th>
@@ -246,7 +303,7 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                             <th className={thClass}>Consumption</th>
                             <th className={thClass}>Cost</th>
                             <th className={thClass}>Notes</th>
-                            <th className={thClass}></th>
+                            {!deleteMode && <th className={thClass}></th>}
                         </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? 'divide-[#30363d]' : 'divide-slate-100'}`}>
@@ -256,7 +313,8 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                             const consumption = (r.closing_kwh || 0) - (r.opening_kwh || 0);
 
                             return (
-                                <tr key={r.id} className={`${isDark ? 'hover:bg-[#161b22]' : 'hover:bg-slate-50'}`}>
+                                <tr key={r.id} className={`${selectedReadings.has(r.id) ? 'bg-red-50' : isDark ? 'hover:bg-[#161b22]' : 'hover:bg-slate-50'}`}>
+                                    {deleteMode && <td className={tdClass}><input type="checkbox" checked={selectedReadings.has(r.id)} onChange={() => toggleSelect(r.id)} className="w-4 h-4" /></td>}
                                     <td className={tdClass}>{new Date(r.reading_date).getDate()}</td>
                                     <td className={`${tdClass} hidden md:table-cell`}>{getDayName(r.reading_date)}</td>
                                     <td className={`${tdClass} text-slate-400`}>{r.opening_kwh?.toLocaleString()}</td>
@@ -290,29 +348,31 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                                             {r.notes || '-'}
                                         </div>
                                     </td>
-                                    <td className={tdClass}>
-                                        {isEditing ? (
-                                            <div className="flex gap-2">
-                                                <button onClick={() => saveEdit(r)} disabled={isSaving} className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"><Save className="w-4 h-4" /></button>
-                                                <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-500/10 rounded"><X className="w-4 h-4" /></button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex gap-1">
-                                                {canEdit && (
-                                                    <button onClick={() => startEdit(r)} className="p-1 text-slate-400 hover:text-primary rounded" title="Edit entry">
-                                                        <Edit2 className="w-4 h-4" />
+                                    {!deleteMode && (
+                                        <td className={tdClass}>
+                                            {isEditing ? (
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => saveEdit(r)} disabled={isSaving} className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"><Save className="w-4 h-4" /></button>
+                                                    <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-500/10 rounded"><X className="w-4 h-4" /></button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-1">
+                                                    {canEdit && (
+                                                        <button onClick={() => startEdit(r)} className="p-1 text-slate-400 hover:text-primary rounded" title="Edit entry">
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleDeleteReading(r.id)}
+                                                        className="p-1 text-slate-400 hover:text-rose-500 rounded"
+                                                        title="Delete entry"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
                                                     </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleDeleteReading(r.id)}
-                                                    className="p-1 text-slate-400 hover:text-rose-500 rounded"
-                                                    title="Delete entry"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </td>
+                                                </div>
+                                            )}
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
@@ -326,13 +386,14 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                 <table className="w-full">
                     <thead className={`sticky top-0 z-10 ${isDark ? 'bg-[#0d1117]' : 'bg-slate-50'}`}>
                         <tr>
+                            {deleteMode && <th className={thClass} style={{width: 40}}><input type="checkbox" checked={readings.length > 0 && selectedReadings.size === readings.length} onChange={toggleSelectAll} className="w-4 h-4" /></th>}
                             <th className={thClass}>Date</th>
                             <th className={`${thClass} hidden md:table-cell`}>Day</th>
                             <th className={thClass}>Opening (Hrs)</th>
                             <th className={thClass}>Closing (Hrs)</th>
                             <th className={thClass}>Consumption</th>
                             <th className={thClass}>Notes</th>
-                            <th className={thClass}></th>
+                            {!deleteMode && <th className={thClass}></th>}
                         </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? 'divide-[#30363d]' : 'divide-slate-100'}`}>
@@ -342,7 +403,8 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                             const consumption = (r.closing_hours || 0) - (r.opening_hours || 0);
 
                             return (
-                                <tr key={r.id} className={`${isDark ? 'hover:bg-[#161b22]' : 'hover:bg-slate-50'}`}>
+                                <tr key={r.id} className={`${selectedReadings.has(r.id) ? 'bg-red-50' : isDark ? 'hover:bg-[#161b22]' : 'hover:bg-slate-50'}`}>
+                                    {deleteMode && <td className={tdClass}><input type="checkbox" checked={selectedReadings.has(r.id)} onChange={() => toggleSelect(r.id)} className="w-4 h-4" /></td>}
                                     <td className={tdClass}>{new Date(r.reading_date).getDate()}</td>
                                     <td className={`${tdClass} hidden md:table-cell`}>{getDayName(r.reading_date)}</td>
                                     <td className={`${tdClass} text-slate-400`}>{r.opening_hours?.toFixed(1)}</td>
@@ -372,29 +434,31 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                                             {r.notes || '-'}
                                         </div>
                                     </td>
-                                    <td className={tdClass}>
-                                        {isEditing ? (
-                                            <div className="flex gap-2">
-                                                <button onClick={() => saveEdit(r)} disabled={isSaving} className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"><Save className="w-4 h-4" /></button>
-                                                <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-500/10 rounded"><X className="w-4 h-4" /></button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex gap-1">
-                                                {canEdit && (
-                                                    <button onClick={() => startEdit(r)} className="p-1 text-slate-400 hover:text-primary rounded" title="Edit entry">
-                                                        <Edit2 className="w-4 h-4" />
+                                    {!deleteMode && (
+                                        <td className={tdClass}>
+                                            {isEditing ? (
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => saveEdit(r)} disabled={isSaving} className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"><Save className="w-4 h-4" /></button>
+                                                    <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-500/10 rounded"><X className="w-4 h-4" /></button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-1">
+                                                    {canEdit && (
+                                                        <button onClick={() => startEdit(r)} className="p-1 text-slate-400 hover:text-primary rounded" title="Edit entry">
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleDeleteReading(r.id)}
+                                                        className="p-1 text-slate-400 hover:text-rose-500 rounded"
+                                                        title="Delete entry"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
                                                     </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleDeleteReading(r.id)}
-                                                    className="p-1 text-slate-400 hover:text-rose-500 rounded"
-                                                    title="Delete entry"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </td>
+                                                </div>
+                                            )}
+                                        </td>
+                                    )}
                                 </tr>
                             );
                         })}
@@ -408,6 +472,7 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
             <table className="w-full">
                 <thead className={`sticky top-0 z-10 ${isDark ? 'bg-[#0d1117]' : 'bg-slate-50'}`}>
                     <tr>
+                        {deleteMode && <th className={thClass} style={{width: 40}}><input type="checkbox" checked={readings.length > 0 && selectedReadings.size === readings.length} onChange={toggleSelectAll} className="w-4 h-4" /></th>}
                         <th className={thClass}>Date</th>
                         <th className={`${thClass} hidden md:table-cell`}>Day</th>
                         <th className={thClass}>Opening (L)</th>
@@ -416,7 +481,7 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                         <th className={thClass}>Consumed (L)</th>
                         <th className={thClass}>Cost</th>
                         <th className={thClass}>Notes</th>
-                        <th className={thClass}></th>
+                        {!deleteMode && <th className={thClass}></th>}
                     </tr>
                 </thead>
                 <tbody className={`divide-y ${isDark ? 'divide-[#30363d]' : 'divide-slate-100'}`}>
@@ -426,7 +491,8 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                         const consumed = r.computed_consumed_litres ?? ((r.opening_diesel_level || 0) + (r.diesel_added_litres || 0) - (r.closing_diesel_level || 0));
 
                         return (
-                            <tr key={r.id} className={`${isDark ? 'hover:bg-[#161b22]' : 'hover:bg-slate-50'}`}>
+                            <tr key={r.id} className={`${selectedReadings.has(r.id) ? 'bg-red-50' : isDark ? 'hover:bg-[#161b22]' : 'hover:bg-slate-50'}`}>
+                                {deleteMode && <td className={tdClass}><input type="checkbox" checked={selectedReadings.has(r.id)} onChange={() => toggleSelect(r.id)} className="w-4 h-4" /></td>}
                                 <td className={tdClass}>{new Date(r.reading_date).getDate()}</td>
                                 <td className={`${tdClass} hidden md:table-cell`}>{getDayName(r.reading_date)}</td>
                                 <td className={`${tdClass} text-slate-400`}>{r.opening_diesel_level}</td>
@@ -474,29 +540,31 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                                         {r.notes || '-'}
                                     </div>
                                 </td>
-                                <td className={tdClass}>
-                                    {isEditing ? (
-                                        <div className="flex gap-2">
-                                            <button onClick={() => saveEdit(r)} disabled={isSaving} className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"><Save className="w-4 h-4" /></button>
-                                            <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-500/10 rounded"><X className="w-4 h-4" /></button>
-                                        </div>
-                                    ) : (
-                                        <div className="flex gap-1">
-                                            {canEdit && (
-                                                <button onClick={() => startEdit(r)} className="p-1 text-slate-400 hover:text-primary rounded" title="Edit entry">
-                                                    <Edit2 className="w-4 h-4" />
+                                {!deleteMode && (
+                                    <td className={tdClass}>
+                                        {isEditing ? (
+                                            <div className="flex gap-2">
+                                                <button onClick={() => saveEdit(r)} disabled={isSaving} className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"><Save className="w-4 h-4" /></button>
+                                                <button onClick={cancelEdit} className="p-1 text-slate-400 hover:bg-slate-500/10 rounded"><X className="w-4 h-4" /></button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex gap-1">
+                                                {canEdit && (
+                                                    <button onClick={() => startEdit(r)} className="p-1 text-slate-400 hover:text-primary rounded" title="Edit entry">
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => handleDeleteReading(r.id)}
+                                                    className="p-1 text-slate-400 hover:text-rose-500 rounded"
+                                                    title="Delete entry"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
                                                 </button>
-                                            )}
-                                            <button
-                                                onClick={() => handleDeleteReading(r.id)}
-                                                className="p-1 text-slate-400 hover:text-rose-500 rounded"
-                                                title="Delete entry"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </div>
-                                    )}
-                                </td>
+                                            </div>
+                                        )}
+                                    </td>
+                                )}
                             </tr>
                         );
                     })}
@@ -554,7 +622,63 @@ const DieselRegisterView: React.FC<DieselRegisterViewProps> = ({
                                 ))}
                             </select>
                         </div>
+
+                        {/* Delete Mode Toggle */}
+                        <button
+                            onClick={() => { setDeleteMode(!deleteMode); setSelectedReadings(new Set()); }}
+                            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl border transition-colors ${deleteMode
+                                ? 'bg-red-500 border-red-500 text-white'
+                                : isDark ? 'bg-[#21262d] border-[#30363d] text-white hover:bg-red-500/20 hover:border-red-500/50'
+                                : 'bg-white border-slate-200 text-slate-700 hover:bg-red-50 hover:border-red-300'
+                            }`}
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            <span>{deleteMode ? 'Cancel' : 'Delete'}</span>
+                        </button>
+
+                        {/* Bulk Delete Button */}
+                        {deleteMode && selectedReadings.size > 0 && (
+                            <button onClick={handleBulkDelete} disabled={isBulkDeleting}
+                                className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
+                                <Trash2 className="w-4 h-4" />
+                                <span>Delete {selectedReadings.size} Selected</span>
+                            </button>
+                        )}
                     </div>
+
+                    {/* Month Selection for Bulk Delete */}
+                    {deleteMode && (
+                        <div className={`px-4 pb-3 flex flex-wrap items-center gap-2 ${isDark ? 'bg-red-500/10' : 'bg-red-50'}`}>
+                            <span className="text-xs font-bold text-red-600 uppercase">Select Month:</span>
+                            <button onClick={() => setSelectedReadings(new Set())}
+                                className={`px-3 py-1 text-xs font-bold rounded-full ${selectedReadings.size === 0 ? 'bg-red-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-100'}`}>
+                                All
+                            </button>
+                            {(() => {
+                                const months = new Map<string, {label: string; count: number}>();
+                                readings.forEach(r => {
+                                    const d = new Date(r.reading_date);
+                                    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                                    const label = d.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+                                    const existing = months.get(key);
+                                    months.set(key, {label, count: (existing?.count||0)+1});
+                                });
+                                return Array.from(months.entries()).map(([key, m]) => {
+                                    const idsInMonth = readings.filter(r => {
+                                        const d = new Date(r.reading_date);
+                                        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === key;
+                                    }).map(r => r.id);
+                                    const allSelected = idsInMonth.length > 0 && idsInMonth.every(id => selectedReadings.has(id));
+                                    return (
+                                        <button key={key} onClick={() => selectMonth(key)}
+                                            className={`px-3 py-1 text-xs font-bold rounded-full ${allSelected ? 'bg-red-500 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-red-100'}`}>
+                                            {m.label} ({m.count})
+                                        </button>
+                                    );
+                                });
+                            })()}
+                        </div>
+                    )}
                 </div>
 
                 {/* Tabs */}

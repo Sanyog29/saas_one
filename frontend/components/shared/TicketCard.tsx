@@ -34,6 +34,7 @@ export interface TicketCardProps {
     assigneePhotoUrl?: string | null; // Profile photo for the person serving the request
     photoUrl?: string;
     resolvedAt?: string | null; // ISO date string for when the ticket was completed
+    updatedAt?: string | null; // ISO date string - used when resolvedAt is not set
     propertyName?: string; // Property name for Super Admin view
     escalationChain?: { name: string; avatar?: string | null }[]; // Ordered: [original → ... → current]
 
@@ -79,6 +80,7 @@ export default function TicketCard({
     assigneePhotoUrl,
     photoUrl,
     resolvedAt,
+    updatedAt,
     propertyName,
     escalationChain,
     raisedByTenant,
@@ -105,25 +107,42 @@ export default function TicketCard({
 
     const [shareOpen, setShareOpen] = useState(false);
 
-    const isClosed = ['COMPLETED', 'CLOSED', 'RESOLVED'].includes(status?.toUpperCase() || '');
-    const isCritical = priority?.toUpperCase() === 'CRITICAL' && !isClosed;
+    // Normalize status - replace spaces with underscores for consistent comparison
+    const normalizedStatus = (status || '').toUpperCase().replace(/\s+/g, '_');
+
+    // Tickets that are "resolved by our side" - work is complete, timer should stop
+    const isResolvedByUs = normalizedStatus === 'PENDING_VALIDATION';
+    // Tickets that are fully closed (tenant approved or admin closed)
+    const isFullyClosed = ['COMPLETED', 'CLOSED', 'RESOLVED'].includes(normalizedStatus);
+    const isCritical = priority?.toUpperCase() === 'CRITICAL' && !isFullyClosed;
 
     // Live elapsed timer — counts up every second for active tickets
+    // For pending_validation tickets, timer stops (work is done by our side)
     const getElapsed = () => {
         const start = parseDate(createdAt);
-        if (!start) return 0;
-        
-        // If closed, use resolvedAt. If active, use current time.
-        const end = isClosed ? (parseDate(resolvedAt) || new Date()) : new Date();
-        return Math.floor((end.getTime() - start.getTime()) / 1000);
+        if (!start) return { seconds: 0, endTime: null };
+
+        // For resolved/closed tickets, use resolvedAt or updatedAt as end time
+        if (isResolvedByUs || isFullyClosed) {
+            // Try resolvedAt first, then updatedAt, then current time
+            const endTime = parseDate(resolvedAt) || parseDate(updatedAt || '') || new Date();
+            return { seconds: Math.floor((endTime.getTime() - start.getTime()) / 1000), endTime };
+        }
+
+        // Active ticket - use current time
+        return { seconds: Math.floor((new Date().getTime() - start.getTime()) / 1000), endTime: null };
     };
-    const [elapsedSec, setElapsedSec] = useState(getElapsed);
+
+    const elapsedData = getElapsed();
+    const [elapsedSec, setElapsedSec] = useState(elapsedData.seconds);
 
     useEffect(() => {
-        if (isClosed) return; // no live update for closed tickets
-        const id = setInterval(() => setElapsedSec(getElapsed()), 1000);
+        // No live update for resolved by us or fully closed tickets
+        if (isResolvedByUs || isFullyClosed) return;
+
+        const id = setInterval(() => setElapsedSec(getElapsed().seconds), 1000);
         return () => clearInterval(id);
-    }, [createdAt, isClosed]);
+    }, [createdAt, isResolvedByUs, isFullyClosed]);
 
     const formatElapsed = (sec: number) => {
         const d = Math.floor(sec / 86400);
@@ -136,9 +155,21 @@ export default function TicketCard({
         return `${s}s`;
     };
 
+    // Format the end time in local format for display
+    const formatEndTime = (date: Date | null) => {
+        if (!date) return null;
+        return date.toLocaleString('en-US', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
+
     // Color based on age of active ticket
-    const timerColor = isClosed
-        ? 'text-gray-400 bg-gray-50'
+    const timerColor = isResolvedByUs || isFullyClosed
+        ? 'text-violet-600 bg-violet-50'  // Violet for pending validation / closed
         : elapsedSec < 3600         ? 'text-emerald-600 bg-emerald-50'   // < 1h: green
         : elapsedSec < 86400        ? 'text-amber-600 bg-amber-50'       // < 1d: yellow
         : elapsedSec < 86400 * 3   ? 'text-orange-600 bg-orange-50'     // < 3d: orange
@@ -245,12 +276,12 @@ export default function TicketCard({
 
                 <span
                     className={`
-                        px-2 py-0.5 rounded-full 
+                        px-2 py-0.5 rounded-full
                         text-[10px] font-medium uppercase
-                        ${STATUS_STYLES[status]}
+                        ${STATUS_STYLES[normalizedStatus as keyof typeof STATUS_STYLES] || 'bg-gray-100 text-gray-700'}
                     `}
                 >
-                    {status.replace('_', ' ')}
+                    {status?.replace(/_/g, ' ')}
                 </span>
 
                 {propertyName && (
@@ -353,7 +384,22 @@ export default function TicketCard({
                     {/* Live elapsed timer */}
                     <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg text-[9px] font-black w-fit ${timerColor}`}>
                         <Timer className="w-2.5 h-2.5 shrink-0" />
-                        {isClosed ? `Closed after ${formatElapsed(elapsedSec)}` : formatElapsed(elapsedSec)}
+                        {(isResolvedByUs || isFullyClosed) ? (
+                            <span>
+                                Closed at {(() => {
+                                    const closeTime = parseDate(resolvedAt || updatedAt || '') || new Date();
+                                    return closeTime.toLocaleString('en-US', {
+                                        month: 'short',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        hour12: true
+                                    });
+                                })()}
+                            </span>
+                        ) : (
+                            formatElapsed(elapsedSec)
+                        )}
                     </div>
                 </div>
 
@@ -374,7 +420,7 @@ export default function TicketCard({
             </div>
 
             {/* Validation Actions — shown only when pending client approval */}
-            {status === 'PENDING_VALIDATION' && (onValidate || onReject) && (
+            {normalizedStatus === 'PENDING_VALIDATION' && (onValidate || onReject) && (
                 <div className="flex gap-2 pt-[clamp(0.5rem,2cqw,0.75rem)] border-t border-violet-100">
                     {onValidate && (
                         <button

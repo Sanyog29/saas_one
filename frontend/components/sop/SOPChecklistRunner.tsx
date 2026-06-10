@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Camera, CheckCircle2, ChevronRight, Loader2, X, Paperclip, Circle, Eye, Video, Play, ArrowLeft, MoreVertical, Lock, Calendar, Clock, Repeat } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Camera, CheckCircle2, ChevronRight, Loader2, X, Paperclip, Circle, Eye, Video, Play, ArrowLeft, MoreVertical, Lock, Calendar, Clock, Repeat, Upload, AlertCircle, RefreshCw } from 'lucide-react';
 
 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -10,6 +10,7 @@ import CameraCaptureModal from '@/frontend/components/shared/CameraCaptureModal'
 import VideoCaptureModal from '@/frontend/components/shared/VideoCaptureModal';
 import { compressImage } from '@/frontend/utils/image-compression';
 import { compressVideo } from '@/frontend/utils/video-compression';
+import { uploadWithProgress } from '@/frontend/utils/upload-with-progress';
 import Skeleton from '@/frontend/components/ui/Skeleton';
 import { Toast } from '@/frontend/components/ui/Toast';
 import { playTickleSound } from '@/frontend/utils/sounds';
@@ -55,6 +56,12 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
     const [liveNow, setLiveNow] = useState(() => new Date());
     const supabase = React.useMemo(() => createClient(), []);
     const hasInitialized = React.useRef(false);
+
+    // Upload tracking: local preview URL → { progress, error, retrying, compressing }
+    const [uploadProgress, setUploadProgress] = useState<Record<string, { progress: number; error?: string; retrying?: boolean; compressing?: boolean }>>({});
+
+    // Store pending files for retry functionality
+    const pendingFiles = useRef<Record<string, { file: File; type: 'photo' | 'video'; itemId: string }>>({});
 
     // Tick every second so expiry is detected live
     useEffect(() => {
@@ -435,60 +442,120 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         const targetItemId = itemId || activeCameraItemId;
         if (!completion || !targetItemId) return;
 
+        const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
+        if (!item) return;
+
+        const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+        const uploadKey = `${item.id}-photo`;
+
+        // Capture actual photo time BEFORE any async processing
+        const photoTakenAt = new Date(file.lastModified).toISOString();
+
+        // STEP 1: Show original photo IMMEDIATELY (before any processing)
+        const originalPreviewUrl = URL.createObjectURL(file);
+        setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, compressing: true } }));
+        setCompletion((prev: any) => prev ? {
+            ...prev,
+            items: prev.items.map((i: any) =>
+                i.checklist_item_id === targetItemId ? { ...i, photo_url: originalPreviewUrl, _isLocalPreview: true, _isCompressing: true, checked_at: photoTakenAt } : i
+            ),
+        } : prev);
+
         try {
-            setIsSaving(true);
-
-            // Capture actual photo time BEFORE any async processing
-            const photoTakenAt = new Date(file.lastModified).toISOString();
-
-            // Stamp timestamp (uses file.lastModified = actual capture time for both camera and gallery)
+            // STEP 2: Process (compress) in background - user sees original during this time
             const stamped = await stampTimestamp(file);
-
-            // Compress image
             const compressedFile = await compressImage(stamped);
 
-            // Upload photo
-            const formData = new FormData();
-            formData.append('file', compressedFile);
-            formData.append('completionId', completion.id);
-            formData.append('completionItemId', String(targetItemId));
+            // Store file for retry functionality
+            pendingFiles.current[uploadKey] = { file: compressedFile, type: 'photo', itemId: targetItemId };
 
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
-            const response = await fetch(`/api/properties/${resolvedPropId}/sop/photos`, {
-                method: 'POST',
-                body: formData,
-            });
+            // STEP 3: Replace original preview with compressed preview, start upload
+            const localPreviewUrl = URL.createObjectURL(compressedFile);
+            URL.revokeObjectURL(originalPreviewUrl);
 
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Failed to upload photo');
-
-            // Update item with photo URL + actual capture time
-            const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
-            if (!item) throw new Error('Completion item not found');
-
-            const photoRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ item: { completionItemId: item.id, photo_url: data.url } }),
-            });
-            if (!photoRes.ok) throw new Error('Failed to save photo URL');
-
+            setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, compressing: false } }));
             setCompletion((prev: any) => prev ? {
                 ...prev,
                 items: prev.items.map((i: any) =>
-                    i.checklist_item_id === targetItemId ? { ...i, photo_url: data.url, checked_at: photoTakenAt } : i
+                    i.checklist_item_id === targetItemId ? { ...i, photo_url: localPreviewUrl, _isCompressing: false } : i
                 ),
             } : prev);
 
-            setShowCameraModal(false);
-            setActiveCameraItemId(null);
-            setToast({ message: 'Photo uploaded successfully', type: 'success' });
+            // Upload with progress tracking (retry on failure)
+            const maxRetries = 2;
+            let lastError: Error | null = null;
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    if (attempt > 0) {
+                        setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, retrying: true } }));
+                    }
+
+                    const data = await uploadWithProgress(
+                        `/api/properties/${resolvedPropId}/sop/photos`,
+                        compressedFile,
+                        {
+                            completionId: completion.id,
+                            completionItemId: String(item.id),
+                        },
+                        (progress) => setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress, retrying: attempt > 0 } }))
+                    );
+
+                    // Success - save photo URL to database
+                    const photoRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ item: { completionItemId: item.id, photo_url: data.url } }),
+                    });
+                    if (!photoRes.ok) throw new Error('Failed to save photo URL');
+
+                    // Replace local preview with real URL
+                    URL.revokeObjectURL(localPreviewUrl);
+                    delete pendingFiles.current[uploadKey];
+                    setUploadProgress(prev => {
+                        const newProgress = { ...prev };
+                        delete newProgress[uploadKey];
+                        return newProgress;
+                    });
+
+                    setCompletion((prev: any) => prev ? {
+                        ...prev,
+                        items: prev.items.map((i: any) =>
+                            i.checklist_item_id === targetItemId ? { ...i, photo_url: data.url, _isLocalPreview: false, checked_at: photoTakenAt } : i
+                        ),
+                    } : prev);
+
+                    setShowCameraModal(false);
+                    setActiveCameraItemId(null);
+                    setToast({ message: 'Photo uploaded successfully', type: 'success' });
+                    return; // Exit on success
+
+                } catch (err) {
+                    lastError = err as Error;
+                    if (attempt < maxRetries) {
+                        // Wait before retry (exponential backoff: 1s, 2s)
+                        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+                    }
+                }
+            }
+
+            // All retries failed
+            throw lastError;
 
         } catch (err: any) {
             console.error('Error uploading photo:', err);
+            // Clean up local URLs
+            URL.revokeObjectURL(originalPreviewUrl);
+            // Mark upload as failed
+            setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, error: err.message || 'Upload failed' } }));
+            // Revert to no photo (or keep last valid photo if there was one)
+            setCompletion((prev: any) => prev ? {
+                ...prev,
+                items: prev.items.map((i: any) =>
+                    i.checklist_item_id === targetItemId ? { ...i, photo_url: item.photo_url || null, _isLocalPreview: false, _isCompressing: false } : i
+                ),
+            } : prev);
             setToast({ message: err.message || 'Error uploading photo', type: 'error' });
-        } finally {
-            setIsSaving(false);
         }
     };
 
@@ -496,54 +563,114 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         const targetItemId = activeVideoItemId;
         if (!completion || !targetItemId) return;
 
-        try {
-            setIsSaving(true);
+        const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
+        if (!item) return;
 
-            // Compress video
+        const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+        const uploadKey = `${item.id}-video`;
+
+        // STEP 1: Show original video IMMEDIATELY (before any processing)
+        const originalPreviewUrl = URL.createObjectURL(file);
+        setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, compressing: true } }));
+        setCompletion((prev: any) => prev ? {
+            ...prev,
+            items: prev.items.map((i: any) =>
+                i.checklist_item_id === targetItemId ? { ...i, video_url: originalPreviewUrl, _isLocalPreview: true, _isCompressing: true } : i
+            ),
+        } : prev);
+
+        try {
+            // STEP 2: Process (compress) in background - user sees original during this time
             const compressedFile = await compressVideo(file);
 
-            // Upload video
-            const formData = new FormData();
-            formData.append('file', compressedFile);
-            formData.append('completionId', completion.id);
-            formData.append('completionItemId', String(targetItemId));
+            // Store file for retry functionality
+            pendingFiles.current[uploadKey] = { file: compressedFile, type: 'video', itemId: targetItemId };
 
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
-            const response = await fetch(`/api/properties/${resolvedPropId}/sop/videos`, {
-                method: 'POST',
-                body: formData,
-            });
+            // STEP 3: Replace original preview with compressed preview, start upload
+            const localPreviewUrl = URL.createObjectURL(compressedFile);
+            URL.revokeObjectURL(originalPreviewUrl);
 
-            const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Failed to upload video');
-
-            // Update item with video URL
-            const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
-            if (!item) throw new Error('Completion item not found');
-
-            const videoRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ item: { completionItemId: item.id, video_url: data.url } }),
-            });
-            if (!videoRes.ok) throw new Error('Failed to save video URL');
-
-            setCompletion({
-                ...completion,
-                items: completion.items.map((i: any) =>
-                    i.checklist_item_id === targetItemId ? { ...i, video_url: data.url } : i
+            setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, compressing: false } }));
+            setCompletion((prev: any) => prev ? {
+                ...prev,
+                items: prev.items.map((i: any) =>
+                    i.checklist_item_id === targetItemId ? { ...i, video_url: localPreviewUrl, _isCompressing: false } : i
                 ),
-            });
+            } : prev);
 
-            setShowVideoModal(false);
-            setActiveVideoItemId(null);
-            setToast({ message: 'Video uploaded successfully', type: 'success' });
+            // Upload with progress tracking (retry on failure)
+            const maxRetries = 2;
+            let lastError: Error | null = null;
+
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    if (attempt > 0) {
+                        setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, retrying: true } }));
+                    }
+
+                    const data = await uploadWithProgress(
+                        `/api/properties/${resolvedPropId}/sop/videos`,
+                        compressedFile,
+                        {
+                            completionId: completion.id,
+                            completionItemId: String(item.id),
+                        },
+                        (progress) => setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress, retrying: attempt > 0 } }))
+                    );
+
+                    // Success - save video URL to database
+                    const videoRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ item: { completionItemId: item.id, video_url: data.url } }),
+                    });
+                    if (!videoRes.ok) throw new Error('Failed to save video URL');
+
+                    // Replace local preview with real URL
+                    URL.revokeObjectURL(localPreviewUrl);
+                    delete pendingFiles.current[uploadKey];
+                    setUploadProgress(prev => {
+                        const newProgress = { ...prev };
+                        delete newProgress[uploadKey];
+                        return newProgress;
+                    });
+
+                    setCompletion((prev: any) => prev ? {
+                        ...prev,
+                        items: prev.items.map((i: any) =>
+                            i.checklist_item_id === targetItemId ? { ...i, video_url: data.url, _isLocalPreview: false } : i
+                        ),
+                    } : prev);
+
+                    setShowVideoModal(false);
+                    setActiveVideoItemId(null);
+                    setToast({ message: 'Video uploaded successfully', type: 'success' });
+                    return; // Exit on success
+
+                } catch (err) {
+                    lastError = err as Error;
+                    if (attempt < maxRetries) {
+                        // Wait before retry (exponential backoff: 1s, 2s)
+                        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+                    }
+                }
+            }
+
+            // All retries failed
+            throw lastError;
 
         } catch (err: any) {
             console.error('Error uploading video:', err);
+            // Mark upload as failed
+            setUploadProgress(prev => ({ ...prev, [uploadKey]: { progress: 0, error: err.message || 'Upload failed' } }));
+            // Revert to previous video URL or null
+            setCompletion((prev: any) => prev ? {
+                ...prev,
+                items: prev.items.map((i: any) =>
+                    i.checklist_item_id === targetItemId ? { ...i, video_url: item.video_url || null, _isLocalPreview: false } : i
+                ),
+            } : prev);
             setToast({ message: err.message || 'Error uploading video', type: 'error' });
-        } finally {
-            setIsSaving(false);
         }
     };
 
@@ -908,49 +1035,196 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
                             </div>
                             <div className="pb-2" />
 
-                            {/* Photo preview — full width */}
+                            {/* Photo preview — full width with upload progress */}
                             {completionItem?.photo_url && (
                                 <div className="mx-4 mb-3 rounded-2xl overflow-hidden relative group">
-                                    <div
-                                        className="cursor-pointer"
-                                        onClick={() => setPreviewImageUrl(completionItem.photo_url!)}
-                                    >
-                                        <img src={completionItem.photo_url} alt="Proof" className="w-full h-48 object-cover" />
-                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
-                                            <Eye size={28} className="text-white" />
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'photo'); }}
-                                        className="absolute top-3 right-3 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
-                                        title="Delete photo"
-                                    >
-                                        <X size={16} />
-                                    </button>
+                                    {/* Upload progress overlay */}
+                                    {(() => {
+                                        const uploadState = uploadProgress[`${completionItem?.id}-photo`];
+                                        const isUploading = uploadState && uploadState.progress < 100 && !uploadState.compressing;
+                                        const isCompressing = uploadState?.compressing;
+                                        const hasError = uploadState?.error;
+
+                                        return (
+                                            <>
+                                                <div
+                                                    className={`cursor-pointer ${hasError ? 'opacity-70' : ''}`}
+                                                    onClick={() => !isUploading && !isCompressing && !hasError && setPreviewImageUrl(completionItem.photo_url!)}
+                                                >
+                                                    <img src={completionItem.photo_url} alt="Proof" className="w-full h-48 object-cover" />
+
+                                                    {/* Compressing overlay */}
+                                                    {isCompressing && (
+                                                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                                                            <Loader2 size={24} className="text-white animate-spin mb-2" />
+                                                            <span className="text-xs font-bold text-white">Processing...</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Upload progress overlay */}
+                                                    {isUploading && (
+                                                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                                                            <div className="w-3/4 bg-white/20 rounded-full h-2 overflow-hidden mb-2">
+                                                                <motion.div
+                                                                    className="bg-white h-full rounded-full"
+                                                                    initial={{ width: 0 }}
+                                                                    animate={{ width: `${uploadState.progress}%` }}
+                                                                    transition={{ duration: 0.3 }}
+                                                                />
+                                                            </div>
+                                                            <div className="flex items-center gap-2 text-white">
+                                                                <Upload size={14} className="animate-pulse" />
+                                                                <span className="text-xs font-bold">
+                                                                    {uploadState.retrying ? 'Retrying...' : `Uploading ${uploadState.progress}%`}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Upload error overlay */}
+                                                    {hasError && (
+                                                        <div className="absolute inset-0 bg-rose-900/70 flex flex-col items-center justify-center">
+                                                            <AlertCircle size={28} className="text-white mb-2" />
+                                                            <span className="text-xs font-bold text-white text-center px-4">{hasError}</span>
+                                                            <span className="text-[10px] text-white/70 mt-1">Tap retry to try again</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Success/Preview overlay */}
+                                                    {!isUploading && !isCompressing && !hasError && (
+                                                        <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center">
+                                                            <Eye size={28} className="text-white" />
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Delete / Retry button */}
+                                                {!isUploading && !isCompressing && (
+                                                    hasError ? (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                // Retry: use stored file from pendingFiles
+                                                                const stored = pendingFiles.current[`${completionItem?.id}-photo`];
+                                                                if (stored) {
+                                                                    handlePhotoCapture(stored.file, item.id);
+                                                                }
+                                                            }}
+                                                            className="absolute top-3 right-3 w-8 h-8 bg-amber-500 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-amber-600 transition-all z-10"
+                                                            title="Retry upload"
+                                                        >
+                                                            <RefreshCw size={16} />
+                                                        </button>
+                                                    ) : !completionItem?._isLocalPreview && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'photo'); }}
+                                                            className="absolute top-3 right-3 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
+                                                            title="Delete photo"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    )
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             )}
 
-                            {/* Video preview — full width */}
+                            {/* Video preview — full width with upload progress */}
                             {completionItem?.video_url && (
                                 <div className="mx-4 mb-3 rounded-2xl overflow-hidden relative group">
-                                    <div
-                                        className="cursor-pointer"
-                                        onClick={() => setPreviewVideoUrl(completionItem.video_url!)}
-                                    >
-                                        <video src={completionItem.video_url} className="w-full h-48 object-cover" muted playsInline />
-                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
-                                            <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
-                                                <Play size={22} className="text-white ml-1" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'video'); }}
-                                        className="absolute top-3 right-3 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
-                                        title="Delete video"
-                                    >
-                                        <X size={16} />
-                                    </button>
+                                    {(() => {
+                                        const uploadState = uploadProgress[`${completionItem?.id}-video`];
+                                        const isUploading = uploadState && uploadState.progress < 100 && !uploadState.compressing;
+                                        const isCompressing = uploadState?.compressing;
+                                        const hasError = uploadState?.error;
+
+                                        return (
+                                            <>
+                                                <div
+                                                    className={`cursor-pointer ${hasError ? 'opacity-70' : ''}`}
+                                                    onClick={() => !isUploading && !isCompressing && !hasError && setPreviewVideoUrl(completionItem.video_url!)}
+                                                >
+                                                    <video src={completionItem.video_url} className="w-full h-48 object-cover" muted playsInline />
+
+                                                    {/* Compressing overlay */}
+                                                    {isCompressing && (
+                                                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                                                            <Loader2 size={24} className="text-white animate-spin mb-2" />
+                                                            <span className="text-xs font-bold text-white">Processing video...</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Upload progress overlay */}
+                                                    {isUploading && (
+                                                        <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                                                            <div className="w-3/4 bg-white/20 rounded-full h-2 overflow-hidden mb-2">
+                                                                <motion.div
+                                                                    className="bg-white h-full rounded-full"
+                                                                    initial={{ width: 0 }}
+                                                                    animate={{ width: `${uploadState.progress}%` }}
+                                                                    transition={{ duration: 0.3 }}
+                                                                />
+                                                            </div>
+                                                            <div className="flex items-center gap-2 text-white">
+                                                                <Upload size={14} className="animate-pulse" />
+                                                                <span className="text-xs font-bold">
+                                                                    {uploadState.retrying ? 'Retrying...' : `Uploading ${uploadState.progress}%`}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Upload error overlay */}
+                                                    {hasError && (
+                                                        <div className="absolute inset-0 bg-rose-900/70 flex flex-col items-center justify-center">
+                                                            <AlertCircle size={28} className="text-white mb-2" />
+                                                            <span className="text-xs font-bold text-white text-center px-4">{hasError}</span>
+                                                            <span className="text-[10px] text-white/70 mt-1">Tap retry to try again</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Success/Preview overlay */}
+                                                    {!isUploading && !isCompressing && !hasError && (
+                                                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center group-hover:bg-black/50 transition-all">
+                                                            <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center">
+                                                                <Play size={22} className="text-white ml-1" />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Delete / Retry button */}
+                                                {!isUploading && !isCompressing && (
+                                                    hasError ? (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                // Retry: use stored file from pendingFiles
+                                                                const stored = pendingFiles.current[`${completionItem?.id}-video`];
+                                                                if (stored) {
+                                                                    handleVideoCapture(stored.file);
+                                                                }
+                                                            }}
+                                                            className="absolute top-3 right-3 w-8 h-8 bg-amber-500 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-amber-600 transition-all z-10"
+                                                            title="Retry upload"
+                                                        >
+                                                            <RefreshCw size={16} />
+                                                        </button>
+                                                    ) : !completionItem?._isLocalPreview && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleRemoveMedia(item.id, 'video'); }}
+                                                            className="absolute top-3 right-3 w-8 h-8 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-rose-500 transition-all z-10"
+                                                            title="Delete video"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    )
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             )}
 

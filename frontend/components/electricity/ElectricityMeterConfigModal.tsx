@@ -73,13 +73,13 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                 last_reading: parseFloat(lastReading) || 0,
                 status: 'active',
                 // v2: Include initial multiplier config
+                // Note: multiplier_value is a GENERATED column, database calculates it automatically
                 initial_multiplier: {
-                    ct_ratio_primary: parseFloat(ctPrimary) || 0,
-                    ct_ratio_secondary: parseFloat(ctSecondary) || 0,
-                    pt_ratio_primary: parseFloat(ptPrimary) || 0,
-                    pt_ratio_secondary: parseFloat(ptSecondary) || 0,
-                    meter_constant: parseFloat(meterConstant) || 0,
-                    multiplier_value: computedMultiplier(),
+                    ct_ratio_primary: parseFloat(ctPrimary) || 200,
+                    ct_ratio_secondary: parseFloat(ctSecondary) || 5,
+                    pt_ratio_primary: parseFloat(ptPrimary) || 11000,
+                    pt_ratio_secondary: parseFloat(ptSecondary) || 110,
+                    meter_constant: parseFloat(meterConstant) || 1,
                     effective_from: new Date().toISOString().split('T')[0]
                 }
             });

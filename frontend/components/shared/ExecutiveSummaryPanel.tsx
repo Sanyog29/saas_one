@@ -155,14 +155,21 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
         const months = monthsBetween(start, end);
 
         const getMonthStats = (monthDate: Date): MonthStats => {
+            // Use UTC for consistent month filtering - prevents timezone edge-case bugs
+            // (e.g., a ticket created at 23:00 UTC on June 30 should count for June, not July)
+            const targetMonth = monthDate.getMonth();
+            const targetYear = monthDate.getFullYear();
+
             const mt = tickets.filter(t => {
                 const d = new Date(t.created_at);
-                return d.getMonth() === monthDate.getMonth() && d.getFullYear() === monthDate.getFullYear();
+                // Compare using UTC methods to match database's interpretation
+                return d.getUTCMonth() === targetMonth && d.getUTCFullYear() === targetYear;
             });
             const total = mt.length;
+            // Correctly calculate open as non-closed statuses (open, assigned, in_progress, waitlist)
             const closed = mt.filter(t => t.status === 'resolved' || t.status === 'closed' || t.status === 'pending_validation').length;
             const pending = mt.filter(t => t.status === 'pending_validation').length;
-            const open = total - closed;
+            const open = mt.filter(t => t.status !== 'resolved' && t.status !== 'closed' && t.status !== 'pending_validation').length;
             const rate = total > 0 ? (closed / total) * 100 : 0;
             const cats: Record<string, number> = {};
             mt.forEach(t => { const c = t.category || 'Other'; cats[c] = (cats[c] || 0) + 1; });
@@ -181,7 +188,8 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
         const periodCats: Record<string, number> = {};
         tickets.filter(t => {
             const d = new Date(t.created_at);
-            const ym = toMonthInput(d);
+            // Use UTC to match the UTC-based month filtering elsewhere
+            const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             return ym >= start && ym <= end;
         }).forEach(t => {
             const c = t.category || 'Other';
@@ -199,16 +207,23 @@ export default function ExecutiveSummaryPanel({ propertyId, idPrefix = 'esp' }: 
         const totalDays = Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24));
         const getDailyTrend = (tickArr: TicketData[]) => {
             const trend = new Array(totalDays).fill(0);
+            // Use UTC dates for period boundaries to match UTC-based filtering
+            const periodStartUTC = Date.UTC(periodStart.getFullYear(), periodStart.getMonth(), periodStart.getDate());
+            const dayMs = 1000 * 60 * 60 * 24;
             tickArr.forEach(t => {
                 const d = new Date(t.created_at);
-                const diff = Math.floor((d.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24));
+                // Use UTC date components to avoid timezone shifts
+                const ticketDateUTC = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+                const diff = Math.floor((ticketDateUTC - periodStartUTC) / dayMs);
                 if (diff >= 0 && diff < totalDays) trend[diff]++;
             });
             return trend;
         };
 
         const periodTickets = tickets.filter(t => {
-            const ym = toMonthInput(new Date(t.created_at));
+            const d = new Date(t.created_at);
+            // Use UTC to extract year-month consistently with the period boundaries
+            const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             return ym >= start && ym <= end;
         });
 

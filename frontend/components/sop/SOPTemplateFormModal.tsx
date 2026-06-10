@@ -48,28 +48,55 @@ const SOPTemplateFormModal: React.FC<SOPTemplateFormModalProps> = ({ isOpen, onC
     const [showStepTimeSlot, setShowStepTimeSlot] = useState(false);
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingMembers, setIsLoadingMembers] = useState(false);
     const [propertyMembers, setPropertyMembers] = useState<any[]>([]);
     const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const [currentPropertyId, setCurrentPropertyId] = useState<string | null>(null);
 
 
     const supabase = React.useMemo(() => createClient(), []);
 
     useEffect(() => {
         const fetchMembers = async () => {
+            if (!propertyId) {
+                console.warn('No propertyId provided for member fetch');
+                setPropertyMembers([]);
+                setIsLoadingMembers(false);
+                setCurrentPropertyId(null);
+                return;
+            }
+
+            setIsLoadingMembers(true);
+            setCurrentPropertyId(propertyId);
+
             try {
                 const response = await fetch(`/api/users/list?propertyId=${propertyId}`);
-                if (!response.ok) throw new Error('Failed to fetch members');
                 const data = await response.json();
+
+                if (!response.ok) {
+                    console.error('API error:', data.error);
+                    setToast({ message: data.error || 'Error loading property members', type: 'error' });
+                    setPropertyMembers([]);
+                    return;
+                }
+
+                console.log('Fetched members:', data.users?.length, 'members for propertyId:', propertyId);
                 setPropertyMembers(data.users || []);
             } catch (err) {
                 console.error('Error fetching property members:', err);
                 setToast({ message: 'Error loading property members', type: 'error' });
+                setPropertyMembers([]);
+            } finally {
+                setIsLoadingMembers(false);
             }
         };
 
         if (isOpen && propertyId) {
             fetchMembers();
+        } else if (isOpen && !propertyId) {
+            setPropertyMembers([]);
+            setCurrentPropertyId(null);
         }
     }, [supabase, propertyId, isOpen]);
 
@@ -477,11 +504,22 @@ const SOPTemplateFormModal: React.FC<SOPTemplateFormModalProps> = ({ isOpen, onC
                                     </div>
 
                                     <div>
-                                        <label className={labelCls}>Assign To <span className="normal-case text-[9px] text-slate-400 font-medium">(optional — leave empty for open to all)</span></label>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className={labelCls}>Assign To <span className="normal-case text-[9px] text-slate-400 font-medium">(optional)</span></label>
+                                            {isLoadingMembers && (
+                                                <span className="text-[9px] text-primary font-medium animate-pulse">Loading members...</span>
+                                            )}
+                                            {!propertyId && (
+                                                <span className="text-[9px] text-amber-500 font-medium">Property required</span>
+                                            )}
+                                            {propertyId && !isLoadingMembers && propertyMembers.length === 0 && (
+                                                <span className="text-[9px] text-slate-400 font-medium">No members found</span>
+                                            )}
+                                        </div>
                                         <div className="relative">
                                             <div
-                                                onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}
-                                                className="flex flex-wrap gap-1.5 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl min-h-[48px] cursor-pointer hover:border-primary/40 transition-all"
+                                                onClick={() => !propertyId ? setToast({ message: 'Please select a property first', type: 'error' }) : setIsUserDropdownOpen(!isUserDropdownOpen)}
+                                                className={`flex flex-wrap gap-1.5 px-4 py-2.5 bg-slate-50 border rounded-2xl min-h-[48px] cursor-pointer transition-all ${!propertyId ? 'border-amber-200' : 'border-slate-200 hover:border-primary/40'}`}
                                             >
                                                 {formData.assigned_to.length > 0 ? (
                                                     formData.assigned_to.map(userId => {
@@ -514,7 +552,12 @@ const SOPTemplateFormModal: React.FC<SOPTemplateFormModalProps> = ({ isOpen, onC
                                                             exit={{ opacity: 0, y: 8 }}
                                                             className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl max-h-44 overflow-y-auto p-1 shadow-xl z-20"
                                                         >
-                                                            {propertyMembers.filter(m => !formData.assigned_to.includes(m.id)).length > 0 ? (
+                                                            {isLoadingMembers ? (
+                                                                <div className="py-4 text-center">
+                                                                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                                                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Loading members...</div>
+                                                                </div>
+                                                            ) : propertyMembers.filter(m => !formData.assigned_to.includes(m.id)).length > 0 ? (
                                                                 propertyMembers.filter(m => !formData.assigned_to.includes(m.id)).map((member: any) => (
                                                                     <button key={member.id} type="button" onClick={() => setFormData({ ...formData, assigned_to: [...formData.assigned_to, member.id] })}
                                                                         className="flex items-center gap-3 w-full p-2.5 hover:bg-slate-50 rounded-xl text-left transition-all">
@@ -527,7 +570,7 @@ const SOPTemplateFormModal: React.FC<SOPTemplateFormModalProps> = ({ isOpen, onC
                                                                 ))
                                                             ) : (
                                                                 <div className="py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                                                    {propertyMembers.length > 0 ? 'All members selected' : 'No members found'}
+                                                                    {!propertyId ? 'Select a property first' : propertyMembers.length === 0 ? 'No members found in this property' : 'All members selected'}
                                                                 </div>
                                                             )}
                                                         </motion.div>

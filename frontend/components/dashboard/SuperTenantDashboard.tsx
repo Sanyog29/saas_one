@@ -892,6 +892,8 @@ const SuperTenantDashboard = () => {
                             }
                             ticketNumber={t.ticket_number}
                             createdAt={t.created_at}
+                            resolvedAt={(t as any).resolved_at}
+                            updatedAt={(t as any).updated_at}
                             assignedTo={t.assignee?.full_name}
                             assigneePhotoUrl={(t.assignee as any)?.user_photo_url}
                             photoUrl={t.photo_before_url}

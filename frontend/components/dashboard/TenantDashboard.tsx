@@ -1210,6 +1210,8 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                                             status={isCompleted ? 'COMPLETED' : isPendingValidation ? 'PENDING_VALIDATION' : ticket.status === 'waitlist' ? 'WAITLISTED' : ticket.status.toUpperCase() as any || 'OPEN'}
                                             ticketNumber={ticket.ticket_number}
                                             createdAt={ticket.created_at}
+                                            resolvedAt={(ticket as any).resolved_at}
+                                            updatedAt={(ticket as any).updated_at}
                                             photoUrl={ticket.photo_before_url}
                                             assignedTo={ticket.assignee?.full_name}
                                             escalationChain={buildEscalationChain(ticket.ticket_escalation_logs)}
@@ -1259,6 +1261,8 @@ const RequestsTab = ({ activeTickets, completedTickets, onNavigate, isLoading, o
                                     status={filter === 'completed' ? 'COMPLETED' : ticket.status === 'waitlist' ? 'WAITLISTED' : ticket.status.toUpperCase() as any || 'OPEN'}
                                     ticketNumber={ticket.ticket_number}
                                     createdAt={ticket.created_at}
+                                    resolvedAt={(ticket as any).resolved_at}
+                                    updatedAt={(ticket as any).updated_at}
                                     photoUrl={ticket.photo_before_url}
                                     assignedTo={ticket.assignee?.full_name}
                                     assigneePhotoUrl={ticket.assignee?.user_photo_url}
