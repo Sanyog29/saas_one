@@ -109,7 +109,7 @@ export async function GET(
         const resolvedCount = resolvedCountRes.count || 0;
         const slaBreachCount = slaBreachCountRes.count || 0;
         const urgentOpenCount = urgentOpenCountRes.count || 0;
-        
+
         // Waitlist specifically for display
         const waitlistCountSpecific = waitlistCountRes.count || 0;
 
@@ -173,7 +173,7 @@ export async function GET(
                  supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', p.id).gte('created_at', periodFilter || '1970-01-01').eq('status', 'pending_validation'),
                  supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', p.id).gte('created_at', periodFilter || '1970-01-01').in('priority', urgentPriorities).not('status', 'in', `(${resolvedStatuses.map(s => `"${s}"`).join(',')},"pending_validation")`)
             ]);
-            
+
             const trends = propTrends.get(p.id) || { total: new Array(30).fill(0), resolved: new Array(30).fill(0), active: new Array(30).fill(0), pending: new Array(30).fill(0) };
 
             return {

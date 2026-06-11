@@ -120,7 +120,7 @@ const StaffDashboard = () => {
         type: 'success',
         visible: false
     });
-    const [requestFilter, setRequestFilter] = useState<'all' | 'active' | 'completed'>(
+    const [requestFilter, setRequestFilter] = useState<'all' | 'active' | 'completed' | 'assigned_to_me' | 'completed_by_me'>(
         (searchParams.get('filter') as any) || 'all'
     );
     const [showScannerModal, setShowScannerModal] = useState(false);
@@ -276,7 +276,8 @@ const StaffDashboard = () => {
                 material_requests(id)
             `)
             .eq('property_id', propertyId)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(10000);
 
         if (error) {
             console.error('Error fetching tickets:', error);
@@ -977,38 +978,32 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
 
             {/* Dashboard Section */}
             <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-5">
+                <div className="mb-5">
                     <h2 className="text-base font-bold text-text-primary">Dashboard</h2>
-                    <button
-                        onClick={onSettingsClick}
-                        className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary border border-border px-3 py-1.5 rounded-lg bg-surface-elevated transition-colors">
-                        <Settings className="w-3 h-3" />
-                        Customize
-                    </button>
                 </div>
 
-                {/* Work Orders Overview */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                {/* Work Orders Overview - Responsive Grid */}
+                <div className="grid grid-cols-3 gap-3 mt-4">
                     <button
                         onClick={() => onFilterClick?.('all')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"
+                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all group"
                     >
-                        <p className="text-3xl font-black text-text-primary group-hover:scale-110 transition-transform">{total}</p>
-                        <p className="text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1">Total</p>
+                        <p className="text-3xl font-black text-text-primary group-hover:scale-105 transition-transform">{total}</p>
+                        <p className="text-xs font-semibold text-text-tertiary mt-2">Total</p>
                     </button>
                     <button
                         onClick={() => onFilterClick?.('active')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"
+                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all group"
                     >
-                        <p className="text-3xl font-black text-info group-hover:scale-110 transition-transform">{active}</p>
-                        <p className="text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1">Active</p>
+                        <p className="text-3xl font-black text-info group-hover:scale-105 transition-transform">{active}</p>
+                        <p className="text-xs font-semibold text-text-tertiary mt-2">Active</p>
                     </button>
                     <button
                         onClick={() => onFilterClick?.('completed')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"
+                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all group"
                     >
-                        <p className="text-3xl font-black text-success group-hover:scale-110 transition-transform">{completed}</p>
-                        <p className="text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1">Completed</p>
+                        <p className="text-3xl font-black text-success group-hover:scale-105 transition-transform">{completed}</p>
+                        <p className="text-xs font-semibold text-text-tertiary mt-2">Completed</p>
                     </button>
                 </div>
             </div>
@@ -1087,11 +1082,21 @@ const ProjectsTab = () => (
 );
 
 // Requests Tab
-const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick, userId, isLoading, propertyName, userName, onEditClick, onDeleteClick, userRole = '', propertyId, onTabChange, filter = 'all', onFilterChange }: { activeTickets?: any[], completedTickets?: any[], onTicketClick?: (id: string) => void, userId: string, isLoading: boolean, propertyName?: string, userName?: string, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onDeleteClick?: (e: React.MouseEvent, id: string) => void, userRole?: string, propertyId?: string, onTabChange?: (tab: Tab) => void, filter?: 'all' | 'active' | 'completed', onFilterChange?: (filter: any) => void }) => {
+const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick, userId, isLoading, propertyName, userName, onEditClick, onDeleteClick, userRole = '', propertyId, onTabChange, filter = 'all', onFilterChange }: { activeTickets?: any[], completedTickets?: any[], onTicketClick?: (id: string) => void, userId: string, isLoading: boolean, propertyName?: string, userName?: string, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onDeleteClick?: (e: React.MouseEvent, id: string) => void, userRole?: string, propertyId?: string, onTabChange?: (tab: Tab) => void, filter?: 'all' | 'active' | 'completed' | 'assigned_to_me' | 'completed_by_me', onFilterChange?: (filter: any) => void }) => {
 
     const getFilteredTickets = () => {
         const uId = userId || '';
         switch (filter) {
+            case 'assigned_to_me':
+                return activeTickets.filter(t =>
+                    String(t.assigned_to) === String(uId) ||
+                    (t as any).assignee?.id === uId
+                );
+            case 'completed_by_me':
+                return completedTickets.filter(t =>
+                    String(t.assigned_to) === String(uId) ||
+                    (t as any).assignee?.id === uId
+                );
             case 'completed':
                 return completedTickets;
             case 'active':
@@ -1123,7 +1128,9 @@ const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick,
                         >
                             <option value="all">All Property Requests</option>
                             <option value="active">All Active Requests</option>
+                            <option value="assigned_to_me">Assigned To Me</option>
                             <option value="completed">All Completed Requests</option>
+                            <option value="completed_by_me">Completed By Me</option>
                         </select>
                     </div>
                     {propertyId && onTabChange && (
@@ -1141,12 +1148,15 @@ const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick,
             <div className="bg-card border border-border rounded-xl p-3 sm:p-5 shadow-sm min-h-[400px]">
                 <div className="flex items-center justify-between mb-6 px-2">
                     <h2 className="text-sm font-bold text-text-secondary uppercase tracking-wider flex items-center gap-2">
-                        {filter === 'completed' ? <CheckCircle2 className="w-4 h-4 text-success" /> :
-                            filter === 'active' ? <Clock className="w-4 h-4 text-info" /> :
-                                <FolderKanban className="w-4 h-4 text-info" />
+                        {filter === 'completed' || filter === 'completed_by_me' ? <CheckCircle2 className="w-4 h-4 text-success" /> :
+                            filter === 'assigned_to_me' ? <ClipboardList className="w-4 h-4 text-primary" /> :
+                                filter === 'active' ? <Clock className="w-4 h-4 text-info" /> :
+                                    <FolderKanban className="w-4 h-4 text-info" />
                         }
                         {filter === 'all' ? 'All Property Activity' :
-                            filter === 'active' ? 'All Active Requests' : 'All Completed Requests'}
+                            filter === 'active' ? 'All Active Requests' :
+                                filter === 'assigned_to_me' ? 'Assigned To Me' :
+                                    filter === 'completed_by_me' ? 'Completed By Me' : 'All Completed Requests'}
                         <span className="ml-2 text-[10px] bg-muted px-2 py-0.5 rounded-full text-text-tertiary">{filtered.length}</span>
                     </h2>
                 </div>

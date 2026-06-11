@@ -42,9 +42,6 @@ export async function POST(
             updates.assigned_to = assigned_to;
             updates.status = 'assigned';
             updates.assigned_at = new Date().toISOString();
-
-            // If it was already in_progress, keep it in_progress OR reset to assigned?
-            // Usually, re-assignment resets to 'assigned' unless specified.
         } else {
             updates.assigned_to = null;
             updates.status = 'waitlist';

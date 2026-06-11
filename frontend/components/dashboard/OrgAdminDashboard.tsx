@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle, Activity,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
-    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Wrench, ShoppingCart
+    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Wrench, ShoppingCart, Sun, Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -140,6 +140,15 @@ const OrgAdminDashboard = () => {
         total_revenue: 0,
         total_commission: 0,
         total_vendors: 0,
+        properties: [] as any[],
+    });
+    const [checklistSummary, setChecklistSummary] = useState({
+        completed: 0,
+        total: 0,
+        day_total: 0,
+        day_completed: 0,
+        night_total: 0,
+        night_completed: 0,
         properties: [] as any[],
     });
     const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'all'>('month');
@@ -480,6 +489,7 @@ const OrgAdminDashboard = () => {
             setElectricitySummary(cached.electricitySummary);
             setVmsSummary(cached.vmsSummary);
             setVendorSummary(cached.vendorSummary);
+            setChecklistSummary(cached.checklistSummary || { completed: 0, total: 0, day_total: 0, day_completed: 0, night_total: 0, night_completed: 0, properties: [] });
             setIsSummariesLoading(false);
         } else {
             setIsSummariesLoading(true);
@@ -497,11 +507,22 @@ const OrgAdminDashboard = () => {
                 elecStartDate = '2000-01-01'; // All time
             }
 
-            const [ticketsRes, electricityRes, vmsRes, vendorRes] = await Promise.all([
+            const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+            
+            const propIds = properties.map(p => p.id);
+            let checklistQuery = supabase.from('sop_completions').select('status, property_id, due_at').in('property_id', propIds);
+            if (timePeriod === 'today') {
+                checklistQuery = checklistQuery.eq('completion_date', todayDate);
+            } else if (timePeriod === 'month') {
+                checklistQuery = checklistQuery.gte('completion_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+            }
+
+            const [ticketsRes, electricityRes, vmsRes, vendorRes, checklistRes] = await Promise.all([
                 fetch(`/api/organizations/${org.id}/tickets-summary?period=${timePeriod}`),
                 fetch(`/api/organizations/${org.id}/electricity-readings?startDate=${elecStartDate}&endDate=${todayDate}`),
                 fetch(`/api/organizations/${org.id}/vms-summary?period=${timePeriod}`),
                 fetch(`/api/organizations/${org.id}/vendor-summary?period=${timePeriod}`),
+                checklistQuery
             ]);
 
             const [ticketsData, electricityData, vmsData, vendorData] = await Promise.all([
@@ -510,22 +531,23 @@ const OrgAdminDashboard = () => {
                 vmsRes.ok ? vmsRes.json() : null,
                 vendorRes.ok ? vendorRes.json() : null,
             ]);
+            const checklistData = checklistRes?.data || [];
 
             if (ticketsData) setTicketSummary(ticketsData);
             if (electricityData && Array.isArray(electricityData)) {
-                const totalUnits = electricityData.reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0);
+                const totalUnits = electricityData.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0);
                 const totalCost = electricityData.reduce((acc: number, r: any) => acc + (r.computed_cost || 0), 0);
                 const propMap: Record<string, { property_id: string; units: number }> = {};
                 electricityData.forEach((r: any) => {
                     if (!propMap[r.property_id]) propMap[r.property_id] = { property_id: r.property_id, units: 0 };
-                    propMap[r.property_id].units += r.computed_units || 0;
+                    propMap[r.property_id].units += (r.final_units ?? r.computed_units ?? 0);
                 });
                 const todayReadings = electricityData.filter((r: any) => r.reading_date === todayDate);
-                const todayUnits = todayReadings.reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0);
+                const todayUnits = todayReadings.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0);
                 const propMapToday: Record<string, { property_id: string; units: number }> = {};
                 todayReadings.forEach((r: any) => {
                     if (!propMapToday[r.property_id]) propMapToday[r.property_id] = { property_id: r.property_id, units: 0 };
-                    propMapToday[r.property_id].units += r.computed_units || 0;
+                    propMapToday[r.property_id].units += (r.final_units ?? r.computed_units ?? 0);
                 });
                 setElectricitySummary({
                     total_units: Math.round(totalUnits),
@@ -552,15 +574,50 @@ const OrgAdminDashboard = () => {
                 });
             }
 
+            const getShiftFromDueAt = (dueAtUTC: string | null) => {
+                if (!dueAtUTC) return 'day';
+                const hours = new Date(dueAtUTC).getHours();
+                return (hours >= 6 && hours < 18) ? 'day' : 'night';
+            };
+
+            const totalChecklists = checklistData.length;
+            const completedChecklists = checklistData.filter((d: any) => d.status === 'completed').length;
+            const propMap: Record<string, { property_id: string; completed: number; total: number; day_total: number; day_completed: number; night_total: number; night_completed: number }> = {};
+            checklistData.forEach((d: any) => {
+                if (!propMap[d.property_id]) {
+                    propMap[d.property_id] = { property_id: d.property_id, completed: 0, total: 0, day_total: 0, day_completed: 0, night_total: 0, night_completed: 0 };
+                }
+                const shift = getShiftFromDueAt(d.due_at);
+                propMap[d.property_id].total += 1;
+                if (shift === 'day') propMap[d.property_id].day_total += 1;
+                if (shift === 'night') propMap[d.property_id].night_total += 1;
+                
+                if (d.status === 'completed') {
+                    propMap[d.property_id].completed += 1;
+                    if (shift === 'day') propMap[d.property_id].day_completed += 1;
+                    if (shift === 'night') propMap[d.property_id].night_completed += 1;
+                }
+            });
+            const newChecklistSummary = {
+                completed: completedChecklists,
+                total: totalChecklists,
+                day_total: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'day').length,
+                day_completed: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'day' && d.status === 'completed').length,
+                night_total: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'night').length,
+                night_completed: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'night' && d.status === 'completed').length,
+                properties: Object.values(propMap)
+            };
+            setChecklistSummary(newChecklistSummary);
+
             // Update Cache
             setCachedData(cacheKey, {
                 ticketSummary: ticketsData || ticketSummary,
                 electricitySummary: (electricityData && Array.isArray(electricityData)) ? {
-                    total_units: Math.round(electricityData.reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0)),
-                    total_units_today: Math.round(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0)),
+                    total_units: Math.round(electricityData.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0)),
+                    total_units_today: Math.round(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0)),
                     total_cost: Math.round(electricityData.reduce((acc: number, r: any) => acc + (r.computed_cost || 0), 0)),
-                    properties: Object.values(electricityData.reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += r.computed_units || 0; return acc; }, {})),
-                    properties_today: Object.values(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += r.computed_units || 0; return acc; }, {})),
+                    properties: Object.values(electricityData.reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += (r.final_units ?? r.computed_units ?? 0); return acc; }, {})),
+                    properties_today: Object.values(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += (r.final_units ?? r.computed_units ?? 0); return acc; }, {})),
                 } : electricitySummary,
                 vmsSummary: vmsData ? {
                     total_visitors: vmsData.total_visitors || 0,
@@ -573,14 +630,15 @@ const OrgAdminDashboard = () => {
                     total_commission: vendorData.total_commission || 0,
                     total_vendors: vendorData.total_vendors || 0,
                     properties: vendorData.properties || [],
-                } : vendorSummary
+                } : vendorSummary,
+                checklistSummary: newChecklistSummary
             });
         } catch (error) {
             console.error('Error fetching org summaries:', error);
         } finally {
             setIsSummariesLoading(false);
         }
-    }, [org?.id, timePeriod]);
+    }, [org?.id, timePeriod, properties]);
 
     useEffect(() => {
         fetchSummaries();
@@ -1224,6 +1282,8 @@ const OrgAdminDashboard = () => {
                                 setVmsSummary={setVmsSummary}
                                 vendorSummary={vendorSummary}
                                 setVendorSummary={setVendorSummary}
+                                checklistSummary={checklistSummary}
+                                setChecklistSummary={setChecklistSummary}
                                 timePeriod={timePeriod}
                                 setTimePeriod={setTimePeriod}
                                 ticketPeriod={ticketPeriod}
@@ -1726,6 +1786,8 @@ const OverviewTab = memo(function OverviewTab({
     setVmsSummary,
     vendorSummary,
     setVendorSummary,
+    checklistSummary,
+    setChecklistSummary,
     timePeriod,
     setTimePeriod,
     ticketPeriod,
@@ -1748,6 +1810,8 @@ const OverviewTab = memo(function OverviewTab({
     setVmsSummary: any,
     vendorSummary: any,
     setVendorSummary: any,
+    checklistSummary: any,
+    setChecklistSummary: any,
     timePeriod: 'today' | 'month' | 'all',
     setTimePeriod: (p: 'today' | 'month' | 'all') => void,
     ticketPeriod: 'today' | 'month' | 'all',
@@ -1817,7 +1881,7 @@ const OverviewTab = memo(function OverviewTab({
             total_cost: 0,
             properties: electricitySummary.properties,
         };
-    }, [selectedPropertyId, electricitySummary, timePeriod]);
+    }, [selectedPropertyId, electricitySummary, electricityPeriod]);
 
     const displayVmsStats = useMemo(() => {
         if (selectedPropertyId === 'all') return vmsSummary;
@@ -1831,13 +1895,17 @@ const OverviewTab = memo(function OverviewTab({
 
     const displayVendorStats = useMemo(() => {
         if (selectedPropertyId === 'all') return vendorSummary;
-        const propStats = (vendorSummary as any).properties?.find((p: any) => p.property_id === selectedPropertyId);
-        return {
-            total_revenue: propStats?.total_revenue || 0,
-            total_commission: propStats?.total_commission || 0,
-            total_vendors: propStats?.vendor_count || 0,
-        };
-    }, [selectedPropertyId, vendorSummary]);
+        const propStats = vendorSummary.properties?.find((p: any) => p.property_id === selectedPropertyId);
+        if (!propStats) return { total_revenue: 0, total_commission: 0, total_vendors: 0 };
+        return propStats;
+    }, [vendorSummary, selectedPropertyId]);
+
+    const displayChecklistStats = useMemo(() => {
+        if (selectedPropertyId === 'all') return checklistSummary;
+        const propStats = checklistSummary.properties?.find((p: any) => p.property_id === selectedPropertyId);
+        if (!propStats) return { completed: 0, total: 0, day_total: 0, day_completed: 0, night_total: 0, night_completed: 0 };
+        return propStats;
+    }, [checklistSummary, selectedPropertyId]);
 
     const validationEnabledCount = selectedPropertyId === 'all'
         ? displayTicketStats.properties_with_validation
@@ -2354,6 +2422,72 @@ const OverviewTab = memo(function OverviewTab({
                                 ))}
                                 {!(ticketSummary as any).properties?.length && (
                                     <div className="text-center text-slate-400 py-4">No ticket data available</div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Checklist Progress Bar */}
+                        <div 
+                            onClick={() => onTabChange('checklist')}
+                            className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm mb-5 cursor-pointer hover:border-emerald-500/30 transition-colors group flex flex-col gap-4"
+                        >
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                    <ClipboardCheck className="w-5 h-5 text-emerald-500" />
+                                    <span className="text-sm font-black text-slate-900 group-hover:text-emerald-600 transition-colors">Checklist Progress</span>
+                                </div>
+                                <span className="text-xs font-bold text-slate-400">
+                                    {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
+                                </span>
+                            </div>
+
+                            <div className="space-y-3">
+                                {/* Day Shift */}
+                                {(displayChecklistStats.day_total > 0 || displayChecklistStats.total === 0) && (
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1">
+                                                <Sun className="w-3 h-3" /> Day Shift
+                                            </span>
+                                            <span className="text-xs font-black text-amber-600">
+                                                {displayChecklistStats.day_total > 0 ? Math.round((displayChecklistStats.day_completed / displayChecklistStats.day_total) * 100) : 0}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-amber-100/50 rounded-full h-2 mb-1.5 overflow-hidden">
+                                            <div 
+                                                className="bg-amber-500 h-2 rounded-full transition-all duration-1000" 
+                                                style={{ width: `${displayChecklistStats.day_total > 0 ? (displayChecklistStats.day_completed / displayChecklistStats.day_total) * 100 : 0}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-slate-400">{displayChecklistStats.day_completed} of {displayChecklistStats.day_total} completed</span>
+                                            {displayChecklistStats.total === 0 && <span className="text-[10px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">View Checklists &rarr;</span>}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Night Shift */}
+                                {displayChecklistStats.night_total > 0 && (
+                                    <div>
+                                        <div className="flex justify-between items-center mb-1.5">
+                                            <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-1">
+                                                <Moon className="w-3 h-3" /> Night Shift
+                                            </span>
+                                            <span className="text-xs font-black text-indigo-600">
+                                                {displayChecklistStats.night_total > 0 ? Math.round((displayChecklistStats.night_completed / displayChecklistStats.night_total) * 100) : 0}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-indigo-100/50 rounded-full h-2 mb-1.5 overflow-hidden">
+                                            <div 
+                                                className="bg-indigo-500 h-2 rounded-full transition-all duration-1000" 
+                                                style={{ width: `${displayChecklistStats.night_total > 0 ? (displayChecklistStats.night_completed / displayChecklistStats.night_total) * 100 : 0}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-slate-400">{displayChecklistStats.night_completed} of {displayChecklistStats.night_total} completed</span>
+                                            {displayChecklistStats.total > 0 && <span className="text-[10px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">View Checklists &rarr;</span>}
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         </div>

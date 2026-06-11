@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { 
-    ArrowLeft, Clock, User, MapPin, Send, CheckCircle, Circle, Camera, 
-    AlertTriangle, Pause, Play, Video, Upload, X, Loader2, Package, ShoppingBag 
+import {
+    ArrowLeft, Clock, User, MapPin, Send, CheckCircle, Circle, Camera,
+    AlertTriangle, Pause, Play, Video, Upload, X, Loader2, Package, ShoppingBag, Paperclip
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import EnhancedClassificationBadge from './EnhancedClassificationBadge';
 import MediaCaptureModal, { MediaFile } from '@/frontend/components/shared/MediaCaptureModal';
+import CameraCaptureModal from '@/frontend/components/shared/CameraCaptureModal';
 import { parseDate } from '@/frontend/utils/date';
 import ProcurementCatalogModal from '@/frontend/components/procurement/ProcurementCatalogModal';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -266,6 +267,9 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
         setShowMediaModal(true);
     };
 
+    // Local preview state for instant photo display
+    const [localPreview, setLocalPreview] = useState<{ before?: string; after?: string }>({});
+
     const handleMediaUpload = async (media: MediaFile) => {
         if (!uploadingType) return;
         setShowMediaModal(false);
@@ -273,6 +277,10 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
         setUploadError(null);
 
         try {
+            // STEP 1: Show local preview IMMEDIATELY
+            const localUrl = URL.createObjectURL(media.file);
+            setLocalPreview((prev) => ({ ...prev, [uploadingType]: localUrl }));
+
             const formData = new FormData();
             formData.append('file', media.file);
             formData.append('type', uploadingType);
@@ -289,9 +297,22 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                 try { err = JSON.parse(text); } catch { throw new Error(`HTTP Error ${res.status}`); }
                 throw new Error(err?.error || 'Upload failed');
             }
+
+            // STEP 2: Refresh ticket data and clean up local preview
             await fetchTicketDetail();
+            setLocalPreview((prev) => {
+                const key = uploadingType as 'before' | 'after';
+                if (prev[key]) URL.revokeObjectURL(prev[key]!);
+                return { ...prev, [key]: undefined };
+            });
         } catch (err) {
             setUploadError(err instanceof Error ? err.message : 'Upload failed');
+            // Clean up local preview on error
+            setLocalPreview((prev) => {
+                const key = uploadingType as 'before' | 'after';
+                if (prev[key]) URL.revokeObjectURL(prev[key]!);
+                return { ...prev, [key]: undefined };
+            });
         } finally {
             setIsUploading(false);
             setUploadingType(null);
@@ -675,7 +696,7 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                     <div className="grid grid-cols-2 gap-4">
                         <MediaSlot
                             label="Before"
-                            photoUrl={ticket.photo_before_url as string | null}
+                            photoUrl={localPreview.before || (ticket.photo_before_url as string | null)}
                             videoUrl={ticket.video_before_url as string | null}
                             timestamp={
                                 activities.find(a =>
@@ -689,7 +710,7 @@ export default function TicketDetail({ ticketId, onBack, isAdmin = false }: Tick
                         />
                         <MediaSlot
                             label="After"
-                            photoUrl={ticket.photo_after_url as string | null}
+                            photoUrl={localPreview.after || (ticket.photo_after_url as string | null)}
                             videoUrl={ticket.video_after_url as string | null}
                             timestamp={
                                 activities.find(a =>

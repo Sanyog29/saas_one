@@ -430,7 +430,8 @@ const MstDashboard = () => {
                 material_requests(id)
             `)
             .eq('property_id', propertyId)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(10000);
 
         if (error) {
             console.error('Error fetching tickets:', error);
@@ -1068,19 +1069,13 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
 
             {/* Dashboard Section */}
             <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-5">
+                <div className="mb-5">
                     <h2 className="text-base font-bold text-text-primary">Dashboard</h2>
-                    <button
-                        onClick={onSettingsClick}
-                        className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary border border-border px-3 py-1.5 rounded-lg bg-surface-elevated transition-colors">
-                        <Settings className="w-3 h-3" />
-                        Customize
-                    </button>
                 </div>
 
                 {/* Work Orders Overview */}
                 {/* WORK ORDERS OVERVIEW (Horizontal, wraps if needed) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                <div className="grid grid-cols-3 gap-3 mt-4">
                     <button
                         onClick={() => onFilterClick?.('all')}
                         className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"

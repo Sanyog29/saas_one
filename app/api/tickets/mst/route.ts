@@ -123,13 +123,13 @@ export async function GET(request: NextRequest) {
                 }
 
                 // Categorize tickets
-                const waitlist = (tickets || []).filter((t: DbTicket) => 
+                const waitlist = (tickets || []).filter((t: DbTicket) =>
                     t.status === 'waitlist' || (t.status === 'open' && !t.assigned_to)
                 );
-                const myTickets = (tickets || []).filter((t: DbTicket) => 
+                const myTickets = (tickets || []).filter((t: DbTicket) =>
                     t.assigned_to === user.id
                 );
-                const othersTickets = (tickets || []).filter((t: DbTicket) => 
+                const othersTickets = (tickets || []).filter((t: DbTicket) =>
                     t.assigned_to && t.assigned_to !== user.id
                 );
 

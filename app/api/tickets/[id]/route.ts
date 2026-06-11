@@ -543,7 +543,6 @@ export async function PATCH(
                 NotificationService.afterTicketAssigned(ticketId).catch(err => {
                     console.error('[Ticket Update API] Notification trigger error (Assigned):', err);
                 });
-            } else {
             }
 
             // Check for waitlist

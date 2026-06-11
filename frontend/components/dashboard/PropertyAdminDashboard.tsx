@@ -979,6 +979,7 @@ const OverviewTab = memo(function OverviewTab({
     const [vmsStats, setVmsStats] = useState(initialCached?.vmsStats || { total_visitors: 0, checked_in: 0, checked_out: 0 });
     const [vendorStats, setVendorStats] = useState(initialCached?.vendorStats || { total_revenue: 0, total_commission: 0, total_vendors: 0 });
     const [recentTickets, setRecentTickets] = useState<any[]>(initialCached?.recentTickets || []);
+    const [checklistStats, setChecklistStats] = useState(initialCached?.checklistStats || { completed: 0, total: 0, day_total: 0, day_completed: 0, night_total: 0, night_completed: 0 });
     const [isLoading, setIsLoading] = useState(!initialCached);
 
     useEffect(() => {
@@ -1064,21 +1065,50 @@ const OverviewTab = memo(function OverviewTab({
                 const apiPeriod = timePeriod; // 'today' | 'month' | 'all'
 
                 // Optimize electricity fetch: only fetch what's needed for the period
-                let electricityQuery = supabase.from('electricity_readings').select('computed_units, reading_date').eq('property_id', propertyId);
+                let electricityQuery = supabase.from('electricity_readings').select('computed_units, final_units, reading_date').eq('property_id', propertyId);
                 if (timePeriod === 'today') {
                     electricityQuery = electricityQuery.eq('reading_date', today);
                 } else if (timePeriod === 'month') {
                     electricityQuery = electricityQuery.gte('reading_date', monthStart);
                 }
+                
+                // Checklist progress
+                const todayForChecklist = new Date().toISOString().split('T')[0];
+                const monthStartForChecklist = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
 
-                const [electricityRes, vmsApiRes, vendorApiRes] = await Promise.all([
+                let checklistQuery = supabase.from('sop_completions').select('status, due_at').eq('property_id', propertyId);
+                if (timePeriod === 'today') {
+                    checklistQuery = checklistQuery.eq('completion_date', todayForChecklist);
+                } else if (timePeriod === 'month') {
+                    checklistQuery = checklistQuery.gte('completion_date', monthStartForChecklist);
+                }
+
+                const [electricityRes, vmsApiRes, vendorApiRes, checklistRes] = await Promise.all([
                     electricityQuery,
                     fetch(`/api/properties/${propertyId}/vms-summary?period=${apiPeriod}`),
                     fetch(`/api/properties/${propertyId}/vendor-summary?period=${apiPeriod}`),
+                    checklistQuery
                 ]);
 
+                // Process checklist stats
+                const checklistData = checklistRes.data || [];
+                const getShiftFromDueAt = (dueAtUTC: string | null) => {
+                    if (!dueAtUTC) return 'day';
+                    const hours = new Date(dueAtUTC).getHours();
+                    return (hours >= 6 && hours < 18) ? 'day' : 'night';
+                };
+                
+                const checklistStatsObj = {
+                    total: checklistData.length,
+                    completed: checklistData.filter((d: any) => d.status === 'completed').length,
+                    day_total: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'day').length,
+                    day_completed: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'day' && d.status === 'completed').length,
+                    night_total: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'night').length,
+                    night_completed: checklistData.filter((d: any) => getShiftFromDueAt(d.due_at) === 'night' && d.status === 'completed').length,
+                };
+
                 // Process electricity
-                const periodUnits = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.computed_units || 0), 0) || 0;
+                const periodUnits = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0) || 0;
                 
                 // For 'all' time, we might still want to know today/month units for other parts of UI if needed,
                 // but let's keep it simple and just use the period units for the main display.
@@ -1125,6 +1155,7 @@ const OverviewTab = memo(function OverviewTab({
                     validationEnabled: isValidationEnabled,
                     timePeriod: timePeriod,
                     recentTickets: recentsRes.data || [],
+                    checklistStats: checklistStatsObj,
                     electricityStats: { 
                         total_units: timePeriod === 'all' ? Math.round(periodUnits) : (electricityStats.total_units || 0), 
                         total_units_month: timePeriod === 'month' ? Math.round(periodUnits) : (electricityStats.total_units_month || 0), 
@@ -1137,6 +1168,7 @@ const OverviewTab = memo(function OverviewTab({
 
                 setTicketStats(result.ticketStats);
                 setRecentTickets(result.recentTickets);
+                setChecklistStats(result.checklistStats);
                 setElectricityStats(result.electricityStats);
                 setVmsStats(result.vmsStats);
                 setVendorStats(result.vendorStats);
@@ -1505,11 +1537,77 @@ const OverviewTab = memo(function OverviewTab({
                         </div>
                     </div>
 
-                    {/* Right Column */}
                     <div className="lg:col-span-5 space-y-5">
-                        <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
-                            <h3 className="text-sm font-black text-slate-900 mb-4">Recent Tickets</h3>
-                            <div className="space-y-3 max-h-48 overflow-y-auto">
+                        <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm flex flex-col">
+                            <h3 className="text-sm font-black text-slate-900 mb-4">Recent Tickets & Checklists</h3>
+                            
+                            {/* Checklist Progress Bar */}
+                            <div 
+                                onClick={() => onTabChange('checklist')}
+                                className="mb-6 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer hover:border-emerald-500/30 transition-colors group flex flex-col gap-4"
+                            >
+                                <div className="flex justify-between items-center">
+                                    <div className="flex items-center gap-2">
+                                        <ClipboardCheck className="w-4 h-4 text-emerald-500" />
+                                        <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-600 transition-colors">Checklist Progress</span>
+                                    </div>
+                                    <span className="text-[10px] font-bold text-slate-400">
+                                        {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
+                                    </span>
+                                </div>
+                                
+                                <div className="space-y-3">
+                                    {/* Day Shift */}
+                                    {(checklistStats.day_total > 0 || checklistStats.total === 0) && (
+                                        <div>
+                                            <div className="flex justify-between items-center mb-1.5">
+                                                <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1">
+                                                    <Sun className="w-3 h-3" /> Day Shift
+                                                </span>
+                                                <span className="text-[10px] font-black text-amber-600">
+                                                    {checklistStats.day_total > 0 ? Math.round((checklistStats.day_completed / checklistStats.day_total) * 100) : 0}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-amber-100/50 rounded-full h-1.5 overflow-hidden mb-1">
+                                                <div 
+                                                    className="bg-amber-500 h-1.5 rounded-full transition-all duration-1000" 
+                                                    style={{ width: `${checklistStats.day_total > 0 ? (checklistStats.day_completed / checklistStats.day_total) * 100 : 0}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[9px] font-bold text-slate-400">{checklistStats.day_completed} of {checklistStats.day_total} completed</span>
+                                                {checklistStats.total === 0 && <span className="text-[9px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">View History &rarr;</span>}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Night Shift */}
+                                    {checklistStats.night_total > 0 && (
+                                        <div>
+                                            <div className="flex justify-between items-center mb-1.5">
+                                                <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-1">
+                                                    <Moon className="w-3 h-3" /> Night Shift
+                                                </span>
+                                                <span className="text-[10px] font-black text-indigo-600">
+                                                    {checklistStats.night_total > 0 ? Math.round((checklistStats.night_completed / checklistStats.night_total) * 100) : 0}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-indigo-100/50 rounded-full h-1.5 overflow-hidden mb-1">
+                                                <div 
+                                                    className="bg-indigo-500 h-1.5 rounded-full transition-all duration-1000" 
+                                                    style={{ width: `${checklistStats.night_total > 0 ? (checklistStats.night_completed / checklistStats.night_total) * 100 : 0}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-[9px] font-bold text-slate-400">{checklistStats.night_completed} of {checklistStats.night_total} completed</span>
+                                                {checklistStats.total > 0 && <span className="text-[9px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">View History &rarr;</span>}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                                 {recentTickets.map((t, idx) => (
                                     <div key={t.id || idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
                                         <div>

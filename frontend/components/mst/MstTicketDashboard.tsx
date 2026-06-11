@@ -186,8 +186,8 @@ export default function MstTicketDashboard({
                 </button>
             </div>
 
-            {/* Stats Overview */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {/* Stats Overview - 3 Column Grid */}
+            <div className="grid grid-cols-3 gap-3">
                 <StatCard label="Waitlist" value={statusCounts.waitlist} color="emerald" icon={Clock} />
                 <StatCard label="Assigned" value={statusCounts.assigned} color="blue" icon={Ticket} />
                 <StatCard label="In Progress" value={statusCounts.in_progress} color="primary" icon={ClipboardList} />
@@ -279,36 +279,31 @@ export default function MstTicketDashboard({
 }
 
 // Stat Card Component
-function StatCard({ 
-    label, 
-    value, 
+function StatCard({
+    label,
+    value,
     color,
     icon: Icon
-}: { 
-    label: string; 
-    value: number; 
+}: {
+    label: string;
+    value: number;
     color: 'emerald' | 'blue' | 'primary' | 'amber' | 'gray';
     icon: React.ElementType;
 }) {
-    const colorMap = {
-        emerald: 'text-emerald-500 bg-emerald-500/10',
-        blue: 'text-blue-500 bg-blue-500/10',
-        primary: 'text-primary bg-primary/10',
-        amber: 'text-amber-500 bg-amber-500/10',
-        gray: 'text-text-tertiary bg-muted'
+    const colorMap: Record<string, { bg: string; text: string }> = {
+        emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-500' },
+        blue: { bg: 'bg-blue-500/10', text: 'text-blue-500' },
+        primary: { bg: 'bg-primary/10', text: 'text-primary' },
+        amber: { bg: 'bg-amber-500/10', text: 'text-amber-500' },
+        gray: { bg: 'bg-muted', text: 'text-text-tertiary' }
     };
 
     return (
-        <div className="bg-card border border-border rounded-xl p-4">
-            <div className="flex items-center justify-between">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${colorMap[color]}`}>
-                    <Icon className="w-4 h-4" />
-                </div>
-                <span className={`text-2xl font-bold ${color === 'gray' ? 'text-text-tertiary' : colorMap[color].split(' ')[0]}`}>
-                    {value}
-                </span>
-            </div>
-            <p className="text-xs text-text-tertiary mt-2 font-medium">{label}</p>
+        <div className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all">
+            <p className={`text-3xl font-black ${colorMap[color].text} hover:scale-105 transition-transform`}>
+                {value}
+            </p>
+            <p className="text-xs font-semibold text-text-tertiary mt-2">{label}</p>
         </div>
     );
 }

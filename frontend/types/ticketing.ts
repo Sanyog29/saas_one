@@ -10,7 +10,7 @@ export type SkillGroup = 'technical' | 'plumbing' | 'vendor' | 'soft_services';
 // REQUESTED (open) -> WAITLIST -> ASSIGNED -> WORK_STARTED (in_progress) -> [PAUSED] -> PENDING_VALIDATION -> RESOLVED (approved) or OPEN (rejected)
 export type TicketStatus =
     | 'open'                 // REQUESTED - Initial tenant submission
-    | 'waitlist'             // WAITLIST - In department queue
+    | 'waitlist'             // WAITLIST - In department queue (existing tickets only)
     | 'assigned'             // ASSIGNED - MST self-assigned
     | 'in_progress'          // WORK_STARTED - MST actively working
     | 'paused'               // PAUSED - Explicitly paused with reason

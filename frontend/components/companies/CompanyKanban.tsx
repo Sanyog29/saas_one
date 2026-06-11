@@ -138,11 +138,12 @@ export default function CompanyKanban({ propertyId, organizationId }: Props) {
     const handleUpdateCredits = async () => {
         if (!selectedCompany) return;
         try {
-                        const res = await fetch(`/api/meeting-room-credits/company/${selectedCompany.id}/add`, {
+                        const res = await fetch(`/api/meeting-room-credits`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     propertyId,
+                    companyId: selectedCompany.id,
                     monthlyHours: parseFloat(monthlyHours),
                     remainingHours: parseFloat(remainingHours)
                 })

@@ -91,6 +91,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 7. AUTO-ASSIGNMENT TRIGGER UPDATE
+-- New tickets get auto-assigned. If no resolver found, goes to waitlist (existing tickets only).
 CREATE OR REPLACE FUNCTION auto_assign_ticket()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -98,30 +99,30 @@ DECLARE
   v_skill_group_code text;
 BEGIN
   -- Get skill group code for the category
-  SELECT sg.code INTO v_skill_group_code 
-  FROM skill_groups sg 
+  SELECT sg.code INTO v_skill_group_code
+  FROM skill_groups sg
   WHERE sg.id = NEW.skill_group_id;
 
   -- Attempt assignment
   v_resolver_id := find_best_resolver(NEW.property_id, v_skill_group_code, NEW.floor_number);
-  
+
   IF v_resolver_id IS NOT NULL THEN
     NEW.assigned_to := v_resolver_id;
     NEW.assigned_at := now();
     NEW.status := 'assigned';
     NEW.sla_started := true;
     NEW.sla_deadline := now() + (COALESCE(NEW.sla_hours, 24) || ' hours')::interval;
-    
+
     -- Update last_assigned_at for load balancer round-robin fairness
-    UPDATE resolver_stats 
-    SET last_assigned_at = now() 
+    UPDATE resolver_stats
+    SET last_assigned_at = now()
     WHERE user_id = v_resolver_id AND property_id = NEW.property_id;
   ELSE
-    -- No available MST available -> ticket goes to WAITLIST (PRD 5.4 Edge Cases)
+    -- No available MST → ticket goes to WAITLIST (for existing tickets, admins will assign manually)
     NEW.status := 'waitlist';
     NEW.sla_started := false;
   END IF;
-  
+
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

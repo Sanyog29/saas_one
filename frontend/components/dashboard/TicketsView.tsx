@@ -460,8 +460,8 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
     const handleEditClick = (e: React.MouseEvent, ticket: Ticket) => {
         e.stopPropagation();
         setEditingTicket(ticket);
-        setEditTitle(ticket.title);
-        setEditDescription(ticket.description);
+        setEditTitle(ticket.title || '');
+        setEditDescription(ticket.description || '');
     };
 
     const handleEditSubmit = async () => {
@@ -474,7 +474,7 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title: editTitle.trim(),
-                    description: editDescription.trim()
+                    description: (editDescription || '').trim()
                 })
             });
 

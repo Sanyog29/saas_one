@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/frontend/utils/supabase/server';
 import { processIntelligentAssignment } from '@/backend/lib/ticketing/assignment';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
     try {
         const supabase = await createClient();
@@ -82,50 +84,42 @@ export async function POST(request: NextRequest) {
                 : (role === 'staff' ? skills.some(s => VALID_STAFF_SKILLS.includes(s)) : false);
 
             if (isEligibleAsResolver) {
-                const { data: statsList, error: fetchError } = await supabase
-                    .from('resolver_stats')
+                // Get or determine skill group
+                const { data: skillGroup } = await supabase
+                    .from('skill_groups')
                     .select('id')
-                    .eq('user_id', user.id)
-                    .eq('property_id', propertyId)
-                    .limit(1);
+                    .in('code', role === 'mst' ? VALID_MST_SKILLS : VALID_STAFF_SKILLS)
+                    .eq('is_active', true)
+                    .limit(1)
+                    .single();
 
-                if (fetchError) throw fetchError;
-                const existingStats = statsList && statsList.length > 0 ? statsList[0] : null;
-
-                if (existingStats) {
-                    // Update existing
-                    const { error: updateError } = await supabase
+                if (skillGroup) {
+                    // Try INSERT first, catch 409 Conflict and do UPDATE instead
+                    const { error: insertError } = await supabase
                         .from('resolver_stats')
-                        .update({
+                        .insert({
+                            user_id: user.id,
+                            property_id: propertyId,
+                            skill_group_id: skillGroup.id,
                             is_checked_in: true,
                             is_available: true
-                        })
-                        .eq('id', existingStats.id);
+                        });
 
-                    if (updateError) throw updateError;
-                } else {
-                    // Insert new (Note: This is a simplified insert, usually handled by role assignment)
-                    // We'll at least set the first available valid skill group
-                    const { data: skillGroup } = await supabase
-                        .from('skill_groups')
-                        .select('id')
-                        .in('code', role === 'mst' ? VALID_MST_SKILLS : VALID_STAFF_SKILLS)
-                        .eq('is_active', true)
-                        .limit(1)
-                        .single();
-
-                    if (skillGroup) {
-                        const { error: insertError } = await supabase
-                            .from('resolver_stats')
-                            .insert({
-                                user_id: user.id,
-                                property_id: propertyId,
-                                skill_group_id: skillGroup.id,
-                                is_checked_in: true,
-                                is_available: true
-                            });
-
-                        if (insertError) throw insertError;
+                    if (insertError) {
+                        // 23505 is PostgreSQL unique violation code
+                        if (insertError.code === '23505') {
+                            // Record exists, just update it
+                            await supabase
+                                .from('resolver_stats')
+                                .update({
+                                    is_checked_in: true,
+                                    is_available: true
+                                })
+                                .eq('user_id', user.id)
+                                .eq('property_id', propertyId);
+                        } else {
+                            console.error('[Check-in] resolver_stats error:', insertError);
+                        }
                     }
                 }
             } else {
