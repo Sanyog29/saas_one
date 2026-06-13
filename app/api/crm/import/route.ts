@@ -1,162 +1,156 @@
-import { createClient } from '@/frontend/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import Papa from 'papaparse';
+import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
 
-// POST /api/crm/import - Import leads from CSV
+const MAX_ROWS = 5000;
+
+// POST /api/crm/import - import leads from CSV
 export async function POST(request: NextRequest) {
-    const supabase = createClient();
+    const body = await request.json().catch(() => null);
+    if (!body?.csv_data) return NextResponse.json({ error: 'csv_data is required' }, { status: 400 });
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const access = await resolveCrmAccess(request, readOrgId(request, body));
+    if (isCrmAccessError(access)) return access;
+    const org = access.organizationId;
 
-    const body = await request.json();
-
-    if (!body.csv_data) {
-        return NextResponse.json({ error: 'csv_data is required' }, { status: 400 });
-    }
-
-    // Parse CSV
     const parsed = Papa.parse(body.csv_data, {
         header: true,
         skipEmptyLines: true,
-        transformHeader: (header) => header.trim().toLowerCase().replace(/\s+/g, '_')
+        transformHeader: (h) => h.trim().toLowerCase().replace(/\s+/g, '_'),
     });
-
     if (parsed.errors.length > 0) {
         return NextResponse.json({ error: 'Invalid CSV format', details: parsed.errors }, { status: 400 });
     }
 
     const rows = parsed.data as Record<string, string>[];
+    if (rows.length > MAX_ROWS) {
+        return NextResponse.json({ error: `CSV exceeds ${MAX_ROWS}-row limit (got ${rows.length})` }, { status: 413 });
+    }
+
     const errors: { row: number; field: string; message: string }[] = [];
     const importedLeads: string[] = [];
+    let skipped = 0;
 
-    // Get default status
-    const { data: defaultStatus } = await supabase
-        .from('crm_lead_statuses')
-        .select('id')
-        .eq('name', 'New Lead')
-        .single();
+    // Default status (org default -> global default).
+    const { data: def } = await supabaseAdmin
+        .from('crm_lead_statuses').select('id')
+        .eq('is_default', true)
+        .or(`organization_id.eq.${org},organization_id.is.null`)
+        .order('organization_id', { ascending: false, nullsFirst: false })
+        .limit(1).maybeSingle();
+    const defaultStatusId = def?.id;
+    if (!defaultStatusId) return NextResponse.json({ error: 'No default lead status configured' }, { status: 500 });
 
-    // Get lead sources mapping
-    const { data: sources } = await supabase
-        .from('crm_lead_sources')
-        .select('id, name')
-        .eq('is_active', true);
+    // Lookup maps (org-scoped where applicable).
+    const { data: sources } = await supabaseAdmin
+        .from('crm_lead_sources').select('id, name').eq('is_active', true)
+        .or(`organization_id.eq.${org},organization_id.is.null`);
+    const sourceMap = new Map((sources || []).map((s) => [s.name.toLowerCase(), s.id]));
 
-    const sourceMap = new Map(sources?.map(s => [s.name.toLowerCase(), s.id]) || []);
+    const { data: properties } = await supabaseAdmin
+        .from('properties').select('id, name').eq('organization_id', org);
+    const propertyMap = new Map((properties || []).map((p) => [p.name.toLowerCase(), p.id]));
 
-    // Get properties mapping
-    const { data: properties } = await supabase
-        .from('properties')
-        .select('id, name');
+    // Only admins may assign imported leads to other members.
+    let userMap = new Map<string, string>();
+    if (access.isAdmin) {
+        const [pm, om] = await Promise.all([
+            supabaseAdmin.from('property_memberships').select('user_id').eq('organization_id', org).eq('is_active', true),
+            supabaseAdmin.from('organization_memberships').select('user_id').eq('organization_id', org).eq('is_active', true),
+        ]);
+        const memberIds = [...new Set([...(pm.data || []), ...(om.data || [])].map((m: any) => m.user_id))];
+        if (memberIds.length) {
+            const { data: us } = await supabaseAdmin.from('users').select('id, full_name').in('id', memberIds);
+            userMap = new Map((us || []).map((u) => [u.full_name.toLowerCase(), u.id]));
+        }
+    }
 
-    const propertyMap = new Map(properties?.map(p => [p.name.toLowerCase(), p.id]) || []);
-
-    // Get users for assignment
-    const { data: users } = await supabase
-        .from('users')
-        .select('id, full_name');
-
-    const userMap = new Map(users?.map(u => [u.full_name.toLowerCase(), u.id]) || []);
-
-    // Process each row
     for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const rowNum = i + 2; // Account for header row + 1-based indexing
-
+        const rowNum = i + 2;
         try {
-            // Map columns
             const companyName = row['company_name'] || row['companyname'] || row['company'];
             const contactPerson = row['contact_person'] || row['contactperson'] || row['contact'];
             const contactNumber = row['contact_number'] || row['contactnumber'] || row['phone'] || row['mobile'];
             const email = row['email'] || row['emailid'] || row['email_id'];
             const location = row['location'] || row['city'];
             const requirement = row['requirement'] || row['note'] || row['notes'];
-            const dealValue = parseFloat(row['deal_value'] || row['dealvalue'] || row['value'] || '0');
+            const dealValueRaw = parseFloat(row['deal_value'] || row['dealvalue'] || row['value'] || '0');
+            const dealValue = isNaN(dealValueRaw) || dealValueRaw < 0 ? 0 : dealValueRaw;
             const propertyInterest = row['property_interest'] || row['propertyinterest'] || row['property'];
             const leadSourceName = row['lead_source'] || row['leadsource'] || row['source'];
             const assignedTeam = row['assigned_team'] || row['assigneduser'] || row['assigned'];
 
-            // Validate required fields
-            if (!companyName && !contactPerson && !email) {
-                errors.push({ row: rowNum, field: 'required', message: 'At least one of company_name, contact_person, or email is required' });
+            if (!companyName && !contactPerson && !email && !contactNumber) {
+                errors.push({ row: rowNum, field: 'required', message: 'Need at least one of company_name, contact_person, email, contact_number' });
                 continue;
             }
 
-            // Build lead data
+            // Dedup within the org by email or phone.
+            if (email || contactNumber) {
+                const ors: string[] = [];
+                if (email) ors.push(`email.eq.${email}`);
+                if (contactNumber) ors.push(`contact_number.eq.${contactNumber}`);
+                const { data: dup } = await supabaseAdmin
+                    .from('crm_leads').select('id').eq('organization_id', org).or(ors.join(',')).limit(1).maybeSingle();
+                if (dup) { skipped++; continue; }
+            }
+
             const leadData: Record<string, any> = {
-                created_by: user.id,
-                company_name: companyName,
-                contact_person: contactPerson,
-                contact_number: contactNumber,
-                email: email,
-                location: location,
-                requirement: requirement,
-                deal_value: dealValue || 0,
-                status: defaultStatus?.id,
-                priority: 'Medium'
+                organization_id: org,
+                created_by: access.user.id,
+                assigned_to: access.isAdmin ? null : access.user.id,
+                company_name: companyName || null,
+                contact_person: contactPerson || null,
+                contact_number: contactNumber || null,
+                email: email || null,
+                location: location || null,
+                city: location || null,
+                requirement: requirement || null,
+                deal_value: dealValue,
+                status: defaultStatusId,
+                priority: 'Medium',
             };
-
-            // Map property
             if (propertyInterest) {
-                const propId = propertyMap.get(propertyInterest.toLowerCase());
-                if (propId) {
-                    leadData.property_interest = propId;
-                }
+                const pid = propertyMap.get(propertyInterest.toLowerCase());
+                if (pid) leadData.property_interest = pid;
             }
-
-            // Map lead source
             if (leadSourceName) {
-                const sourceId = sourceMap.get(leadSourceName.toLowerCase());
-                if (sourceId) {
-                    leadData.lead_source = sourceId;
-                }
+                const sid = sourceMap.get(leadSourceName.toLowerCase());
+                if (sid) leadData.lead_source = sid;
+            }
+            if (assignedTeam && access.isAdmin) {
+                const uid = userMap.get(assignedTeam.toLowerCase());
+                if (uid) leadData.assigned_to = uid;
             }
 
-            // Map assigned user
-            if (assignedTeam) {
-                const userId = userMap.get(assignedTeam.toLowerCase());
-                if (userId) {
-                    leadData.assigned_to = userId;
-                }
-            }
-
-            // Insert lead
-            const { data: newLead, error: insertError } = await supabase
-                .from('crm_leads')
-                .insert(leadData)
-                .select('id')
-                .single();
-
-            if (insertError) {
-                errors.push({ row: rowNum, field: 'insert', message: insertError.message });
-            } else {
-                importedLeads.push(newLead.id);
-            }
+            const { data: newLead, error: insErr } = await supabaseAdmin
+                .from('crm_leads').insert(leadData).select('id').single();
+            if (insErr) errors.push({ row: rowNum, field: 'insert', message: insErr.message });
+            else importedLeads.push(newLead.id);
         } catch (err: any) {
-            errors.push({ row: rowNum, field: 'general', message: err.message });
+            errors.push({ row: rowNum, field: 'general', message: err?.message || 'Unknown error' });
         }
     }
 
     return NextResponse.json({
         total_rows: rows.length,
         success_count: importedLeads.length,
+        skipped_duplicates: skipped,
         error_count: errors.length,
-        errors: errors.slice(0, 100), // Limit errors to first 100
-        imported_leads: importedLeads
+        errors: errors.slice(0, 100),
+        imported_leads: importedLeads,
     });
 }
 
-// GET /api/crm/import/template - Get sample CSV template
-export async function GET(request: NextRequest) {
-    const template = `Sl No,Date,Company Name,Contact Person,Contact Number,Email Id,Assigned Team,Location,Requirement,FCPL Status,Deal Value,Property Interest,Lead Source`;
-
+// GET /api/crm/import - sample CSV template
+export async function GET() {
+    const template = `Company Name,Contact Person,Contact Number,Email Id,Assigned Team,Location,Requirement,Deal Value,Property Interest,Lead Source`;
     return new NextResponse(template, {
         headers: {
             'Content-Type': 'text/csv',
-            'Content-Disposition': 'attachment; filename="crm_leads_template.csv"'
-        }
+            'Content-Disposition': 'attachment; filename="crm_leads_template.csv"',
+        },
     });
 }

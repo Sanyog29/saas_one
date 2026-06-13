@@ -1,212 +1,156 @@
-import { createClient } from '@/frontend/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
 
-// GET /api/crm/stats - Get dashboard stats
+// GET /api/crm/stats?type=rep|admin
 export async function GET(request: NextRequest) {
-    const supabase = createClient();
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const access = await resolveCrmAccess(request, readOrgId(request));
+    if (isCrmAccessError(access)) return access;
 
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type') || 'rep'; // 'rep' or 'admin'
+    const requestedType = searchParams.get('type') || 'rep';
     const propertyId = searchParams.get('property_id');
     const userId = searchParams.get('user_id');
-
-    // Check if user is admin
-    const { data: membership } = await supabase
-        .from('property_memberships')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .single();
-
-    const isAdmin = ['bd_admin', 'org_super_admin'].includes(membership?.role);
+    const org = access.organizationId;
 
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const today = new Date().toISOString().split('T')[0];
+    const today = now.toISOString().split('T')[0];
 
-    if (type === 'rep' || !isAdmin) {
-        // BD Representative Dashboard Stats
-        const targetUserId = userId || user.id;
+    // Load this org's status semantics ONCE (org rows + global defaults).
+    const { data: statuses } = await supabaseAdmin
+        .from('crm_lead_statuses')
+        .select('id, name, is_won, is_terminal')
+        .or(`organization_id.eq.${org},organization_id.is.null`);
+    const wonIds = new Set((statuses || []).filter((s) => s.is_won).map((s) => s.id));
+    const terminalIds = new Set((statuses || []).filter((s) => s.is_terminal).map((s) => s.id));
+    const proposalId = (statuses || []).find((s) => /proposal/i.test(s.name))?.id;
 
-        // Get lead counts
-        const { count: assignedLeads } = await supabase
+    // ---- Rep dashboard ---------------------------------------------------
+    if (requestedType === 'rep' || !access.isAdmin) {
+        const targetUserId = access.isAdmin && userId ? userId : access.user.id;
+
+        const { data: leads } = await supabaseAdmin
             .from('crm_leads')
-            .select('*', { count: 'exact', head: true })
+            .select('id, status, deal_value, next_followup_date, closed_at, is_archived')
+            .eq('organization_id', org)
             .eq('assigned_to', targetUserId)
             .eq('is_archived', false);
 
-        // Get open followups
-        const { count: openFollowups } = await supabase
-            .from('crm_leads')
-            .select('*', { count: 'exact', head: true })
-            .eq('assigned_to', targetUserId)
-            .eq('is_archived', false)
-            .not('next_followup_date', 'is', null)
-            .lte('next_followup_date', now.toISOString());
+        const all = leads || [];
+        const assignedLeads = all.length;
+        const openFollowups = all.filter(
+            (l) => l.next_followup_date && new Date(l.next_followup_date) <= now && !terminalIds.has(l.status)
+        ).length;
+        const proposalsPending = proposalId ? all.filter((l) => l.status === proposalId).length : 0;
+        const wonThisMonth = all.filter((l) => wonIds.has(l.status) && l.closed_at && l.closed_at >= startOfMonth);
+        const revenueClosed = wonThisMonth.reduce((s, l) => s + Number(l.deal_value || 0), 0);
+        const pipelineValue = all
+            .filter((l) => !terminalIds.has(l.status))
+            .reduce((s, l) => s + Number(l.deal_value || 0), 0);
 
-        // Get today's meetings
-        const { count: meetingsToday } = await supabase
+        const { count: meetingsToday } = await supabaseAdmin
             .from('crm_events')
-            .select('*', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', org)
             .eq('user_id', targetUserId)
             .eq('event_type', 'meeting')
             .eq('status', 'scheduled')
             .gte('start_datetime', `${today}T00:00:00`)
             .lte('start_datetime', `${today}T23:59:59`);
 
-        // Get proposals pending (Proposal Shared status)
-        const { data: proposalStatus } = await supabase
-            .from('crm_lead_statuses')
-            .select('id')
-            .eq('name', 'Proposal Shared')
-            .single();
-
-        const { count: proposalsPending } = await supabase
-            .from('crm_leads')
-            .select('*', { count: 'exact', head: true })
-            .eq('assigned_to', targetUserId)
-            .eq('status', proposalStatus?.id)
-            .eq('is_archived', false);
-
-        // Get won this month
-        const wonStatus = await supabase
-            .from('crm_lead_statuses')
-            .select('id')
-            .eq('name', 'Won')
-            .single();
-
-        const { data: wonData } = await supabase
-            .from('crm_leads')
-            .select('deal_value')
-            .eq('assigned_to', targetUserId)
-            .eq('status', wonStatus?.id)
-            .eq('is_archived', false)
-            .gte('updated_at', startOfMonth);
-
-        const wonThisMonth = wonData?.length || 0;
-        const revenueClosed = wonData?.reduce((sum, l) => sum + (l.deal_value || 0), 0) || 0;
-
-        // Pipeline value
-        const { data: pipelineData } = await supabase
-            .from('crm_leads')
-            .select('deal_value')
-            .eq('assigned_to', targetUserId)
-            .eq('is_archived', false)
-            .not('status', 'in', `(${wonStatus?.id || ''})`);
-
-        const pipelineValue = pipelineData?.reduce((sum, l) => sum + (l.deal_value || 0), 0) || 0;
-
-        // Target achievement
-        const { data: target } = await supabase
+        const { data: target } = await supabaseAdmin
             .from('crm_targets')
-            .select('*')
+            .select('target_value')
             .eq('user_id', targetUserId)
             .eq('month', now.getMonth() + 1)
             .eq('year', now.getFullYear())
-            .single();
-
+            .maybeSingle();
         const targetAchievement = target?.target_value
             ? Math.round((revenueClosed / Number(target.target_value)) * 100)
             : 0;
 
         return NextResponse.json({
-            assigned_leads: assignedLeads || 0,
-            open_followups: openFollowups || 0,
+            assigned_leads: assignedLeads,
+            open_followups: openFollowups,
             meetings_today: meetingsToday || 0,
-            proposals_pending: proposalsPending || 0,
-            won_this_month: wonThisMonth,
+            proposals_pending: proposalsPending,
+            won_this_month: wonThisMonth.length,
             pipeline_value: pipelineValue,
             target_achievement_percent: targetAchievement,
-            revenue_closed: revenueClosed
-        });
-    } else {
-        // Admin Dashboard Stats
-        // Get all leads by property
-        let leadQuery = supabase
-            .from('crm_leads')
-            .select('*, property_info:properties(id, name), status_info:crm_lead_statuses(name)');
-
-        if (propertyId) {
-            leadQuery = leadQuery.eq('property_interest', propertyId);
-        }
-
-        const { data: allLeads } = await leadQuery;
-
-        // Property-wise leads
-        const propertyWise: Record<string, { count: number; value: number }> = {};
-        const sourceWise: Record<string, number> = {};
-
-        allLeads?.forEach(lead => {
-            const propName = lead.property_info?.name || 'Unassigned';
-            if (!propertyWise[propName]) {
-                propertyWise[propName] = { count: 0, value: 0 };
-            }
-            propertyWise[propName].count++;
-            propertyWise[propName].value += lead.deal_value || 0;
-
-            if (lead.source_info?.name) {
-                sourceWise[lead.source_info.name] = (sourceWise[lead.source_info.name] || 0) + 1;
-            }
-        });
-
-        // User performance
-        const { data: users } = await supabase
-            .from('users')
-            .select('id, full_name');
-
-        const userPerformance = await Promise.all(
-            (users || []).map(async (u) => {
-                const { data: userLeads } = await supabase
-                    .from('crm_leads')
-                    .select('*, status_info:crm_lead_statuses(name)')
-                    .eq('assigned_to', u.id);
-
-                const meetings = await supabase
-                    .from('crm_events')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('user_id', u.id)
-                    .eq('event_type', 'meeting')
-                    .eq('status', 'completed')
-                    .gte('start_datetime', startOfMonth);
-
-                const wonStatus = await supabase
-                    .from('crm_lead_statuses')
-                    .select('id')
-                    .eq('name', 'Won')
-                    .single();
-
-                const won = userLeads?.filter(l => l.status === wonStatus?.id).length || 0;
-
-                return {
-                    user_id: u.id,
-                    user_name: u.full_name,
-                    leads: userLeads?.length || 0,
-                    meetings: meetings.count || 0,
-                    closures: won,
-                    value: userLeads?.reduce((sum, l) => sum + (l.deal_value || 0), 0) || 0
-                };
-            })
-        );
-
-        return NextResponse.json({
-            total_leads: allLeads?.length || 0,
-            open_leads: allLeads?.filter(l => !['Won', 'Lost', 'Dropped'].includes(l.status_info?.name)).length || 0,
-            pipeline_value: allLeads?.reduce((sum, l) => sum + (l.deal_value || 0), 0) || 0,
-            property_wise_leads: Object.entries(propertyWise).map(([name, data]) => ({
-                property_name: name,
-                count: data.count,
-                value: data.value
-            })),
-            lead_source_analytics: Object.entries(sourceWise).map(([name, count]) => ({
-                source_name: name,
-                count
-            })),
-            user_performance: userPerformance
+            revenue_closed: revenueClosed,
         });
     }
+
+    // ---- Admin dashboard (single pass, no N+1) ---------------------------
+    let leadQ = supabaseAdmin
+        .from('crm_leads')
+        .select('id, status, deal_value, assigned_to, property_interest, city, closed_at, property_info:properties(id, name), source_info:crm_lead_sources(id, name)')
+        .eq('organization_id', org)
+        .eq('is_archived', false);
+    if (propertyId) leadQ = leadQ.eq('property_interest', propertyId);
+    const { data: allLeads } = await leadQ;
+    const leads = allLeads || [];
+
+    const propertyWise: Record<string, { count: number; value: number }> = {};
+    const sourceWise: Record<string, number> = {};
+    const cityWise: Record<string, { count: number; value: number }> = {};
+    const perUser: Record<string, { leads: number; closures: number; value: number }> = {};
+
+    for (const l of leads as any[]) {
+        const propName = l.property_info?.name || 'Unassigned';
+        (propertyWise[propName] ??= { count: 0, value: 0 });
+        propertyWise[propName].count++;
+        propertyWise[propName].value += Number(l.deal_value || 0);
+
+        if (l.source_info?.name) sourceWise[l.source_info.name] = (sourceWise[l.source_info.name] || 0) + 1;
+
+        const city = l.city || 'Unspecified';
+        (cityWise[city] ??= { count: 0, value: 0 });
+        cityWise[city].count++;
+        cityWise[city].value += Number(l.deal_value || 0);
+
+        if (l.assigned_to) {
+            (perUser[l.assigned_to] ??= { leads: 0, closures: 0, value: 0 });
+            perUser[l.assigned_to].leads++;
+            perUser[l.assigned_to].value += Number(l.deal_value || 0);
+            if (wonIds.has(l.status)) perUser[l.assigned_to].closures++;
+        }
+    }
+
+    // One query for completed meetings this month, counted per user in JS.
+    const { data: meetings } = await supabaseAdmin
+        .from('crm_events')
+        .select('user_id')
+        .eq('organization_id', org)
+        .eq('event_type', 'meeting')
+        .eq('status', 'completed')
+        .gte('start_datetime', startOfMonth);
+    const meetingsByUser: Record<string, number> = {};
+    for (const m of meetings || []) meetingsByUser[(m as any).user_id] = (meetingsByUser[(m as any).user_id] || 0) + 1;
+
+    // Resolve user names in one query.
+    const userIds = Object.keys(perUser);
+    const { data: users } = userIds.length
+        ? await supabaseAdmin.from('users').select('id, full_name').in('id', userIds)
+        : { data: [] as any[] };
+    const nameById = new Map((users || []).map((u: any) => [u.id, u.full_name]));
+
+    return NextResponse.json({
+        total_leads: leads.length,
+        open_leads: leads.filter((l: any) => !terminalIds.has(l.status)).length,
+        pipeline_value: leads.filter((l: any) => !terminalIds.has(l.status)).reduce((s, l: any) => s + Number(l.deal_value || 0), 0),
+        revenue_closed: leads.filter((l: any) => wonIds.has(l.status)).reduce((s, l: any) => s + Number(l.deal_value || 0), 0),
+        property_wise_leads: Object.entries(propertyWise).map(([name, v]) => ({ property_name: name, count: v.count, value: v.value })),
+        lead_source_analytics: Object.entries(sourceWise).map(([name, count]) => ({ source_name: name, count })),
+        territory_performance: Object.entries(cityWise).map(([city, v]) => ({ city, leads: v.count, value: v.value })),
+        user_performance: Object.entries(perUser).map(([uid, v]) => ({
+            user_id: uid,
+            user_name: nameById.get(uid) || 'Unknown',
+            leads: v.leads,
+            meetings: meetingsByUser[uid] || 0,
+            closures: v.closures,
+            value: v.value,
+        })),
+    });
 }

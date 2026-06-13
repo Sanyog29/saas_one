@@ -1,67 +1,55 @@
-import { createClient } from '@/frontend/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { resolveCrmAccess, isCrmAccessError, readOrgId, scopeLeadsQuery } from '@/backend/lib/crm/access';
 
-// POST /api/crm/ai - AI-powered CRM insights
+// POST /api/crm/ai - rule-based CRM insights over the caller's visible leads
 export async function POST(request: NextRequest) {
-    const supabase = createClient();
+    const body = await request.json().catch(() => null);
+    if (!body?.query) return NextResponse.json({ error: 'Query is required' }, { status: 400 });
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const access = await resolveCrmAccess(request, readOrgId(request, body));
+    if (isCrmAccessError(access)) return access;
 
     try {
-        const body = await request.json();
-        const { query, context } = body;
-
-        if (!query) {
-            return NextResponse.json({ error: 'Query is required' }, { status: 400 });
-        }
-
-        // Get user's leads and stats
+        const { query } = body;
         const now = new Date();
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-        const [leadsRes, statsRes, eventsRes] = await Promise.all([
-            supabase
-                .from('crm_leads')
-                .select(`
-                    *,
-                    status_info:crm_lead_statuses(name),
-                    assigned_user:users!crm_leads_assigned_to_fkey(full_name)
-                `)
-                .eq('assigned_to', user.id)
-                .eq('is_archived', false),
-            supabase
-                .from('crm_leads')
-                .select('deal_value, status')
-                .eq('assigned_to', user.id)
-                .eq('is_archived', false),
-            supabase
-                .from('crm_events')
-                .select('*')
-                .eq('user_id', user.id)
-                .gte('start_datetime', startOfMonth)
-        ]);
+        // Leads the caller can see (admins: whole org; reps: own + markets).
+        let leadsQuery = supabaseAdmin
+            .from('crm_leads')
+            .select(`
+                *,
+                status_info:crm_lead_statuses(name, is_won, is_terminal),
+                assigned_user:users!crm_leads_assigned_to_fkey(full_name)
+            `)
+            .eq('is_archived', false);
+        leadsQuery = scopeLeadsQuery(leadsQuery, access);
 
+        const eventsQuery = supabaseAdmin
+            .from('crm_events')
+            .select('*')
+            .eq('organization_id', access.organizationId)
+            .eq('user_id', access.user.id)
+            .gte('start_datetime', startOfMonth);
+
+        const [leadsRes, eventsRes] = await Promise.all([leadsQuery, eventsQuery]);
         const leads = leadsRes.data || [];
-        const stats = statsRes.data || [];
         const events = eventsRes.data || [];
 
-        // Calculate metrics
-        const wonStatus = leads.filter(l => l.status_info?.name === 'Won');
-        const totalPipeline = stats.reduce((sum, l) => sum + (l.deal_value || 0), 0);
-        const revenueClosed = wonStatus.reduce((sum, l) => sum + (l.deal_value || 0), 0);
+        const wonStatus = leads.filter((l) => l.status_info?.is_won);
+        const totalPipeline = leads
+            .filter((l) => !l.status_info?.is_terminal)
+            .reduce((sum, l) => sum + Number(l.deal_value || 0), 0);
+        const revenueClosed = wonStatus.reduce((sum, l) => sum + Number(l.deal_value || 0), 0);
 
-        // Process query and generate response
         const response = await processAIQuery(query, {
             leads,
-            stats,
             events,
             totalPipeline,
             revenueClosed,
             wonCount: wonStatus.length,
-            totalLeads: leads.length
+            totalLeads: leads.length,
         });
 
         return NextResponse.json({ response });
@@ -116,9 +104,7 @@ async function processAIQuery(query: string, data: any): Promise<string> {
 
     // Pipeline summary
     if (lowerQuery.includes('pipeline')) {
-        const activeLeads = data.leads.filter(l =>
-            !['Won', 'Lost', 'Dropped'].includes(l.status_info?.name)
-        );
+        const activeLeads = data.leads.filter(l => !l.status_info?.is_terminal);
 
         return `📊 Your Pipeline Summary:\n\n` +
             `• Total Leads: ${data.totalLeads}\n` +
