@@ -27,19 +27,28 @@ function getKeywordsForCode(code: string): any[] {
 // GET: Fetch all skill groups with their issue categories and keywords
 export async function GET(request: NextRequest) {
     try {
-        // First, fetch global skill groups (property_id IS NULL)
-        const { data: skillGroups, error: sgError } = await supabaseAdmin
+        // Fetch ALL skill groups (both global and property-level)
+        // Group them by code to avoid duplicates across properties
+        const { data: allSkillGroups, error: sgError } = await supabaseAdmin
             .from('skill_groups')
-            .select('id, code, name')
-            .is('property_id', null)
+            .select('id, code, name, property_id')
             .order('name');
 
         if (sgError) {
             return NextResponse.json({ error: sgError.message }, { status: 500 });
         }
 
-        // Then fetch global issue categories 
-        // Note: keywords are now pulled from issueDictionary.json instead of DB
+        // Deduplicate skill groups by code (keep first occurrence)
+        const skillGroupsMap = new Map();
+        const uniqueSkillGroups: any[] = [];
+        for (const sg of (allSkillGroups || [])) {
+            if (!skillGroupsMap.has(sg.code)) {
+                skillGroupsMap.set(sg.code, true);
+                uniqueSkillGroups.push({ id: sg.id, code: sg.code, name: sg.name });
+            }
+        }
+
+        // Also fetch issue_categories from the issue dictionary as fallback
         const { data: catData, error: catError } = await supabaseAdmin
             .from('issue_categories')
             .select(`
@@ -48,17 +57,16 @@ export async function GET(request: NextRequest) {
                 name,
                 skill_group_id,
                 priority,
-                is_active
+                is_active,
+                property_id
             `)
-            .is('property_id', null)
-            .eq('is_active', true)
             .order('priority', { ascending: false });
 
         if (catError) {
             // Table might not exist yet
             console.log('issue_categories table may not exist:', catError.message);
             return NextResponse.json({
-                skill_groups: skillGroups || [],
+                skill_groups: uniqueSkillGroups || [],
                 categories: [],
                 needs_setup: true
             });
@@ -75,7 +83,7 @@ export async function GET(request: NextRequest) {
 
         // Group categories by skill_group_id
         const categoriesBySkillGroup: Record<string, any[]> = {};
-        for (const sg of skillGroups || []) {
+        for (const sg of uniqueSkillGroups || []) {
             categoriesBySkillGroup[sg.id] = categories.filter(
                 (c: any) => c.skill_group_id === sg.id
             );
@@ -87,7 +95,7 @@ export async function GET(request: NextRequest) {
         );
 
         return NextResponse.json({
-            skill_groups: skillGroups || [],
+            skill_groups: uniqueSkillGroups || [],
             categories: categories || [],
             categories_by_skill_group: categoriesBySkillGroup,
             needs_setup: needsSetup

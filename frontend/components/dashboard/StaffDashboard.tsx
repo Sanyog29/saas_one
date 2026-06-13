@@ -110,6 +110,7 @@ const StaffDashboard = () => {
     const [incomingTickets, setIncomingTickets] = useState<Ticket[]>([]);
     const [completedTickets, setCompletedTickets] = useState<Ticket[]>([]);
     const [isFetching, setIsFetching] = useState(false);
+    const [ticketStats, setTicketStats] = useState({ total: 0, open: 0, closed: 0 });
 
     // Shift Tracking State
     const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -279,13 +280,27 @@ const StaffDashboard = () => {
             .order('created_at', { ascending: false })
             .limit(10000);
 
+        const [
+            { count: totalCount },
+            { count: closedCountResult }
+        ] = await Promise.all([
+            supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('property_id', propertyId),
+            supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['resolved', 'closed', 'pending_validation'])
+        ]);
+
         if (error) {
             console.error('Error fetching tickets:', error);
         } else {
-            const active = (data || []).filter((t: Ticket) => !['resolved', 'closed'].includes(t.status));
-            const completed = (data || []).filter((t: Ticket) => ['resolved', 'closed'].includes(t.status));
+            // Active = all except resolved, closed, pending_validation
+            const active = (data || []).filter((t: Ticket) => !['resolved', 'closed', 'pending_validation'].includes(t.status));
+            // Completed = resolved, closed, AND pending_validation (closed tickets awaiting validation)
+            const completed = (data || []).filter((t: Ticket) => ['resolved', 'closed', 'pending_validation'].includes(t.status));
             setIncomingTickets(active);
             setCompletedTickets(completed);
+            
+            const totalExact = totalCount || data?.length || 0;
+            const closedExact = closedCountResult || completed.length;
+            setTicketStats({ total: totalExact, open: totalExact - closedExact, closed: closedExact });
         }
         setIsFetching(false);
     };
@@ -655,11 +670,12 @@ const StaffDashboard = () => {
                                         t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                         t.description?.toLowerCase().includes(searchQuery.toLowerCase())
                                     )}
-                                    completedCount={completedTickets.filter(t =>
+                                    completedTickets={completedTickets.filter(t =>
                                         t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                         t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                         t.description?.toLowerCase().includes(searchQuery.toLowerCase())
-                                    ).length}
+                                    )}
+                                    ticketStats={ticketStats}
                                     onTicketClick={(id) => router.push(`/tickets/${id}?from=${activeTab}`)}
                                     userId={user.id}
                                     isLoading={isLoading}
@@ -668,7 +684,6 @@ const StaffDashboard = () => {
                                     userName={user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff'}
                                     onSettingsClick={() => handleTabChange('settings')}
                                     onEditClick={handleEditClick}
-                                    onDeleteClick={handleDelete}
                                     userRole={userRole}
                                     onFilterClick={(filter) => handleTabChange('requests', filter)}
                                 />
@@ -691,7 +706,6 @@ const StaffDashboard = () => {
                                     propertyName={property?.name}
                                     userName={user.user_metadata?.full_name || user.email?.split('@')[0] || 'Staff'}
                                     onEditClick={handleEditClick}
-                                    onDeleteClick={handleDelete}
                                     userRole={userRole}
                                     propertyId={propertyId}
                                     onTabChange={handleTabChange}
@@ -963,10 +977,10 @@ const isSoftServiceRole = (role: string): boolean => {
 // Helper Sub-component for Ticket Row - DEPRECATED - Use shared/TicketCard
 
 // Dashboard Tab
-const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoading, propertyId, propertyName, userName, onSettingsClick, onEditClick, onDeleteClick, userRole = '', onFilterClick }: { tickets: Ticket[], completedCount: number, onTicketClick: (id: string) => void, userId: string, isLoading: boolean, propertyId: string, propertyName?: string, userName?: string, onSettingsClick?: () => void, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onDeleteClick?: (e: React.MouseEvent, id: string) => void, userRole?: string, onFilterClick?: (filter: 'all' | 'active' | 'completed') => void }) => {
-    const total = tickets.length + completedCount;
-    const active = tickets.filter(t => t.status === 'in_progress' || t.status === 'assigned' || t.status === 'open').length;
-    const completed = completedCount;
+const DashboardTab = ({ tickets, completedTickets, ticketStats, onTicketClick, userId, isLoading, propertyId, propertyName, userName, onSettingsClick, onEditClick, onDeleteClick, userRole = '', onFilterClick }: { tickets: Ticket[], completedTickets: Ticket[], ticketStats: { total: number, open: number, closed: number }, onTicketClick: (id: string) => void, userId: string, isLoading: boolean, propertyId: string, propertyName?: string, userName?: string, onSettingsClick?: () => void, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onDeleteClick?: (e: React.MouseEvent, id: string) => void, userRole?: string, onFilterClick?: (filter: 'all' | 'active' | 'completed') => void }) => {
+    const total = ticketStats.total;
+    const openCount = ticketStats.open;
+    const closedCount = ticketStats.closed;
 
     return (
         <div className="space-y-6">
@@ -983,27 +997,27 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
                 </div>
 
                 {/* Work Orders Overview - Responsive Grid */}
-                <div className="grid grid-cols-3 gap-3 mt-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-4">
                     <button
                         onClick={() => onFilterClick?.('all')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all group"
+                        className="bg-surface-elevated border border-border rounded-xl p-2 sm:p-4 text-center hover:bg-muted transition-all group overflow-hidden"
                     >
-                        <p className="text-3xl font-black text-text-primary group-hover:scale-105 transition-transform">{total}</p>
-                        <p className="text-xs font-semibold text-text-tertiary mt-2">Total</p>
+                        <p className="text-xl sm:text-3xl font-black text-text-primary group-hover:scale-105 transition-transform truncate px-1">{total}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1 sm:mt-2">Total</p>
                     </button>
                     <button
                         onClick={() => onFilterClick?.('active')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all group"
+                        className="bg-surface-elevated border border-border rounded-xl p-2 sm:p-4 text-center hover:bg-muted transition-all group overflow-hidden"
                     >
-                        <p className="text-3xl font-black text-info group-hover:scale-105 transition-transform">{active}</p>
-                        <p className="text-xs font-semibold text-text-tertiary mt-2">Active</p>
+                        <p className="text-xl sm:text-3xl font-black text-info group-hover:scale-105 transition-transform truncate px-1">{openCount}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1 sm:mt-2">Open</p>
                     </button>
                     <button
                         onClick={() => onFilterClick?.('completed')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-all group"
+                        className="bg-surface-elevated border border-border rounded-xl p-2 sm:p-4 text-center hover:bg-muted transition-all group overflow-hidden flex flex-col items-center justify-center"
                     >
-                        <p className="text-3xl font-black text-success group-hover:scale-105 transition-transform">{completed}</p>
-                        <p className="text-xs font-semibold text-text-tertiary mt-2">Completed</p>
+                        <p className="text-xl sm:text-3xl font-black text-success group-hover:scale-105 transition-transform truncate px-1">{closedCount}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1 sm:mt-2">Closed</p>
                     </button>
                 </div>
             </div>
@@ -1129,7 +1143,7 @@ const RequestsTab = ({ activeTickets = [], completedTickets = [], onTicketClick,
                             <option value="all">All Property Requests</option>
                             <option value="active">All Active Requests</option>
                             <option value="assigned_to_me">Assigned To Me</option>
-                            <option value="completed">All Completed Requests</option>
+                            <option value="completed">Completed ({completedTickets.length + completedTickets.filter(t => t.status === 'pending_validation').length})</option>
                             <option value="completed_by_me">Completed By Me</option>
                         </select>
                     </div>

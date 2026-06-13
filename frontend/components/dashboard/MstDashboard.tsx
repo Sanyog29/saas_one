@@ -99,6 +99,7 @@ const MstDashboard = () => {
     const [incomingTickets, setIncomingTickets] = useState<Ticket[]>([]);
     const [completedTickets, setCompletedTickets] = useState<Ticket[]>([]);
     const [isFetching, setIsFetching] = useState(false);
+    const [ticketStats, setTicketStats] = useState({ total: 0, open: 0, closed: 0 });
     const [userRole, setUserRole] = useState('MST Professional');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showQRScanner, setShowQRScanner] = useState(false);
@@ -338,10 +339,23 @@ const MstDashboard = () => {
     const fetchShiftStatus = async () => {
         if (!propertyId) return;
         try {
+            // First restore from localStorage for instant UI
+            const savedShift = typeof window !== 'undefined'
+                ? localStorage.getItem(`shift-status-${user?.id || 'unknown'}-${propertyId}`)
+                : null;
+            if (savedShift !== null) {
+                setIsCheckedIn(savedShift === 'true');
+            }
+
+            // Then fetch fresh status from server
             const res = await fetch(`/api/mst/shift?propertyId=${propertyId}`);
             if (res.ok) {
                 const data = await res.json();
                 setIsCheckedIn(data.isCheckedIn);
+                // Cache in localStorage
+                if (user?.id && typeof window !== 'undefined') {
+                    localStorage.setItem(`shift-status-${user.id}-${propertyId}`, String(data.isCheckedIn));
+                }
             }
         } catch (error) {
             console.error('Failed to fetch shift status:', error);
@@ -373,6 +387,10 @@ const MstDashboard = () => {
             if (res.ok) {
                 const data = await res.json();
                 setIsCheckedIn(data.isCheckedIn);
+                // Cache in localStorage
+                if (user?.id && typeof window !== 'undefined') {
+                    localStorage.setItem(`shift-status-${user.id}-${propertyId}`, String(data.isCheckedIn));
+                }
                 showToast(data.message, 'success');
             } else {
                 const err = await res.json();
@@ -433,13 +451,26 @@ const MstDashboard = () => {
             .order('created_at', { ascending: false })
             .limit(10000);
 
+        const [
+            { count: totalCount },
+            { count: closedCountResult }
+        ] = await Promise.all([
+            supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('property_id', propertyId),
+            supabase.from('tickets').select('*', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['resolved', 'closed', 'pending_validation'])
+        ]);
+
         if (error) {
             console.error('Error fetching tickets:', error);
         } else {
-            const active = (data || []).filter((t: Ticket) => !['resolved', 'closed'].includes(t.status));
-            const completed = (data || []).filter((t: Ticket) => ['resolved', 'closed'].includes(t.status));
+            const active = (data || []).filter((t: Ticket) => !['resolved', 'closed', 'pending_validation'].includes(t.status));
+            const completed = (data || []).filter((t: Ticket) => ['resolved', 'closed', 'pending_validation'].includes(t.status));
             setIncomingTickets(active);
             setCompletedTickets(completed);
+            
+            const totalExact = totalCount || data?.length || 0;
+            const closedExact = closedCountResult || completed.length;
+            setTicketStats({ total: totalExact, open: totalExact - closedExact, closed: closedExact });
+
             setCachedData(`${cacheKeyPrefix}-tickets`, { incoming: active, completed });
         }
         setIsFetching(false);
@@ -802,11 +833,8 @@ const MstDashboard = () => {
                                         t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                         t.description?.toLowerCase().includes(searchQuery.toLowerCase())
                                     )}
-                                    completedCount={completedTickets.filter(t =>
-                                        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        t.ticket_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                        t.description?.toLowerCase().includes(searchQuery.toLowerCase())
-                                    ).length}
+                                    completedCount={ticketStats.closed}
+                                    ticketStats={ticketStats}
                                     onTicketClick={(id) => router.push(`/tickets/${id}?from=${activeTab}`)}
                                     userId={user.id}
                                     isLoading={isLoading}
@@ -1054,10 +1082,10 @@ const MstDashboard = () => {
 // Helper Sub-component for Ticket Row - DEPRECATED - Use shared/TicketCard
 
 // Dashboard Tab
-const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoading, propertyId, propertyName, userName, onSettingsClick, onEditClick, onFilterClick }: { tickets: Ticket[], completedCount: number, onTicketClick: (id: string) => void, userId: string, isLoading: boolean, propertyId: string, propertyName?: string, userName?: string, onSettingsClick?: () => void, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onFilterClick?: (filter: 'all' | 'active' | 'completed') => void }) => {
-    const total = tickets.length + completedCount;
-    const active = tickets.filter(t => t.status === 'in_progress' || t.status === 'assigned' || t.status === 'open').length;
-    const completed = completedCount;
+const DashboardTab = ({ tickets, completedCount, ticketStats, onTicketClick, userId, isLoading, propertyId, propertyName, userName, onSettingsClick, onEditClick, onFilterClick }: { tickets: Ticket[], completedCount: number, ticketStats?: { total: number, open: number, closed: number }, onTicketClick: (id: string) => void, userId: string, isLoading: boolean, propertyId: string, propertyName?: string, userName?: string, onSettingsClick?: () => void, onEditClick?: (e: React.MouseEvent, t: Ticket) => void, onFilterClick?: (filter: 'all' | 'active' | 'completed') => void }) => {
+    const total = ticketStats?.total || (tickets.length + completedCount);
+    const openCount = ticketStats?.open || tickets.filter(t => t.status === 'in_progress' || t.status === 'assigned' || t.status === 'open').length;
+    const closedCount = ticketStats?.closed || completedCount;
 
     return (
         <div className="space-y-6">
@@ -1075,27 +1103,27 @@ const DashboardTab = ({ tickets, completedCount, onTicketClick, userId, isLoadin
 
                 {/* Work Orders Overview */}
                 {/* WORK ORDERS OVERVIEW (Horizontal, wraps if needed) */}
-                <div className="grid grid-cols-3 gap-3 mt-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-4">
                     <button
                         onClick={() => onFilterClick?.('all')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"
+                        className="bg-surface-elevated border border-border rounded-xl p-2 sm:p-4 text-center hover:bg-muted transition-colors group overflow-hidden"
                     >
-                        <p className="text-3xl font-black text-text-primary group-hover:scale-110 transition-transform">{total}</p>
-                        <p className="text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1">Total</p>
+                        <p className="text-xl sm:text-3xl font-black text-text-primary group-hover:scale-110 transition-transform truncate px-1">{total}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1 sm:mt-2">Total</p>
                     </button>
                     <button
                         onClick={() => onFilterClick?.('active')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"
+                        className="bg-surface-elevated border border-border rounded-xl p-2 sm:p-4 text-center hover:bg-muted transition-colors group overflow-hidden"
                     >
-                        <p className="text-3xl font-black text-info group-hover:scale-110 transition-transform">{active}</p>
-                        <p className="text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1">Active</p>
+                        <p className="text-xl sm:text-3xl font-black text-info group-hover:scale-110 transition-transform truncate px-1">{openCount}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1 sm:mt-2">Open</p>
                     </button>
                     <button
                         onClick={() => onFilterClick?.('completed')}
-                        className="bg-surface-elevated border border-border rounded-xl p-4 text-center hover:bg-muted transition-colors group"
+                        className="bg-surface-elevated border border-border rounded-xl p-2 sm:p-4 text-center hover:bg-muted transition-colors group overflow-hidden"
                     >
-                        <p className="text-3xl font-black text-success group-hover:scale-110 transition-transform">{completed}</p>
-                        <p className="text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1">Completed</p>
+                        <p className="text-xl sm:text-3xl font-black text-success group-hover:scale-110 transition-transform truncate px-1">{closedCount}</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-text-tertiary uppercase tracking-wider mt-1 sm:mt-2">Closed</p>
                     </button>
                 </div>
             </div>

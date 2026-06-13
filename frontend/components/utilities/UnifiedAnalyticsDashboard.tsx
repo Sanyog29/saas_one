@@ -395,7 +395,7 @@ const UnifiedAnalyticsDashboard: React.FC<UnifiedAnalyticsDashboardProps> = ({
                                             <div>
                                                 <p className={`font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Grid Power</p>
                                                 <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                                    {analyticsData?.electricity?.summary?.totalUnits?.toFixed(0) || 0} kVAh
+                                                    {analyticsData?.electricity?.summary?.totalUnits?.toFixed(0) || 0} kWh
                                                 </p>
                                             </div>
                                         </div>
@@ -439,7 +439,7 @@ const UnifiedAnalyticsDashboard: React.FC<UnifiedAnalyticsDashboardProps> = ({
                                             <div>
                                                 <p className={`font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
                                                 <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                                                    {item.units.toFixed(0)} {activeUtility === 'electricity' ? 'kVAh' : 'L'}
+                                                    {item.units.toFixed(0)} {activeUtility === 'electricity' ? 'kWh' : 'L'}
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-1">

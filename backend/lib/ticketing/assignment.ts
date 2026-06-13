@@ -24,6 +24,7 @@ interface ResolverStat {
 /**
  * Intelligent Assignment Logic
  * Assigns tickets to MSTs based on skill groups and load balancing (persistent round-robin)
+ * ALWAYS assigns tickets - if no resolver available, finds any active MST/staff
  */
 export async function processIntelligentAssignment(
     supabase: any,
@@ -36,7 +37,7 @@ export async function processIntelligentAssignment(
     const { data: resolverStats, error: statsError } = await supabase
         .from('resolver_stats')
         .select(`
-            user_id, 
+            user_id,
             last_assigned_at,
             is_checked_in,
             skill_group:skill_groups(code)
@@ -105,7 +106,25 @@ export async function processIntelligentAssignment(
         mstPools.general.push(rs);
     });
 
-    // 4. Process tickets
+    // 4. Fallback: If no resolvers found, get any active MST/staff from property_memberships
+    let fallbackResolver = null;
+    if (typedResolverStats.length === 0) {
+        const { data: fallbackUsers } = await supabase
+            .from('property_memberships')
+            .select('user_id, role, last_activity_at')
+            .eq('property_id', propertyId)
+            .eq('is_active', true)
+            .in('role', ['mst', 'staff'])
+            .order('last_activity_at', { ascending: false })
+            .limit(1);
+
+        if (fallbackUsers && fallbackUsers.length > 0) {
+            fallbackResolver = fallbackUsers[0].user_id;
+            console.log(`[Assignment] No resolver stats found, falling back to: ${fallbackResolver}`);
+        }
+    }
+
+    // 5. Process tickets
     for (const ticket of tickets) {
         try {
             const poolName = (ticket.skill_group_code || 'general').toLowerCase();
@@ -115,8 +134,8 @@ export async function processIntelligentAssignment(
             const checkedInPool = pool.filter(p => p.is_checked_in);
             if (checkedInPool.length > 0) pool = checkedInPool;
 
-            let assignedTo = null;
-            let status = 'waitlist';
+            let assignedTo: string | null = null;
+            let status = 'assigned';
 
             if (pool.length > 0) {
                 // Persistent Round-Robin: Sort by last_assigned_at (nulls first)
@@ -128,21 +147,54 @@ export async function processIntelligentAssignment(
 
                 const winner = pool[0];
                 assignedTo = winner.user_id;
-                status = 'assigned';
 
                 // Update the winner's local stats for the next ticket in this batch
                 winner.last_assigned_at = new Date().toISOString();
+            } else if (fallbackResolver) {
+                // No pool available, use fallback resolver
+                assignedTo = fallbackResolver;
+            } else {
+                // Last resort: find any MST/staff in the property
+                const { data: anyResolver } = await supabase
+                    .from('property_memberships')
+                    .select('user_id')
+                    .eq('property_id', propertyId)
+                    .eq('is_active', true)
+                    .in('role', ['mst', 'staff'])
+                    .limit(1)
+                    .single();
+
+                if (anyResolver) {
+                    assignedTo = anyResolver.user_id;
+                }
+            }
+
+            // ALWAYS assign - if still no one found, get last active MST/staff
+            if (!assignedTo) {
+                const { data: lastActiveMstStaff } = await supabase
+                    .from('property_memberships')
+                    .select('user_id, last_activity_at')
+                    .eq('property_id', propertyId)
+                    .eq('is_active', true)
+                    .in('role', ['mst', 'staff'])
+                    .order('last_activity_at', { ascending: false })
+                    .limit(1)
+                    .single();
+
+                if (lastActiveMstStaff) {
+                    assignedTo = lastActiveMstStaff.user_id;
+                }
             }
 
             // Update database
-                const { error: updateError } = await supabase
-                    .from('tickets')
-                    .update({
-                        status: status,
-                        assigned_to: assignedTo,
-                        assigned_at: assignedTo ? new Date().toISOString() : null,
-                    })
-                    .eq('id', ticket.id);
+            const { error: updateError } = await supabase
+                .from('tickets')
+                .update({
+                    status: assignedTo ? 'assigned' : 'open',
+                    assigned_to: assignedTo,
+                    assigned_at: assignedTo ? new Date().toISOString() : null,
+                })
+                .eq('id', ticket.id);
 
             if (updateError) throw updateError;
 
@@ -160,7 +212,7 @@ export async function processIntelligentAssignment(
                 });
             }
 
-            results.push({ ticketId: ticket.id, assignedTo, status });
+            results.push({ ticketId: ticket.id, assignedTo, status: assignedTo ? 'assigned' : 'open' });
         } catch (err: any) {
             results.push({ ticketId: ticket.id, assignedTo: null, status: 'error', error: err.message });
         }
@@ -170,7 +222,7 @@ export async function processIntelligentAssignment(
         summary: {
             total: results.length,
             assigned: results.filter(r => r.status === 'assigned').length,
-            waitlisted: results.filter(r => r.status === 'waitlist').length,
+            unassigned: results.filter(r => r.status === 'open').length,
             errors: results.filter(r => r.status === 'error').length,
         },
         results

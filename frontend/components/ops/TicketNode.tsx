@@ -132,15 +132,20 @@ export default function TicketNode({
                         initial={{ opacity: 0, y: -10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -5, scale: 0.95 }}
-                        className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 p-3 bg-surface-elevated border border-border rounded-xl shadow-2xl z-[100] pointer-events-none"
+                        className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-48 md:w-64 p-3 bg-surface-elevated border border-border rounded-xl shadow-2xl z-[100] pointer-events-none overflow-hidden"
                     >
                         {title && (
-                            <div className="text-[11px] font-black text-text-primary mb-1 line-clamp-2 leading-tight uppercase tracking-tight">
+                            <div className="text-[11px] md:text-xs font-black text-text-primary mb-1 line-clamp-2 leading-tight uppercase tracking-tight">
                                 {title}
                             </div>
                         )}
                         {description && (
-                            <div className="text-[9px] text-text-secondary line-clamp-3 leading-snug">
+                            <div className="hidden md:block text-[9px] text-text-secondary line-clamp-3 leading-snug">
+                                {description}
+                            </div>
+                        )}
+                        {description && (
+                            <div className="md:hidden text-[10px] text-text-secondary leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                                 {description}
                             </div>
                         )}
@@ -149,7 +154,7 @@ export default function TicketNode({
                                 <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-black text-primary">
                                     {mstInitials}
                                 </div>
-                                <span className="text-[9px] font-black text-text-primary truncate">
+                                <span className="text-[9px] md:text-[10px] font-black text-text-primary truncate">
                                     {assignedToName}
                                 </span>
                             </div>

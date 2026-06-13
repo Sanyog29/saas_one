@@ -38,18 +38,25 @@ export async function POST(
         let skillGroupId = null;
 
         if (classification.issue_code) {
+            // Look up category globally (not property-specific)
             const { data: category } = await supabase
                 .from('issue_categories')
                 .select('id, skill_group_id')
-                .eq('property_id', ticket.property_id)
                 .eq('code', classification.issue_code)
-                .single();
+                .maybeSingle();
 
             if (category) {
                 categoryId = category.id;
                 skillGroupId = category.skill_group_id;
             }
         }
+
+        // Get skill group code
+        const { data: skillGroup } = await supabase
+            .from('skill_groups')
+            .select('code')
+            .eq('id', skillGroupId)
+            .maybeSingle();
 
         const isVague = classification.confidence === 'low';
 
@@ -62,7 +69,7 @@ export async function POST(
                 confidence: classification.confidence,
                 classification_source: 'rules_reeval',
                 is_vague: isVague,
-                status: isVague ? 'waitlist' : 'open',
+                status: 'open',
                 updated_at: new Date().toISOString(),
             })
             .eq('id', ticketId)
@@ -84,6 +91,32 @@ export async function POST(
             old_value: String(ticket.confidence_score),
             new_value: String(classification.confidence),
         });
+
+        // Auto-assign ticket to resolver
+        try {
+            const { processIntelligentAssignment } = await import('@/backend/lib/ticketing/assignment');
+            const propertyId = ticket.property_id;
+            const skillGroupCode = skillGroup?.code || classification.skill_group;
+            await processIntelligentAssignment(
+                supabase,
+                [{ id: ticketId, property_id: propertyId, skill_group_code: skillGroupCode }],
+                propertyId
+            );
+
+            // Re-fetch to get updated assignment
+            const { data: assignedTicket } = await supabase
+                .from('tickets')
+                .select('status, assigned_to')
+                .eq('id', ticketId)
+                .single();
+
+            if (assignedTicket) {
+                updated.status = assignedTicket.status;
+                updated.assigned_to = assignedTicket.assigned_to;
+            }
+        } catch (assignErr) {
+            // Silent fail - don't show error to user
+        }
 
         return NextResponse.json({
             success: true,

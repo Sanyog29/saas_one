@@ -96,7 +96,7 @@ const PropertyAdminDashboard = () => {
     const propertyId = params?.propertyId as string;
 
     // State
-    const [activeTab, setActiveTab] = useState<Tab>('overview');
+    const [openTab, setActiveTab] = useState<Tab>('overview');
     const supabase = useMemo(() => createClient(), []);
     const { getCachedData, setCachedData } = useDataCache();
     const cacheKey = `property-${propertyId}`;
@@ -339,7 +339,7 @@ const PropertyAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('overview')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'overview'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'overview'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -349,7 +349,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('requests')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'requests'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'requests'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -359,7 +359,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('reports')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'reports'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'reports'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -380,7 +380,7 @@ const PropertyAdminDashboard = () => {
 
                             <button
                                 onClick={() => handleTabChange('users')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'users'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'users'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -390,7 +390,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('visitors')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'visitors'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'visitors'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -400,7 +400,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('rooms')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'rooms'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'rooms'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -410,7 +410,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('diesel')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'diesel'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'diesel'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -420,7 +420,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('diesel_analytics')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'diesel_analytics'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'diesel_analytics'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -430,7 +430,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('electricity')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'electricity'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'electricity'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -440,7 +440,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('electricity_analytics')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'electricity_analytics'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'electricity_analytics'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -450,7 +450,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('stock')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'stock'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'stock'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -460,7 +460,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('procurement')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'procurement'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'procurement'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -470,7 +470,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('checklist')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'checklist'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'checklist'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -480,7 +480,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('ppm')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'ppm'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'ppm'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -490,7 +490,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('escalation')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'escalation'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'escalation'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -500,7 +500,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('vendor_revenue')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'vendor_revenue'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'vendor_revenue'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -520,7 +520,7 @@ const PropertyAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('settings')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'settings'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'settings'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -530,7 +530,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('profile')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'profile'
+                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'profile'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -576,7 +576,7 @@ const PropertyAdminDashboard = () => {
 
             {/* Main Content */}
             <main className="flex-1 min-w-0 overflow-x-hidden lg:ml-72 flex flex-col bg-white border-l border-slate-300 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)] relative z-10">
-                {activeTab !== 'overview' && (
+                {openTab !== 'overview' && (
                     <header className="h-14 flex justify-between items-center px-3 md:px-8 lg:px-12 mb-2 md:mb-4 border-b border-border/10">
                         <div className="flex items-center gap-3">
                             {/* Mobile Menu Toggle */}
@@ -586,12 +586,12 @@ const PropertyAdminDashboard = () => {
                             >
                                 <Menu className="w-5 h-5" />
                             </button>
-                            {activeTab !== 'checklist' && (
+                            {openTab !== 'checklist' && (
                                 <div className="hidden md:block">
                                     <h1 className="text-2xl md:text-3xl font-black text-text-primary tracking-tight capitalize">
-                                        {activeTab === 'ppm' ? 'Planned Preventive Maintenance' : 
-                                         activeTab === 'rooms' ? 'Meeting Rooms' : 
-                                         activeTab.replace(/_/g, ' ')}
+                                        {openTab === 'ppm' ? 'Planned Preventive Maintenance' : 
+                                         openTab === 'rooms' ? 'Meeting Rooms' : 
+                                         openTab.replace(/_/g, ' ')}
                                     </h1>
                                     <p className="text-text-tertiary text-xs md:text-sm font-medium mt-0.5">{property?.address || 'Property Management Hub'}</p>
                                 </div>
@@ -602,7 +602,7 @@ const PropertyAdminDashboard = () => {
                             <div className="relative" ref={propertyDropdownRef}>
                                 <button
                                     onClick={() => assignedProperties.length > 1 && setShowPropertyDropdown(v => !v)}
-                                    className={`flex items-center gap-1.5 px-2.5 py-2 bg-slate-100 border border-slate-200 rounded-xl transition-colors text-xs font-bold text-slate-800 h-9 ${assignedProperties.length > 1 ? 'hover:bg-slate-200 cursor-pointer active:bg-slate-300' : 'cursor-default'}`}
+                                    className={`flex items-center gap-1.5 px-2.5 py-2 bg-slate-100 border border-slate-200 rounded-xl transition-colors text-xs font-bold text-slate-800 h-9 ${assignedProperties.length > 1 ? 'hover:bg-slate-200 cursor-pointer open:bg-slate-300' : 'cursor-default'}`}
                                 >
                                     <Building2 className="w-4 h-4 text-primary flex-shrink-0" />
                                     <span className="max-w-[80px] sm:max-w-[120px] md:max-w-[160px] truncate">{property?.name || 'Property'}</span>
@@ -628,7 +628,7 @@ const PropertyAdminDashboard = () => {
                                                             router.push(window.location.pathname.replace(propertyId, p.id));
                                                         }
                                                     }}
-                                                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left"
+                                                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-50 open:bg-slate-100 transition-colors text-left"
                                                 >
                                                     <div className="flex items-center gap-2.5 min-w-0">
                                                         <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
@@ -678,15 +678,15 @@ const PropertyAdminDashboard = () => {
 
                 <AnimatePresence mode="wait">
                     <motion.div
-                        key={activeTab}
-                        className={['overview', 'checklist'].includes(activeTab) ? '' : 'px-0 md:px-8 lg:px-12 pt-0 md:pt-4 pb-8'}
+                        key={openTab}
+                        className={['overview', 'checklist'].includes(openTab) ? '' : 'px-0 md:px-8 lg:px-12 pt-0 md:pt-4 pb-8'}
 
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                         transition={{ duration: 0.2 }}
                     >
-                        {activeTab === 'overview' && <OverviewTab
+                        {openTab === 'overview' && <OverviewTab
                             propertyId={propertyId}
                             statsVersion={statsVersion}
                             property={property}
@@ -696,7 +696,7 @@ const PropertyAdminDashboard = () => {
                             assignedProperties={assignedProperties}
                             onPropertySwitch={(id) => router.push(window.location.pathname.replace(propertyId, id))}
                         />}
-                        {activeTab === 'users' && <UserDirectory
+                        {openTab === 'users' && <UserDirectory
                             propertyId={propertyId}
                             orgId={property?.organization_id}
                             orgName={orgSlug}
@@ -705,8 +705,8 @@ const PropertyAdminDashboard = () => {
                                 __triggerModal: () => setShowAddMemberModal(true)
                             })}
                         />}
-                        {activeTab === 'vendor_revenue' && <VendorRevenueTab propertyId={propertyId} />}
-                        {activeTab === 'requests' && property && (
+                        {openTab === 'vendor_revenue' && <VendorRevenueTab propertyId={propertyId} />}
+                        {openTab === 'requests' && property && (
                             <TicketsView
                                 key={`tickets-${statsVersion}`}
                                 propertyId={property.id}
@@ -715,52 +715,52 @@ const PropertyAdminDashboard = () => {
                                 onNewRequest={() => setShowCreateTicketModal(true)}
                             />
                         )}
-                        {activeTab === 'reports' && property && (
+                        {openTab === 'reports' && property && (
                             <ImportReportsView
                                 propertyId={property.id}
                                 organizationId={property.organization_id}
                             />
                         )}
-                        {activeTab === 'visitors' && property && (
+                        {openTab === 'visitors' && property && (
                             <VMSAdminDashboard propertyId={property.id} />
                         )}
-                        {activeTab === 'rooms' && property && (
+                        {openTab === 'rooms' && property && (
                             <AdminRoomManager propertyId={property.id} user={user} />
                         )}
-                        {activeTab === 'units' && (
+                        {openTab === 'units' && (
                             <div className="p-12 text-center text-slate-400 font-bold italic bg-white rounded-3xl border border-slate-100 shadow-sm">
                                 <Building2 className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                                 <h3 className="text-xl font-bold text-slate-900 mb-2 font-inter not-italic">Unit Management</h3>
                                 <p className="text-slate-500 font-inter not-italic font-medium">Unit inventory management loading...</p>
                             </div>
                         )}
-                        {activeTab === 'diesel' && property && <DieselStaffDashboard propertyId={property.id} />}
-                        {activeTab === 'diesel_analytics' && <DieselAnalyticsDashboard />}
-                        {activeTab === 'electricity' && property && <ElectricityStaffDashboard propertyId={property.id} />}
-                        {activeTab === 'electricity_analytics' && property && <ElectricityAnalyticsDashboard propertyId={property.id} />}
-                        {activeTab === 'stock' && property && <StockDashboard propertyId={property.id} initialItemId={searchParams.get('scanItem') ?? undefined} />}
-                        {activeTab === 'checklist' && property && <SOPDashboard propertyId={property.id} />}
-                        {activeTab === 'ppm' && property && (
+                        {openTab === 'diesel' && property && <DieselStaffDashboard propertyId={property.id} />}
+                        {openTab === 'diesel_analytics' && <DieselAnalyticsDashboard />}
+                        {openTab === 'electricity' && property && <ElectricityStaffDashboard propertyId={property.id} />}
+                        {openTab === 'electricity_analytics' && property && <ElectricityAnalyticsDashboard propertyId={property.id} />}
+                        {openTab === 'stock' && property && <StockDashboard propertyId={property.id} initialItemId={searchParams.get('scanItem') ?? undefined} />}
+                        {openTab === 'checklist' && property && <SOPDashboard propertyId={property.id} />}
+                        {openTab === 'ppm' && property && (
                             <PPMModule
                                 organizationId={property.organization_id}
                                 propertyId={property.id}
                             />
                         )}
-                        {activeTab === 'escalation' && property && (
+                        {openTab === 'escalation' && property && (
                             <EscalationHierarchyBuilder
                                 organizationId={property.organization_id}
                                 propertyId={property.id}
                             />
                         )}
-                        {activeTab === 'procurement' && property && (
+                        {openTab === 'procurement' && property && (
                             <ProcurementModule
                                 orgId={property.organization_id}
                                 isAdmin={false}
                                 properties={[property]}
                             />
                         )}
-                        {activeTab === 'settings' && <SettingsView />}
-                        {activeTab === 'profile' && (
+                        {openTab === 'settings' && <SettingsView />}
+                        {openTab === 'profile' && (
                             <div className="flex justify-center items-start py-8">
                                 <div className="bg-white border border-slate-100 rounded-3xl shadow-lg w-full max-w-md overflow-hidden">
                                     {/* Card Header with Autopilot Logo */}
@@ -976,6 +976,7 @@ const OverviewTab = memo(function OverviewTab({
     const [ticketStats, setTicketStats] = useState(initialCached?.ticketStats || { total: 0, open: 0, waitlist: 0, in_progress: 0, resolved: 0, sla_breached: 0, avg_resolution_hours: 0, pending_validation: 0, urgent_open: 0 });
     const [validationEnabled, setValidationEnabled] = useState<boolean>(initialCached?.validationEnabled ?? false);
     const [electricityStats, setElectricityStats] = useState(initialCached?.electricityStats || { total_units: 0, total_units_today: 0, total_units_month: 0 });
+    const [dieselStats, setDieselStats] = useState(initialCached?.dieselStats || { total_units: 0, total_units_today: 0, total_units_month: 0, total_kwh: 0, total_kwh_today: 0, total_kwh_month: 0, total_litres: 0, total_litres_today: 0, total_litres_month: 0 });
     const [vmsStats, setVmsStats] = useState(initialCached?.vmsStats || { total_visitors: 0, checked_in: 0, checked_out: 0 });
     const [vendorStats, setVendorStats] = useState(initialCached?.vendorStats || { total_revenue: 0, total_commission: 0, total_vendors: 0 });
     const [recentTickets, setRecentTickets] = useState<any[]>(initialCached?.recentTickets || []);
@@ -1000,6 +1001,7 @@ const OverviewTab = memo(function OverviewTab({
                     setTicketStats(cached.ticketStats);
                     setRecentTickets(cached.recentTickets);
                     setElectricityStats(cached.electricityStats);
+                    if (cached.dieselStats) setDieselStats(cached.dieselStats);
                     setVmsStats(cached.vmsStats);
                     setVendorStats(cached.vendorStats);
                     setIsLoading(false);
@@ -1072,6 +1074,13 @@ const OverviewTab = memo(function OverviewTab({
                     electricityQuery = electricityQuery.gte('reading_date', monthStart);
                 }
                 
+                let dieselQuery = supabase.from('diesel_readings').select('computed_consumed_litres, closing_kwh, opening_kwh, reading_date').eq('property_id', propertyId);
+                if (timePeriod === 'today') {
+                    dieselQuery = dieselQuery.eq('reading_date', today);
+                } else if (timePeriod === 'month') {
+                    dieselQuery = dieselQuery.gte('reading_date', monthStart);
+                }
+                
                 // Checklist progress
                 const todayForChecklist = new Date().toISOString().split('T')[0];
                 const monthStartForChecklist = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -1083,8 +1092,9 @@ const OverviewTab = memo(function OverviewTab({
                     checklistQuery = checklistQuery.gte('completion_date', monthStartForChecklist);
                 }
 
-                const [electricityRes, vmsApiRes, vendorApiRes, checklistRes] = await Promise.all([
+                const [electricityRes, dieselRes, vmsApiRes, vendorApiRes, checklistRes] = await Promise.all([
                     electricityQuery,
+                    dieselQuery,
                     fetch(`/api/properties/${propertyId}/vms-summary?period=${apiPeriod}`),
                     fetch(`/api/properties/${propertyId}/vendor-summary?period=${apiPeriod}`),
                     checklistQuery
@@ -1109,6 +1119,11 @@ const OverviewTab = memo(function OverviewTab({
 
                 // Process electricity
                 const periodUnits = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0) || 0;
+                
+                // Process diesel
+                const periodDieselLitres = dieselRes?.data?.reduce((acc: number, r: any) => acc + (r.computed_consumed_litres || 0), 0) || 0;
+                const periodDieselKwh = dieselRes?.data?.reduce((acc: number, r: any) => acc + ((r.closing_kwh || 0) - (r.opening_kwh || 0)), 0) || 0;
+                const periodDieselUnits = periodDieselLitres > 0 ? periodDieselLitres : periodDieselKwh;
                 
                 // For 'all' time, we might still want to know today/month units for other parts of UI if needed,
                 // but let's keep it simple and just use the period units for the main display.
@@ -1161,6 +1176,17 @@ const OverviewTab = memo(function OverviewTab({
                         total_units_month: timePeriod === 'month' ? Math.round(periodUnits) : (electricityStats.total_units_month || 0), 
                         total_units_today: timePeriod === 'today' ? Math.round(periodUnits) : (electricityStats.total_units_today || 0) 
                     },
+                    dieselStats: {
+                        total_units: timePeriod === 'all' ? Math.round(periodDieselUnits) : (dieselStats.total_units || 0),
+                        total_units_month: timePeriod === 'month' ? Math.round(periodDieselUnits) : (dieselStats.total_units_month || 0),
+                        total_units_today: timePeriod === 'today' ? Math.round(periodDieselUnits) : (dieselStats.total_units_today || 0),
+                        total_kwh: timePeriod === 'all' ? Math.round(periodDieselKwh) : (dieselStats.total_kwh || 0),
+                        total_kwh_month: timePeriod === 'month' ? Math.round(periodDieselKwh) : (dieselStats.total_kwh_month || 0),
+                        total_kwh_today: timePeriod === 'today' ? Math.round(periodDieselKwh) : (dieselStats.total_kwh_today || 0),
+                        total_litres: timePeriod === 'all' ? Math.round(periodDieselLitres) : (dieselStats.total_litres || 0),
+                        total_litres_month: timePeriod === 'month' ? Math.round(periodDieselLitres) : (dieselStats.total_litres_month || 0),
+                        total_litres_today: timePeriod === 'today' ? Math.round(periodDieselLitres) : (dieselStats.total_litres_today || 0)
+                    },
                     vmsStats: { total_visitors: totalVisitors, checked_in: checkedInCount, checked_out: checkedOutCount },
                     vendorStats: { total_revenue: totalRev, total_commission: totalComm, total_vendors: vendorData?.total_vendors || 0 },
                     timestamp: Date.now()
@@ -1170,6 +1196,7 @@ const OverviewTab = memo(function OverviewTab({
                 setRecentTickets(result.recentTickets);
                 setChecklistStats(result.checklistStats);
                 setElectricityStats(result.electricityStats);
+                setDieselStats(result.dieselStats);
                 setVmsStats(result.vmsStats);
                 setVendorStats(result.vendorStats);
                 setCachedData(fetchKey, result);
@@ -1185,14 +1212,17 @@ const OverviewTab = memo(function OverviewTab({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [propertyId, statsVersion, timePeriod, supabase]);
 
-    // resolved includes pending_validation (staff already closed their side)
-    const completionRate = ticketStats.total > 0 ? Math.round((ticketStats.resolved / ticketStats.total) * 100 * 10) / 10 : 0;
+    // Open = tickets NOT closed (open, assigned, in_progress, waitlist)
+    // Closed = tickets ARE closed (completed, closed, pending_validation)
+    const closedCount = ticketStats.resolved;
+    const openCount = ticketStats.total - closedCount;
+    const completionRate = ticketStats.total > 0 ? Math.round((closedCount / ticketStats.total) * 100 * 10) / 10 : 0;
     const trulyClosedCount = ticketStats.resolved - ticketStats.pending_validation;
 
     // Animated Counters
     const animatedTotal = useCountUp(ticketStats.total);
-    const animatedActive = useCountUp(ticketStats.open + ticketStats.in_progress);
-    const animatedResolved = useCountUp(ticketStats.resolved);
+    const animatedOpen = useCountUp(openCount);
+    const animatedClosed = useCountUp(closedCount);
     const animatedPending = useCountUp(ticketStats.pending_validation);
 
     if (isLoading && ticketStats.total === 0) return (
@@ -1262,7 +1292,7 @@ const OverviewTab = memo(function OverviewTab({
                             <div className="relative" ref={overviewPropDropdownRef}>
                                 <button
                                     onClick={() => assignedProperties.length > 1 && setShowOverviewPropDropdown(v => !v)}
-                                    className={`flex items-center gap-1.5 md:gap-2 pl-1 pr-2.5 md:pr-3 py-1 bg-white/20 border border-white/25 backdrop-blur-sm rounded-full transition-colors min-h-[40px] ${assignedProperties.length > 1 ? 'hover:bg-white/30 cursor-pointer active:bg-white/35' : 'cursor-default'}`}
+                                    className={`flex items-center gap-1.5 md:gap-2 pl-1 pr-2.5 md:pr-3 py-1 bg-white/20 border border-white/25 backdrop-blur-sm rounded-full transition-colors min-h-[40px] ${assignedProperties.length > 1 ? 'hover:bg-white/30 cursor-pointer open:bg-white/35' : 'cursor-default'}`}
                                 >
                                     {/* Property icon circle */}
                                     <div className="w-8 h-8 rounded-full bg-white/30 border border-white/30 overflow-hidden flex items-center justify-center flex-shrink-0">
@@ -1293,7 +1323,7 @@ const OverviewTab = memo(function OverviewTab({
                                                         setShowOverviewPropDropdown(false);
                                                         if (p.id !== propertyId) onPropertySwitch?.(p.id);
                                                     }}
-                                                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-50 active:bg-slate-100 transition-colors text-left"
+                                                    className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-slate-50 open:bg-slate-100 transition-colors text-left"
                                                 >
                                                     <div className="flex items-center gap-2.5 min-w-0">
                                                         <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center flex-shrink-0">
@@ -1343,7 +1373,7 @@ const OverviewTab = memo(function OverviewTab({
                             <div className="h-full bg-emerald-500 rounded-full transition-all duration-700" style={{ width: `${Math.min(completionRate, 100)}%` }} />
                         </div>
                         <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                            <span>{ticketStats.open + ticketStats.in_progress} active</span>
+                            <span>{ticketStats.open + ticketStats.in_progress} open</span>
                             <span>{ticketStats.avg_resolution_hours > 0 ? `Avg ${ticketStats.avg_resolution_hours}h` : 'No data'}</span>
                         </div>
                     </motion.div>
@@ -1361,24 +1391,18 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{animatedActive}</span>
+                            <span className="text-4xl font-black text-slate-900">{animatedOpen}</span>
                             {ticketStats.sla_breached > 0 && (
                                 <span className="text-[10px] text-rose-500 font-black uppercase bg-rose-50 px-1.5 py-0.5 rounded-md">{ticketStats.sla_breached} SLA</span>
                             )}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                                {ticketStats.open - ticketStats.waitlist} Open
-                            </span>
+
                             <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
                                 {ticketStats.waitlist} Waitlist
                             </span>
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
-                                {ticketStats.in_progress} In Progress
-                            </span>
+
                             {ticketStats.urgent_open > 0 && (
                                 <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500">
                                     <span className="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block" />
@@ -1401,7 +1425,7 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{animatedResolved}</span>
+                            <span className="text-4xl font-black text-slate-900">{animatedClosed}</span>
                             <span className="text-xs text-emerald-500 font-bold">{completionRate}%</span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
@@ -1487,7 +1511,7 @@ const OverviewTab = memo(function OverviewTab({
                                         <span className="text-xl font-black text-slate-900">
                                             {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}
                                         </span>
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">kVAh</span>
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">kWh</span>
                                     </div>
                                 </div>
                             </div>
@@ -1495,10 +1519,38 @@ const OverviewTab = memo(function OverviewTab({
                                 <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Units Consumed</div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
                                     {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}
-                                    <span className="text-sm text-slate-400 font-bold">kVAh</span>
+                                    <span className="text-sm text-slate-400 font-bold">kWh</span>
                                 </div>
                                 <div className="pt-2 border-t border-slate-50 mt-2">
                                     <span className="text-[10px] font-bold text-yellow-600 uppercase group-hover:underline cursor-pointer">View Analytics →</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* DG Consumption Tile */}
+                        <div
+                            className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm hover:shadow-md hover:border-amber-300/50 transition-all group relative overflow-hidden cursor-pointer"
+                            onClick={() => onTabChange('diesel_analytics' as any)}
+                        >
+                            <div className="flex items-center gap-3 mb-2">
+                                <h3 className="text-sm font-black text-slate-900">DG Consumption</h3>
+                            </div>
+                            <div className="text-amber-600 text-xs font-bold mb-4 flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full animate-pulse ${timePeriod === 'all' ? 'bg-slate-400' : timePeriod === 'today' ? 'bg-amber-400' : 'bg-amber-500'}`} />
+                                {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
+                            </div>
+                            <div className="space-y-1">
+                                <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                                    {(timePeriod === 'today' ? dieselStats.total_litres_today : timePeriod === 'month' ? dieselStats.total_litres_month : dieselStats.total_litres) === 0 && (timePeriod === 'today' ? dieselStats.total_kwh_today : timePeriod === 'month' ? dieselStats.total_kwh_month : dieselStats.total_kwh) > 0 ? 'kWh' : 'Units'} Consumed
+                                </div>
+                                <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
+                                    {(timePeriod === 'today' ? dieselStats.total_units_today : timePeriod === 'month' ? dieselStats.total_units_month : dieselStats.total_units).toLocaleString()}
+                                    <span className="text-sm text-slate-400 font-bold">
+                                        {(timePeriod === 'today' ? dieselStats.total_litres_today : timePeriod === 'month' ? dieselStats.total_litres_month : dieselStats.total_litres) === 0 && (timePeriod === 'today' ? dieselStats.total_kwh_today : timePeriod === 'month' ? dieselStats.total_kwh_month : dieselStats.total_kwh) > 0 ? 'kWh' : 'Units'}
+                                    </span>
+                                </div>
+                                <div className="pt-2 border-t border-slate-50 mt-2">
+                                    <span className="text-[10px] font-bold text-amber-600 uppercase group-hover:underline cursor-pointer">View Analytics →</span>
                                 </div>
                             </div>
                         </div>

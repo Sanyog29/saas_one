@@ -24,6 +24,8 @@ interface DieselReading {
     reading_date: string;
     opening_hours: number;
     closing_hours: number;
+    opening_kwh?: number;
+    closing_kwh?: number;
     diesel_added_litres: number;
     computed_consumed_litres: number;
     computed_cost: number;
@@ -36,6 +38,7 @@ interface TrendPoint {
     date: string;
     cost: number;
     litres: number;
+    kwh: number;
 }
 
 const isValidId = (id?: string) => !!id && id !== 'undefined' && id !== 'null' && id !== 'all';
@@ -55,7 +58,8 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
     const [selectedGenId, setSelectedGenId] = useState<string>('all');
     const [costTimeframe, setCostTimeframe] = useState<'today' | 'month'>('month');
     const [litresTimeframe, setLitresTimeframe] = useState<'today' | 'month'>('month');
-    const [trendMetric, setTrendMetric] = useState<'cost' | 'litres'>('cost');
+    const [kwhTimeframe, setKwhTimeframe] = useState<'today' | 'month'>('month');
+    const [trendMetric, setTrendMetric] = useState<'cost' | 'litres' | 'kwh'>('cost');
     const [trendPeriod, setTrendPeriod] = useState<'7D' | '30D'>('7D');
     const [showLogModal, setShowLogModal] = useState(false);
     const [showTariffModal, setShowTariffModal] = useState(false);
@@ -183,14 +187,16 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
             return readings.filter(filterFn).reduce((acc, r) => {
                 let cost = r.computed_cost || 0;
                 const rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
-                if (cost === 0 && rate > 0) {
-                    cost = (r.computed_consumed_litres || 0) * rate;
-                }
+                
+                const consumedKwh = (r.closing_kwh || 0) - (r.opening_kwh || 0);
+                const consumedLitres = r.computed_consumed_litres || 0;
+
                 return {
                     cost: acc.cost + cost,
-                    litres: acc.litres + (r.computed_consumed_litres || 0)
+                    litres: acc.litres + consumedLitres,
+                    kwh: (acc.kwh || 0) + (consumedKwh > 0 ? consumedKwh : 0)
                 };
-            }, { cost: 0, litres: 0 });
+            }, { cost: 0, litres: 0, kwh: 0 });
         };
 
         const today = calc(rawReadings.today);
@@ -201,7 +207,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
         const avgCalc = (readings: DieselReading[]) => {
             const uniqueDays = new Set(readings.filter(filterFn).map(r => r.reading_date)).size || 1;
             const totals = calc(readings);
-            return { cost: totals.cost / uniqueDays, litres: totals.litres / uniqueDays };
+            return { cost: totals.cost / uniqueDays, litres: totals.litres / uniqueDays, kwh: totals.kwh / uniqueDays };
         };
 
         const monthAvgs = avgCalc(rawReadings.month);
@@ -240,16 +246,18 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                 const dayTotals = dayReadings.reduce((acc, r) => {
                     let cost = r.computed_cost || 0;
                     const rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
-                    if (cost === 0 && rate > 0) {
-                        cost = (r.computed_consumed_litres || 0) * rate;
-                    }
+                    
+                    const consumedKwh = (r.closing_kwh || 0) - (r.opening_kwh || 0);
+                    const consumedLitres = r.computed_consumed_litres || 0;
+
                     return {
                         cost: acc.cost + cost,
-                        litres: acc.litres + (r.computed_consumed_litres || 0)
+                        litres: acc.litres + consumedLitres,
+                        kwh: (acc.kwh || 0) + (consumedKwh > 0 ? consumedKwh : 0)
                     };
-                }, { cost: 0, litres: 0 });
+                }, { cost: 0, litres: 0, kwh: 0 });
 
-                result.push({ date: label, cost: Math.round(dayTotals.cost), litres: Math.round(dayTotals.litres) });
+                result.push({ date: label, cost: Math.round(dayTotals.cost), litres: Math.round(dayTotals.litres), kwh: Math.round(dayTotals.kwh) });
             }
             return result;
         }
@@ -269,19 +277,22 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
             const dayTotals = dayReadings.reduce((acc, r) => {
                 let cost = r.computed_cost || 0;
                 const rate = r.tariff_rate || r.tariff_rate_used || activeTariff || 0;
-                if (cost === 0 && rate > 0) {
-                    cost = (r.computed_consumed_litres || 0) * rate;
-                }
+                
+                const consumedKwh = (r.closing_kwh || 0) - (r.opening_kwh || 0);
+                const consumedLitres = r.computed_consumed_litres || 0;
+
                 return {
                     cost: acc.cost + cost,
-                    litres: acc.litres + (r.computed_consumed_litres || 0)
+                    litres: acc.litres + consumedLitres,
+                    kwh: (acc.kwh || 0) + (consumedKwh > 0 ? consumedKwh : 0)
                 };
-            }, { cost: 0, litres: 0 });
+            }, { cost: 0, litres: 0, kwh: 0 });
 
             result.push({
                 date: label,
                 cost: Math.round(dayTotals.cost),
-                litres: Math.round(dayTotals.litres)
+                litres: Math.round(dayTotals.litres),
+                kwh: Math.round(dayTotals.kwh)
             });
         }
         return result;
@@ -298,6 +309,9 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
     const displayLitres = isCustomRange
         ? metrics.custom.litres
         : (litresTimeframe === 'today' ? metrics.today.litres : metrics.month.litres);
+    const displayKwh = isCustomRange
+        ? metrics.custom.kwh
+        : (kwhTimeframe === 'today' ? metrics.today.kwh : metrics.month.kwh);
 
     if (isLoading) return (
         <div className="space-y-8 animate-pulse">
@@ -600,25 +614,34 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                     <div className="relative z-10 flex flex-col h-full justify-between">
                         <div className="flex items-center gap-3 mb-4">
                             <span className="p-2.5 bg-orange-100 rounded-full text-orange-500">
-                                <BarChart3 className="w-5 h-5" />
+                                <Activity className="w-5 h-5" />
                             </span>
                             <span className="text-sm font-bold text-slate-700 uppercase tracking-widest leading-tight">
-                                DAILY<br />AVERAGE
+                                KWH<br />READINGS
                             </span>
                         </div>
-                        <div className="space-y-6">
-                            <div>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-2xl font-black text-slate-800">{fmtCost(Math.round(metrics.averages.cost))}</span>
+                        <div className="flex justify-between items-start">
+                            {isCustomRange ? (
+                                <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-orange-500 shadow-sm">
+                                    Custom Range
+                                </span>
+                            ) : (
+                                <div className="flex bg-orange-100/50 rounded-lg p-1">
+                                    <button onClick={() => setKwhTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${kwhTimeframe === 'today' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400 hover:text-orange-500'}`}>Today</button>
+                                    <button onClick={() => setKwhTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${kwhTimeframe === 'month' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400 hover:text-orange-500'}`}>This Month</button>
                                 </div>
-                                <div className="h-1 w-8 bg-orange-500 rounded-full mt-1" />
+                            )}
+                        </div>
+                        <div className="mt-4">
+                            <div className="text-3xl font-black text-slate-800 tracking-tight">
+                                {displayKwh > 0 ? `${Math.round(displayKwh).toLocaleString()} kWh` : '—'}
                             </div>
-                            <div>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-xl font-bold text-slate-600">{fmtLitres(Math.round(metrics.averages.litres))}</span>
-                                </div>
-                                <div className="h-1 w-8 bg-orange-300 rounded-full mt-1" />
-                            </div>
+                            <div className="h-1.5 w-12 bg-orange-400 rounded-full mt-4 mb-4" />
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
+                                {isCustomRange
+                                    ? `${dateFrom} to ${dateTo}`
+                                    : (kwhTimeframe === 'today' ? 'Readings today' : 'Readings this month')}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -643,6 +666,9 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                             </button>
                             <button onClick={() => setTrendMetric('litres')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-2 ${trendMetric === 'litres' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
                                 <Fuel className="w-3 h-3" /> Litres
+                            </button>
+                            <button onClick={() => setTrendMetric('kwh')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-2 ${trendMetric === 'kwh' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-500'}`}>
+                                <Activity className="w-3 h-3" /> kWh
                             </button>
                         </div>
                         {/* Period Toggle */}
@@ -691,7 +717,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                                 <Area
                                     type="monotone"
                                     dataKey={trendMetric}
-                                    stroke={trendMetric === 'cost' ? '#10b981' : '#64748b'}
+                                    stroke={trendMetric === 'cost' ? '#10b981' : (trendMetric === 'kwh' ? '#f97316' : '#64748b')}
                                     fillOpacity={1}
                                     fill="url(#colorValueDiesel)"
                                     strokeWidth={3}
@@ -699,6 +725,21 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                             </AreaChart>
                         </ResponsiveContainer>
                     )}
+                </div>
+                {/* Average Unit Placeholder */}
+                <div className="mt-6 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-6 text-xs font-bold text-slate-500 bg-slate-50 p-4 rounded-xl shadow-inner">
+                    <span className="flex items-center gap-2 text-slate-700">
+                        <BarChart3 className="w-4 h-4 text-emerald-500" />
+                        Avg Daily Cost: <span className="text-emerald-600">{fmtCost(Math.round(metrics.averages.cost))}</span>
+                    </span>
+                    <span className="flex items-center gap-2 text-slate-700">
+                        <Fuel className="w-4 h-4 text-amber-500" />
+                        Avg Daily Litres: <span className="text-amber-600">{fmtLitres(Math.round(metrics.averages.litres))}</span>
+                    </span>
+                    <span className="flex items-center gap-2 text-slate-700">
+                        <Activity className="w-4 h-4 text-orange-500" />
+                        Avg Daily kWh: <span className="text-orange-600">{Math.round(metrics.averages.kwh).toLocaleString()} kWh</span>
+                    </span>
                 </div>
             </div>
 

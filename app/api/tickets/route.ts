@@ -3,6 +3,7 @@ import { createClient } from '@/frontend/utils/supabase/server';
 import { createAdminClient } from '@/frontend/utils/supabase/admin';
 import { resolveClassification, logClassification } from '@/backend/lib/ticketing';
 import { classifyTicketEnhanced } from '@/backend/lib/ticketing/classifyTicket';
+import { processIntelligentAssignment } from '@/backend/lib/ticketing/assignment';
 
 // Extract floor number from description
 function extractFloorNumber(description: string): number | null {
@@ -453,6 +454,31 @@ export async function POST(request: NextRequest) {
             .single();
 
         const finalTicket = updatedTicket || ticket;
+
+        // Auto-assign ticket to a resolver if not already assigned
+        if (!assignedTo && finalTicket.status === 'open') {
+            try {
+                const assignmentResult = await processIntelligentAssignment(
+                    supabase,
+                    [{ id: finalTicket.id, property_id: propId, skill_group_code: skill_group }],
+                    propId
+                );
+
+                // Re-fetch the ticket after assignment
+                const { data: assignedTicket } = await supabase
+                    .from('tickets')
+                    .select('*')
+                    .eq('id', ticket.id)
+                    .single();
+
+                if (assignedTicket) {
+                    finalTicket.status = assignedTicket.status;
+                    finalTicket.assigned_to = assignedTicket.assigned_to;
+                }
+            } catch (assignErr) {
+                console.error('[Ticket API] Auto-assignment error:', assignErr);
+            }
+        }
 
         // Log classification decision asynchronously
         logClassification(finalTicket.id, resolution).catch(err => {

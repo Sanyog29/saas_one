@@ -5,7 +5,7 @@ import { createClient } from '@/frontend/utils/supabase/client';
 import Skeleton from '@/frontend/components/ui/Skeleton';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
-import { History, User, Calendar, CheckCircle2, Clock, Trash2, Play, Eye, AlertTriangle, Square, LayoutGrid, Timer, XCircle, ChevronDown, ChevronUp, Download, FileText, ChevronRight } from 'lucide-react';
+import { History, User, Calendar, CheckCircle2, Clock, Trash2, Play, Eye, AlertTriangle, Square, LayoutGrid, Timer, XCircle, ChevronDown, ChevronUp, Download, FileText, ChevronRight, Search, X } from 'lucide-react';
 
 interface SOPCompletionHistoryProps {
     propertyId?: string;
@@ -344,7 +344,18 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
     const [activeFilter, setActiveFilter] = useState<'all' | 'due' | 'missed' | 'completed'>(initialFilter);
     const [isAllTime, setIsAllTime] = useState(true);
-    
+    const [searchQuery, setSearchQuery] = useState('');
+
+    // Search filter helper
+    const filterBySearch = (items: any[]) => {
+        if (!searchQuery.trim()) return items;
+        const query = searchQuery.toLowerCase().trim();
+        return items.filter(item =>
+            (item.title || '').toLowerCase().includes(query) ||
+            (item.description || '').toLowerCase().includes(query)
+        );
+    };
+
     // Always use IST for current date selection
     const todayIST = getISTDateParts(liveNow).isoDate;
     const [selectedDate, setSelectedDate] = useState(todayIST);
@@ -540,36 +551,99 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
         const historicalMissed: any[] = [];
         if (isToday) {
             for (const { template } of rawTemplateData) {
-                if (template.frequency !== 'daily' || !template.start_time || !template.end_time || !template.is_running) continue;
+                // Include daily, weekly, AND hourly templates
+                const isHourlyTemplate = /^every_\d+_hours?$/.test(template.frequency);
+                const isWeeklyTemplate = template.frequency === 'weekly';
+                if (!isHourlyTemplate && !isWeeklyTemplate && template.frequency !== 'daily') continue;
+
+                // For weekly, check past 4 weeks; for hourly check 3 days; for daily check 7 days
+                const daysToCheck = isHourlyTemplate ? 3 : (isWeeklyTemplate ? 28 : 7);
+                if (!template.start_time || !template.end_time || !template.is_running) continue;
 
                 const [sh, sm] = template.start_time.split(':').map(Number);
                 const [eh, em] = template.end_time.split(':').map(Number);
                 const isOvernight = (eh * 60 + em) <= (sh * 60 + sm);
+
+                // For hourly templates, check each slot in each past day
+                const intervalHours = parseHourlyInterval(template.frequency);
 
                 let currentShiftStart = new Date(`${istRef.isoDate}T${template.start_time.slice(0, 5)}:00+05:30`);
                 if (isOvernight && istRef.totalMins < (eh * 60 + em)) {
                     currentShiftStart = new Date(currentShiftStart.getTime() - 24 * 3600000);
                 }
 
-                for (let i = 1; i <= 7; i++) {
+                for (let i = 1; i <= daysToCheck; i++) {
+                    // For weekly, only check the same day of week
+                    if (isWeeklyTemplate) {
+                        const pastDayOfWeek = new Date(new Date(currentShiftStart).getTime() - i * 24 * 3600000).getDay();
+                        const currentDayOfWeek = new Date(currentShiftStart).getDay();
+                        // Only check if we're looking at the same day of week
+                        if (pastDayOfWeek !== currentDayOfWeek) continue;
+                    }
+
                     const pastShiftStart = new Date(currentShiftStart.getTime() - i * 24 * 3600000);
                     const pastIst = getISTDateParts(pastShiftStart);
                     const pastLogicalDate = pastIst.isoDate;
-                    
+
                     let pastShiftEnd = new Date(`${pastLogicalDate}T${template.end_time.slice(0,5)}:00+05:30`);
                     if (isOvernight) pastShiftEnd.setDate(pastShiftEnd.getDate() + 1);
                     if (liveNow < pastShiftEnd) continue;
 
-                    const anyRecord = completions.find(c => c.template_id === template.id && c.completion_date === pastLogicalDate);
-                    const isMissed = !anyRecord || anyRecord.status === 'missed' || anyRecord.status === 'pending';
-                    
-                    if (isMissed) {
-                        historicalMissed.push({ 
-                            ...template, 
-                            dueLabel: `Missed (${i === 1 ? 'Yesterday' : i + 'd ago'})`, 
-                            historicalDate: pastLogicalDate, 
-                            isHistorical: true 
-                        });
+                    // For hourly templates, check each slot in the shift
+                    if (isHourlyTemplate && intervalHours) {
+                        const windowDurationMins = isOvernight ? (1440 - sh * 60 - sm + eh * 60 + em) : ((eh * 60 + em) - (sh * 60 + sm));
+                        const numSlots = Math.floor(windowDurationMins / (intervalHours * 60));
+
+                        for (let slot = 0; slot < numSlots; slot++) {
+                            const slotStart = new Date(pastShiftStart.getTime() + slot * intervalHours * 60 * 60 * 1000);
+                            const slotEnd = new Date(slotStart.getTime() + intervalHours * 60 * 60 * 1000);
+
+                            // Skip future slots
+                            if (slotEnd > liveNow) continue;
+
+                            const slotTime = slotStart.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+                            const slotDate = pastIst.isoDate;
+
+                            const anyRecord = completions.find(c =>
+                                c.template_id === template.id &&
+                                c.completion_date === slotDate &&
+                                c.status === 'completed'
+                            );
+
+                            // Also check for partial completion (in_progress)
+                            const partialRecord = completions.find(c =>
+                                c.template_id === template.id &&
+                                c.completion_date === slotDate &&
+                                c.slot_time === slotTime
+                            );
+
+                            const isMissed = !anyRecord && (!partialRecord || partialRecord.status !== 'completed');
+
+                            if (isMissed) {
+                                const timeAgo = i === 1 ? 'Yesterday' : i === 0 ? 'Today' : `${i}d ago`;
+                                historicalMissed.push({
+                                    ...template,
+                                    dueLabel: `Missed ${timeAgo} ${slotTime}`,
+                                    historicalDate: slotDate,
+                                    slotTime: slotTime,
+                                    isHistorical: true
+                                });
+                            }
+                        }
+                    } else {
+                        // Daily/weekly template logic
+                        const anyRecord = completions.find(c => c.template_id === template.id && c.completion_date === pastLogicalDate);
+                        const isMissed = !anyRecord || anyRecord.status === 'missed' || anyRecord.status === 'pending';
+
+                        if (isMissed) {
+                            const timeAgo = i === 1 ? 'Yesterday' : i === 0 ? 'Today' : `${i}d ago`;
+                            historicalMissed.push({
+                                ...template,
+                                dueLabel: `Missed (${timeAgo})`,
+                                historicalDate: pastLogicalDate,
+                                isHistorical: true
+                            });
+                        }
                     }
                 }
             }
@@ -603,7 +677,7 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 historicalMissed: historicalMissed.length
             }
         };
-    }, [rawTemplateData, completions, liveNow, selectedDate, isAllTime]);
+    }, [rawTemplateData, completions, liveNow, selectedDate, isAllTime, searchQuery]);
 
     if (isLoading) return <div className="space-y-4">{[1, 2, 3].map(i => <Skeleton key={i} className="h-24 rounded-3xl" />)}</div>;
 
@@ -634,6 +708,28 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 )}
             </div>
 
+            {/* Search Bar */}
+            <div className="px-4 pb-3">
+                <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        placeholder="Search checklists..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-8 py-2 text-xs font-medium bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                            <X size={14} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
             <div className="flex items-center justify-center py-2">
                 <div className="bg-slate-50 p-0.5 rounded-xl border border-slate-200 flex items-center gap-0.5 w-full">
                     <button onClick={() => { setActiveFilter('all'); onFilterChange?.('all'); }} className={`flex-1 py-2 rounded-lg font-black text-[9px] uppercase ${activeFilter === 'all' ? 'bg-white text-slate-900' : 'text-slate-400'}`}>All</button>
@@ -651,14 +747,14 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
                 >
-                    {(activeFilter === 'all' || activeFilter === 'due') && dueTemplates.length > 0 && (
+                    {(activeFilter === 'all' || activeFilter === 'due') && filterBySearch(dueTemplates).length > 0 && (
                         <div className="space-y-2 mb-6">
                             <h3 className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Due Checklists</h3>
-                    {dueTemplates.map(t => (
+                    {filterBySearch(dueTemplates).map(t => (
                         <div key={`due-${t.id}`} onClick={() => onSelectTemplate(t.id, t.property_id, t.inProgressId || undefined, t.historicalDate)} className="bg-white border border-rose-100 rounded-[2rem] p-4 flex items-center gap-4">
                             <div className="w-11 h-11 rounded-2xl bg-rose-50 flex items-center justify-center"><AlertTriangle size={18} className="text-rose-500" /></div>
                             <div className="flex-1 min-w-0">
-                                <h4 className="font-black text-[15px] truncate">{t.title}</h4>
+                                <h4 className="font-black text-[15px] line-clamp-2" title={t.title}>{t.title}</h4>
                                 <div className="flex items-center gap-2 mt-1">
                                     <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-full">{t.dueLabel}</span>
                                 </div>
@@ -669,12 +765,12 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 </div>
             )}
 
-            {(activeFilter === 'all' || activeFilter === 'missed') && missedTemplates.length > 0 && (
+            {(activeFilter === 'all' || activeFilter === 'missed') && filterBySearch(missedTemplates).length > 0 && (
                 <div className="space-y-6">
                     <h3 className="text-[9px] font-black text-rose-500 uppercase tracking-widest px-1">Missed Shifts</h3>
                     {(() => {
                         const groups: Record<string, any[]> = {};
-                        missedTemplates.forEach(t => {
+                        filterBySearch(missedTemplates).forEach(t => {
                             const d = t.historicalDate || 'Today';
                             if (!groups[d]) groups[d] = [];
                             groups[d].push(t);
@@ -697,7 +793,7 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                                             <XCircle size={18} className="text-rose-400" />
                                         </div>
                                         <div className="flex-1 min-w-0">
-                                            <h4 className="font-black text-[15px] truncate text-slate-900 group-hover:text-rose-600 transition-colors">{t.title}</h4>
+                                            <h4 className="font-black text-[15px] line-clamp-2 text-slate-900 group-hover:text-rose-600 transition-colors" title={t.title}>{t.title}</h4>
                                             <div className="flex items-center gap-1.5 mt-1">
                                                 <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[8px] font-black rounded-full uppercase tracking-tight">
                                                     {t.dueLabel || 'Missed'}
@@ -719,13 +815,13 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 </div>
             )}
 
-            {(activeFilter === 'all' || activeFilter === 'completed') && (activeFilter === 'all' ? completedToday : doneList).length > 0 && (
+            {(activeFilter === 'all' || activeFilter === 'completed') && filterBySearch(activeFilter === 'all' ? completedToday : doneList).length > 0 && (
                 <div className="space-y-6">
                     <h3 className="text-[9px] font-black text-emerald-500 uppercase tracking-widest px-1">
                         {activeFilter === 'all' ? 'Completed Today' : 'Completed Checklists'}
                     </h3>
                     {(() => {
-                        const items = activeFilter === 'all' ? completedToday : doneList;
+                        const items = filterBySearch(activeFilter === 'all' ? completedToday : doneList);
                         const groups: Record<string, any[]> = {};
                         items.forEach(c => {
                             const d = c.completion_date || 'Unknown';
@@ -754,7 +850,7 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                                                 <CheckCircle2 size={18} className={c.is_late ? 'text-amber-500' : 'text-emerald-500'} />
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <h4 className={`font-black text-[15px] truncate transition-colors flex items-center gap-2 ${c.is_late ? 'text-slate-900 group-hover:text-amber-600' : 'text-slate-900 group-hover:text-emerald-600'}`}>
+                                                <h4 className={`font-black text-[15px] line-clamp-2 transition-colors flex items-center gap-2 ${c.is_late ? 'text-slate-900 group-hover:text-amber-600' : 'text-slate-900 group-hover:text-emerald-600'}`} title={template.title || 'Untitled Checklist'}>
                                                     {template.title || 'Untitled Checklist'}
                                                     {c.is_late && (
                                                         <span className="px-1.5 py-0.5 bg-amber-100 text-amber-600 text-[8px] font-black rounded-full uppercase tracking-tight">Late</span>

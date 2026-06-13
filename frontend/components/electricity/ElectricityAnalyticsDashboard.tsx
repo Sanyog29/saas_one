@@ -328,7 +328,7 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
     };
     const fmtUnits = (val: number) => {
         if (val === 0 || !val) return '—';
-        return `${val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })} kVAh`;
+        return `${val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })} kWh`;
     };
 
     // Current Display Values based on Toggles
@@ -444,7 +444,7 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                     <div className="flex items-center gap-3 mt-2">
                         {activeTariff > 0 ? (
                             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
-                                Active Tariff: ₹{activeTariff}/kVAh
+                                Active Tariff: ₹{activeTariff}/kWh
                             </span>
                         ) : (
                             <div className="flex items-center gap-2">

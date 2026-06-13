@@ -42,10 +42,6 @@ export async function POST(
             updates.assigned_to = assigned_to;
             updates.status = 'assigned';
             updates.assigned_at = new Date().toISOString();
-        } else {
-            updates.assigned_to = null;
-            updates.status = 'waitlist';
-            updates.assigned_at = null;
         }
 
         const { data, error: updateError } = await supabase
@@ -60,12 +56,38 @@ export async function POST(
             return NextResponse.json({ error: 'Failed to update assignment' }, { status: 500 });
         }
 
+        // If unassigned, auto-reassign to another resolver
+        if (!assigned_to && data) {
+            try {
+                const { processIntelligentAssignment } = await import('@/backend/lib/ticketing/assignment');
+                await processIntelligentAssignment(
+                    supabase,
+                    [{ id: ticketId, property_id: data.property_id, skill_group_code: data.skill_group_code }],
+                    data.property_id
+                );
+
+                // Re-fetch to get updated assignment
+                const { data: reAssignedTicket } = await supabase
+                    .from('tickets')
+                    .select('status, assigned_to')
+                    .eq('id', ticketId)
+                    .single();
+
+                if (reAssignedTicket) {
+                    data.status = reAssignedTicket.status;
+                    data.assigned_to = reAssignedTicket.assigned_to;
+                }
+            } catch (assignErr) {
+                // Silent fail
+            }
+        }
+
         // 3. Log activity
         await supabase.from('ticket_activity_log').insert({
             ticket_id: ticketId,
             user_id: user.id,
-            action: assigned_to ? 'assigned' : 'unassigned',
-            new_value: assigned_to || 'waitlist'
+            action: assigned_to ? 'assigned' : 'reassigned',
+            new_value: assigned_to || 'auto'
         });
 
         // 4. Trigger Notifications

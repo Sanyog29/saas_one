@@ -391,7 +391,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         }));
 
         invalidateCache(`electricity-data-${propertyId}`);
-        setToast({ message: 'Multiplier saved successfully!', type: 'success', visible: true });
+        setToast({ message: 'Meter constant saved successfully!', type: 'success', visible: true });
         setTimeout(() => setSuccessMessage(null), 3000);
     };
 

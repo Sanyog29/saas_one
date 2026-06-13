@@ -473,7 +473,7 @@ async function processIncomingMessage(
                 skill_group_id: skillGroupId,
                 department: skill_group,
                 priority: finalPriority,
-                status: 'waitlist',
+                status: 'open',
                 raised_by: userRow.id,
                 raised_by_name: userRow.full_name || null,
                 internal: false,
@@ -557,6 +557,30 @@ async function processIncomingMessage(
                     escalation_last_action_at: new Date().toISOString(),
                 })
                 .eq('id', ticket.id);
+        }
+
+        // ── Auto-assign to resolver ───────────────────────────────────────────
+        try {
+            const { processIntelligentAssignment } = await import('@/backend/lib/ticketing/assignment');
+            await processIntelligentAssignment(
+                supabaseAdmin,
+                [{ id: ticket.id, property_id: propertyId, skill_group_code: skill_group }],
+                propertyId
+            );
+
+            // Re-fetch to get updated assignment
+            const { data: assignedTicket } = await supabaseAdmin
+                .from('tickets')
+                .select('status, assigned_to, assignee:users!assigned_to(full_name)')
+                .eq('id', ticket.id)
+                .single();
+
+            if (assignedTicket) {
+                ticket.status = assignedTicket.status;
+                ticket.assigned_to = assignedTicket.assigned_to;
+            }
+        } catch (assignErr) {
+            console.error('[WA WEBHOOK] Auto-assignment error:', assignErr);
         }
 
         // ── Log classification ────────────────────────────────────────────────

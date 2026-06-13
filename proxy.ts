@@ -52,6 +52,9 @@ export async function proxy(request: NextRequest) {
         '/favicon.ico',
         '/manifest.json', // Allow manifest file for PWA
         '/firebase-messaging-sw.js', // Allow service worker
+        '/landing_animation', // Public landing animation page
+        '/privacy',
+        '/terms',
     ]
 
     // Check if current path is public

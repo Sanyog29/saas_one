@@ -103,7 +103,9 @@ export async function POST(
         }
 
         // Compute cost (PRD: Cost = Units × DG Rate)
-        const computedCost = consumedLitres * tariffRate;
+        const consumedKwh = (reading.closing_kwh || 0) - (reading.opening_kwh || 0);
+        const units = consumedLitres > 0 ? consumedLitres : (consumedKwh > 0 ? consumedKwh : 0);
+        const computedCost = units * tariffRate;
 
         return {
             property_id: propertyId,

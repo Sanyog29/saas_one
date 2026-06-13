@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle, Activity,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
-    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Wrench, ShoppingCart, Sun, Moon
+    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -142,6 +142,21 @@ const OrgAdminDashboard = () => {
         total_vendors: 0,
         properties: [] as any[],
     });
+    const [dieselSummary, setDieselSummary] = useState({
+        total_litres: 0,
+        total_cost: 0,
+        refill_count: 0,
+        properties: [] as any[],
+    });
+    // TODO: Fetch diesel data from API when available
+    // Mock data for demo - replace with actual API call
+    const mockDieselSummary = {
+        total_litres: 2450,
+        total_cost: 198000,
+        refill_count: 12,
+        properties: []
+    };
+    const displayDieselStats = dieselSummary;
     const [checklistSummary, setChecklistSummary] = useState({
         completed: 0,
         total: 0,
@@ -154,6 +169,7 @@ const OrgAdminDashboard = () => {
     const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'all'>('month');
     const [ticketPeriod, setTicketPeriod] = useState<'today' | 'month' | 'all'>('month');
     const [electricityPeriod, setElectricityPeriod] = useState<'today' | 'month'>('month');
+    const [upcomingPpmTasks, setUpcomingPpmTasks] = useState<any[]>([]);
     const [isSummariesLoading, setIsSummariesLoading] = useState(false);
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
     
@@ -517,21 +533,37 @@ const OrgAdminDashboard = () => {
                 checklistQuery = checklistQuery.gte('completion_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
             }
 
-            const [ticketsRes, electricityRes, vmsRes, vendorRes, checklistRes] = await Promise.all([
+            let ppmQuery = supabase.from('ppm_schedules')
+                .select('id, system_name, planned_date, property:properties(name)')
+                .eq('organization_id', org.id)
+                .eq('status', 'pending')
+                .gte('planned_date', todayDate)
+                .order('planned_date', { ascending: true })
+                .limit(3);
+                
+            if (selectedPropertyId !== 'all') {
+                ppmQuery = ppmQuery.eq('property_id', selectedPropertyId);
+            }
+
+            const [ticketsRes, electricityRes, vmsRes, vendorRes, checklistRes, ppmRes, dieselRes] = await Promise.all([
                 fetch(`/api/organizations/${org.id}/tickets-summary?period=${timePeriod}`),
                 fetch(`/api/organizations/${org.id}/electricity-readings?startDate=${elecStartDate}&endDate=${todayDate}`),
                 fetch(`/api/organizations/${org.id}/vms-summary?period=${timePeriod}`),
                 fetch(`/api/organizations/${org.id}/vendor-summary?period=${timePeriod}`),
-                checklistQuery
+                checklistQuery,
+                ppmQuery,
+                fetch(`/api/organizations/${org.id}/diesel-summary?period=${timePeriod}`)
             ]);
 
-            const [ticketsData, electricityData, vmsData, vendorData] = await Promise.all([
+            const [ticketsData, electricityData, vmsData, vendorData, dieselData] = await Promise.all([
                 ticketsRes.ok ? ticketsRes.json() : null,
                 electricityRes.ok ? electricityRes.json() : null,
                 vmsRes.ok ? vmsRes.json() : null,
                 vendorRes.ok ? vendorRes.json() : null,
+                dieselRes.ok ? dieselRes.json() : null,
             ]);
             const checklistData = checklistRes?.data || [];
+            if (ppmRes?.data) setUpcomingPpmTasks(ppmRes.data);
 
             if (ticketsData) setTicketSummary(ticketsData);
             if (electricityData && Array.isArray(electricityData)) {
@@ -571,6 +603,14 @@ const OrgAdminDashboard = () => {
                     total_commission: vendorData.total_commission || 0,
                     total_vendors: vendorData.total_vendors || 0,
                     properties: vendorData.properties || [],
+                });
+            }
+            if (dieselData) {
+                setDieselSummary({
+                    total_litres: dieselData.total_litres || 0,
+                    total_cost: dieselData.total_cost || 0,
+                    refill_count: dieselData.refill_count || 0,
+                    properties: dieselData.properties || [],
                 });
             }
 
@@ -1284,6 +1324,8 @@ const OrgAdminDashboard = () => {
                                 setVendorSummary={setVendorSummary}
                                 checklistSummary={checklistSummary}
                                 setChecklistSummary={setChecklistSummary}
+                                upcomingPpmTasks={upcomingPpmTasks}
+                                displayDieselStats={displayDieselStats}
                                 timePeriod={timePeriod}
                                 setTimePeriod={setTimePeriod}
                                 ticketPeriod={ticketPeriod}
@@ -1788,6 +1830,8 @@ const OverviewTab = memo(function OverviewTab({
     setVendorSummary,
     checklistSummary,
     setChecklistSummary,
+    upcomingPpmTasks,
+    displayDieselStats,
     timePeriod,
     setTimePeriod,
     ticketPeriod,
@@ -1812,6 +1856,8 @@ const OverviewTab = memo(function OverviewTab({
     setVendorSummary: any,
     checklistSummary: any,
     setChecklistSummary: any,
+    upcomingPpmTasks: any[],
+    displayDieselStats: any,
     timePeriod: 'today' | 'month' | 'all',
     setTimePeriod: (p: 'today' | 'month' | 'all') => void,
     ticketPeriod: 'today' | 'month' | 'all',
@@ -1914,25 +1960,29 @@ const OverviewTab = memo(function OverviewTab({
     // trulyClosed = all vendor-done tickets (resolved + pending_validation) when validation is enabled,
     // or just resolved (closed + satisfied + resolved) when no validation property is selected
     const trulyClosed = validationEnabledCount > 0
-        ? displayTicketStats.resolved + displayTicketStats.pending_validation
-        : displayTicketStats.resolved;
+        ? (displayTicketStats.resolved || 0) + (displayTicketStats.pending_validation || 0)
+        : (displayTicketStats.resolved || 0);
 
     // Calculated metrics
-    const completionRate = displayTicketStats.total_tickets > 0
-        ? Math.round((trulyClosed / displayTicketStats.total_tickets) * 100 * 10) / 10
-        : 0;
-    const activeCount = (displayTicketStats.open_tickets || 0) + (displayTicketStats.in_progress || 0);
+    // Open = tickets NOT closed (open, assigned, in_progress, waitlist)
+    // Closed = tickets ARE closed (completed, closed, pending_validation)
+    const closedCount = (displayTicketStats.resolved || 0) + (displayTicketStats.pending_validation || 0);
+    const openCount = (displayTicketStats.total_tickets || 0) - closedCount;
 
-    const directResolved = trulyClosed - displayTicketStats.validated_closed;
-    const validationRate = trulyClosed > 0
-        ? Math.round((displayTicketStats.validated_closed / trulyClosed) * 100)
+    const completionRate = displayTicketStats.total_tickets > 0
+        ? Math.round((closedCount / displayTicketStats.total_tickets) * 100 * 10) / 10
+        : 0;
+
+    const directResolved = closedCount - displayTicketStats.validated_closed;
+    const validationRate = closedCount > 0
+        ? Math.round((displayTicketStats.validated_closed / closedCount) * 100)
         : 0;
     const totalPropertiesCount = selectedPropertyId === 'all' ? properties.length : 1;
 
     // Animated KPI counters
     const animatedTotal = useCountUp(displayTicketStats.total_tickets || 0);
-    const animatedActive = useCountUp(activeCount || 0);
-    const animatedResolved = useCountUp(trulyClosed || 0);
+    const animatedOpen = useCountUp(openCount || 0);
+    const animatedClosed = useCountUp(closedCount || 0);
     const animatedPending = useCountUp(validationEnabledCount > 0 ? displayTicketStats.pending_validation : 0);
 
     // Animation variants
@@ -1976,7 +2026,7 @@ const OverviewTab = memo(function OverviewTab({
                             <h1 className="text-2xl md:text-3xl font-display font-semibold text-white tracking-tight capitalize">Unified Dashboard</h1>
                             <p className="hidden md:block text-white/70 text-xs font-body font-medium mt-1">Manage your organization's resources.</p>
                         </div>
-                        
+
                         {/* Universal Search - Integrated into Header */}
                         <div className="hidden lg:block ml-4 xl:ml-8 flex-1 max-w-sm min-w-0">
                             <UniversalSearch />
@@ -2088,32 +2138,30 @@ const OverviewTab = memo(function OverviewTab({
                     </div>
                 </div>
 
-                {/* KPI Cards Row — 4 insightful cards */}
-                <motion.div 
-                    className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5 relative"
+                {/* KPI Cards Row */}
+                <motion.div
+                    className={`grid grid-cols-1 sm:grid-cols-2 ${validationEnabledCount > 0 ? 'xl:grid-cols-4' : 'xl:grid-cols-3'} gap-4 mb-5 relative`}
                     variants={containerVariants}
                     initial="hidden"
                     animate="visible"
                 >
-
                     {/* Card 1 — Total Tickets */}
                     <motion.div
                         variants={cardVariants}
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
                         onClick={() => onTabChange('requests', 'all')}
-                        className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
+                        className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600 transition-colors">Total Tickets</span>
-                            <div className="w-7 h-7 rounded-xl bg-slate-100 flex items-center justify-center">
-                                <Ticket className="w-3.5 h-3.5 text-slate-500" />
+                            <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center">
+                                <Ticket className="w-4 h-4 text-slate-500" />
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
                             <span className="text-4xl font-black text-slate-900">{animatedTotal}</span>
-                            <span className="text-xs text-slate-400 font-bold">{completionRate}% resolved</span>
+                            <span className="text-xs text-emerald-500 font-bold">{completionRate}% resolved</span>
                         </div>
-                        {/* Resolution progress bar */}
                         <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
                             <div
                                 className="h-full bg-emerald-500 rounded-full transition-all duration-500"
@@ -2121,128 +2169,108 @@ const OverviewTab = memo(function OverviewTab({
                             />
                         </div>
                         <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                            <span>{activeCount} active</span>
-                            <span>{displayTicketStats.avg_resolution_hours > 0 ? `Avg ${displayTicketStats.avg_resolution_hours}h` : 'No data'}</span>
+                            <span>{openCount} open</span>
+                            <span>{Math.round((trulyClosed / Math.max(displayTicketStats.total_tickets, 1)) * 100)}%</span>
                         </div>
                     </motion.div>
 
-                    {/* Card 2 — Open & Active */}
+                    {/* Card 2 — Open */}
                     <motion.div
                         variants={cardVariants}
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'open,assigned,in_progress,blocked')}
-                        className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-blue-200 transition-all group relative overflow-hidden"
+                        onClick={() => onTabChange('requests', 'open')}
+                        className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-500 transition-colors">Open & Active</span>
-                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${displayTicketStats.sla_breached > 0 ? 'bg-rose-50' : 'bg-blue-50'}`}>
-                                <AlertCircle className={`w-3.5 h-3.5 ${displayTicketStats.sla_breached > 0 ? 'text-rose-500' : 'text-blue-500'}`} />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-500 transition-colors">Open</span>
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${displayTicketStats.sla_breached > 0 ? 'bg-rose-50' : 'bg-blue-50'}`}>
+                                <AlertCircle className={`w-4 h-4 ${displayTicketStats.sla_breached > 0 ? 'text-rose-500' : 'text-blue-500'}`} />
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{animatedActive}</span>
+                            <span className="text-4xl font-black text-slate-900">{animatedOpen}</span>
                             {displayTicketStats.sla_breached > 0 && (
-                                <span className="text-[10px] text-rose-500 font-black uppercase bg-rose-50 px-1.5 py-0.5 rounded-md">{displayTicketStats.sla_breached} SLA breach</span>
+                                <span className="text-[10px] text-rose-500 font-black uppercase bg-rose-50 px-1.5 py-0.5 rounded-md">{displayTicketStats.sla_breached} SLA BREACH</span>
                             )}
                         </div>
-                        <div className="flex flex-wrap gap-2">
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                                {(displayTicketStats.open_tickets || 0) - (displayTicketStats.waitlist || 0)} Open
-                            </span>
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                        <div className="flex flex-wrap gap-2 text-[10px]">
+                            <span className="flex items-center gap-1 font-bold text-slate-500">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                                {displayTicketStats.waitlist || 0} Waitlist
+                                {(displayTicketStats as any)?.waitlist || 0} Waitlist
                             </span>
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500">
-                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
-                                {displayTicketStats.in_progress || 0} In Progress
-                            </span>
-                            {displayTicketStats.urgent_open > 0 && (
-                                <span className="flex items-center gap-1 text-[10px] font-bold text-rose-500">
+                        </div>
+                        {(displayTicketStats.urgent_open || 0) > 0 && (
+                            <div className="mt-2 pt-2 border-t border-slate-100">
+                                <span className="flex items-center gap-1 font-bold text-rose-500 text-[10px]">
                                     <span className="w-1.5 h-1.5 rounded-full bg-rose-400 inline-block" />
-                                    {displayTicketStats.urgent_open} High/Urgent
+                                    {(displayTicketStats.urgent_open || 0) - ((displayTicketStats as any)?.waitlist || 0)} High/Urgent
                                 </span>
-                            )}
-                        </div>
-                    </motion.div>
-
-                    {/* Card 3 — Resolved & Validated */}
-                    <motion.div
-                        variants={cardVariants}
-                        whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'resolved,closed,satisfied,completed')}
-                        className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-emerald-200 transition-all group relative overflow-hidden"
-                    >
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-emerald-500 transition-colors">Resolved & Closed</span>
-                            <div className="w-7 h-7 rounded-xl bg-emerald-50 flex items-center justify-center">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                            </div>
-                        </div>
-                        <div className="flex items-baseline gap-2 mb-2">
-                            <span className="text-4xl font-black text-slate-900">{animatedResolved}</span>
-                            <span className="text-xs text-emerald-500 font-bold">{completionRate}%</span>
-                        </div>
-                        {/* Validation breakdown bar */}
-                        {trulyClosed > 0 && (
-                            <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden flex">
-                                <div className="h-full bg-emerald-500 rounded-l-full transition-all duration-500" style={{ width: `${validationRate}%` }} />
-                                <div className="h-full bg-slate-300 rounded-r-full transition-all duration-500" style={{ width: `${100 - validationRate}%` }} />
                             </div>
                         )}
-                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                            <span />
-                            <span>Avg {displayTicketStats.avg_resolution_hours}h</span>
-                        </div>
                     </motion.div>
 
-                    {/* Card 4 — Pending Client Validation */}
+                    {/* Card 3 — Closed */}
                     <motion.div
                         variants={cardVariants}
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'pending_validation')}
-                        className={`bg-white rounded-2xl p-3 border shadow-sm hover:shadow-md cursor-pointer transition-all group relative overflow-hidden ${displayTicketStats.pending_validation > 0
-                            ? 'border-amber-200 hover:border-amber-300'
-                            : 'border-slate-100 hover:border-slate-200'
-                            }`}
+                        onClick={() => onTabChange('requests', 'resolved')}
+                        className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-amber-500 transition-colors">Needs Review</span>
-                            <div className={`w-7 h-7 rounded-xl flex items-center justify-center ${displayTicketStats.pending_validation > 0 ? 'bg-amber-50' : 'bg-emerald-50'
-                                }`}>
-                                <Clock className={`w-3.5 h-3.5 ${displayTicketStats.pending_validation > 0 ? 'text-amber-500' : 'text-emerald-500'}`} />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600 transition-colors">Closed</span>
+                            <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                             </div>
                         </div>
                         <div className="flex items-baseline gap-2 mb-2">
-                            <span className={`text-4xl font-black ${displayTicketStats.pending_validation > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
-                                {animatedPending}
-                            </span>
-                            {displayTicketStats.pending_validation === 0 && validationEnabledCount > 0 && (
-                                <span className="text-[10px] text-emerald-500 font-black">All clear ✓</span>
-                            )}
-                            {displayTicketStats.pending_validation > 0 && (
-                                <span className="text-[10px] text-amber-500 font-black bg-amber-50 px-1.5 py-0.5 rounded-md">Needs action</span>
-                            )}
+                            <span className="text-4xl font-black text-slate-900">{animatedClosed}</span>
+                            <span className="text-xs text-emerald-500 font-bold">{completionRate}%</span>
                         </div>
-                        <div className="text-[10px] font-bold text-slate-400 leading-relaxed">
-                            {validationEnabledCount === 0 ? (
-                                <span className="text-slate-400">
-                                    {selectedPropertyId === 'all'
-                                        ? 'Validation not enabled on any property'
-                                        : 'Validation is not enabled for this property'}
-                                </span>
-                            ) : displayTicketStats.pending_validation > 0 ? (
-                                <span className="text-amber-600">Awaiting tenant sign-off</span>
-                            ) : (
-                                <span className="text-emerald-600">All resolved tickets confirmed</span>
-                            )}
-                            <div className="mt-1 text-slate-300">
-                                Enabled on {validationEnabledCount}/{totalPropertiesCount} {totalPropertiesCount === 1 ? 'property' : 'properties'}
-                            </div>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full mb-2 overflow-hidden">
+                            <div
+                                className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                                style={{ width: `${completionRate}%` }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
+                            <span>
+                                <span className="text-emerald-600">{displayTicketStats.resolved} confirmed</span>
+                                {displayTicketStats.pending_validation > 0 && <span className="text-amber-500"> · {displayTicketStats.pending_validation} awaiting</span>}
+                            </span>
+                            <span>{displayTicketStats.avg_resolution_hours > 0 ? `Avg ${displayTicketStats.avg_resolution_hours}h` : ''}</span>
                         </div>
                     </motion.div>
 
+                    {/* Card 4 — Needs Review */}
+                    {validationEnabledCount > 0 && (
+                        <motion.div
+                            variants={cardVariants}
+                            whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                            onClick={() => onTabChange('requests', 'pending_validation')}
+                            className="bg-white rounded-2xl p-4 border-l-4 border-b-4 border-amber-400 shadow-sm hover:shadow-md cursor-pointer transition-all group relative overflow-hidden"
+                        >
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-slate-600 transition-colors">Needs Review</span>
+                                <div className="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center">
+                                    <Clock className="w-4 h-4 text-amber-500" />
+                                </div>
+                            </div>
+                            <div className="flex items-baseline gap-2 mb-2">
+                                <span className="text-4xl font-black text-amber-500">{displayTicketStats.pending_validation || 0}</span>
+                            </div>
+                            <div className="mb-2">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-600">
+                                    Needs action
+                                </span>
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-400">
+                                <span>Awaiting tenant sign-off</span>
+                            </div>
+                            <div className="mt-2 text-[10px] font-bold text-slate-400">
+                                <span>Enabled on {validationEnabledCount}/{properties.length} properties</span>
+                            </div>
+                        </motion.div>
+                    )}
                 </motion.div>
             </div>
 
@@ -2314,7 +2342,7 @@ const OverviewTab = memo(function OverviewTab({
                                         >
                                             {displayElectricityStats.total_units.toLocaleString()}
                                         </motion.span>
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">kVAh</span>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">kWh</span>
                                     </div>
                                 </div>
                             </div>
@@ -2323,7 +2351,7 @@ const OverviewTab = memo(function OverviewTab({
                                 <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Units Consumed</div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
                                     {displayElectricityStats.total_units.toLocaleString()}
-                                    <span className="text-sm text-slate-400 font-bold">kVAh</span>
+                                    <span className="text-sm text-slate-400 font-bold">kWh</span>
                                 </div>
                                 <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-2">
                                     <span className="text-[10px] font-bold text-yellow-600 uppercase flex items-center gap-1 group-hover:underline">
@@ -2399,121 +2427,113 @@ const OverviewTab = memo(function OverviewTab({
                         </div>
                     </motion.div>
 
-                    {/* Right Column */}
-                    <motion.div 
-                        className="lg:col-span-5 space-y-5"
+                    {/* Right Column - Compact View */}
+                    <motion.div
+                        className="lg:col-span-5 space-y-3"
                         variants={cardVariants}
                     >
-                        {/* Property Breakdown */}
-                        <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
-                            <h3 className="text-sm font-black text-slate-900 mb-4">Tickets by Property</h3>
-                            <div className="space-y-3 max-h-48 overflow-y-auto">
-                                {(ticketSummary as any).properties?.slice(0, 5).map((prop: any, idx: number) => (
-                                    <div key={prop.property_id || idx} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                                        <div>
-                                            <div className="font-bold text-slate-900 text-sm">{prop.property_name}</div>
-                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{prop.open + prop.in_progress} active · {prop.resolved} resolved</div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-lg font-black text-slate-900">{prop.total}</div>
-                                            <div className="text-xs text-slate-400">total</div>
-                                        </div>
-                                    </div>
-                                ))}
-                                {!(ticketSummary as any).properties?.length && (
-                                    <div className="text-center text-slate-400 py-4">No ticket data available</div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Checklist Progress Bar */}
-                        <div 
+                        {/* Checklist Progress */}
+                        <div
                             onClick={() => onTabChange('checklist')}
-                            className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm mb-5 cursor-pointer hover:border-emerald-500/30 transition-colors group flex flex-col gap-4"
+                            className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm cursor-pointer hover:border-emerald-500/30 transition-colors group"
                         >
-                            <div className="flex justify-between items-center">
+                            <div className="flex justify-between items-center mb-2">
                                 <div className="flex items-center gap-2">
-                                    <ClipboardCheck className="w-5 h-5 text-emerald-500" />
-                                    <span className="text-sm font-black text-slate-900 group-hover:text-emerald-600 transition-colors">Checklist Progress</span>
+                                    <ClipboardCheck className="w-4 h-4 text-emerald-500" />
+                                    <span className="text-xs font-bold text-slate-700">Checklist</span>
                                 </div>
-                                <span className="text-xs font-bold text-slate-400">
-                                    {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'This Month' : 'All Time'}
+                                <span className="text-[10px] font-bold text-slate-400">
+                                    {timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'}
                                 </span>
                             </div>
-
-                            <div className="space-y-3">
-                                {/* Day Shift */}
-                                {(displayChecklistStats.day_total > 0 || displayChecklistStats.total === 0) && (
-                                    <div>
-                                        <div className="flex justify-between items-center mb-1.5">
-                                            <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1">
-                                                <Sun className="w-3 h-3" /> Day Shift
-                                            </span>
-                                            <span className="text-xs font-black text-amber-600">
-                                                {displayChecklistStats.day_total > 0 ? Math.round((displayChecklistStats.day_completed / displayChecklistStats.day_total) * 100) : 0}%
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-amber-100/50 rounded-full h-2 mb-1.5 overflow-hidden">
-                                            <div 
-                                                className="bg-amber-500 h-2 rounded-full transition-all duration-1000" 
-                                                style={{ width: `${displayChecklistStats.day_total > 0 ? (displayChecklistStats.day_completed / displayChecklistStats.day_total) * 100 : 0}%` }}
-                                            />
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-bold text-slate-400">{displayChecklistStats.day_completed} of {displayChecklistStats.day_total} completed</span>
-                                            {displayChecklistStats.total === 0 && <span className="text-[10px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">View Checklists &rarr;</span>}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Night Shift */}
-                                {displayChecklistStats.night_total > 0 && (
-                                    <div>
-                                        <div className="flex justify-between items-center mb-1.5">
-                                            <span className="text-[10px] font-bold text-indigo-600 flex items-center gap-1">
-                                                <Moon className="w-3 h-3" /> Night Shift
-                                            </span>
-                                            <span className="text-xs font-black text-indigo-600">
-                                                {displayChecklistStats.night_total > 0 ? Math.round((displayChecklistStats.night_completed / displayChecklistStats.night_total) * 100) : 0}%
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-indigo-100/50 rounded-full h-2 mb-1.5 overflow-hidden">
-                                            <div 
-                                                className="bg-indigo-500 h-2 rounded-full transition-all duration-1000" 
-                                                style={{ width: `${displayChecklistStats.night_total > 0 ? (displayChecklistStats.night_completed / displayChecklistStats.night_total) * 100 : 0}%` }}
-                                            />
-                                        </div>
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-[10px] font-bold text-slate-400">{displayChecklistStats.night_completed} of {displayChecklistStats.night_total} completed</span>
-                                            {displayChecklistStats.total > 0 && <span className="text-[10px] font-bold text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity">View Checklists &rarr;</span>}
-                                        </div>
-                                    </div>
-                                )}
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center text-[9px]">
+                                    <span className="text-amber-600 font-bold">Day</span>
+                                    <span className="text-slate-500">{displayChecklistStats.day_completed}/{displayChecklistStats.day_total}</span>
+                                    <span className="text-amber-600 font-black">{displayChecklistStats.day_total > 0 ? Math.round((displayChecklistStats.day_completed / displayChecklistStats.day_total) * 100) : 0}%</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-amber-500 rounded-full" style={{ width: `${displayChecklistStats.day_total > 0 ? (displayChecklistStats.day_completed / displayChecklistStats.day_total) * 100 : 0}%` }} />
+                                </div>
+                                <div className="flex justify-between items-center text-[9px]">
+                                    <span className="text-indigo-600 font-bold">Night</span>
+                                    <span className="text-slate-500">{displayChecklistStats.night_completed}/{displayChecklistStats.night_total}</span>
+                                    <span className="text-indigo-600 font-black">{displayChecklistStats.night_total > 0 ? Math.round((displayChecklistStats.night_completed / displayChecklistStats.night_total) * 100) : 0}%</span>
+                                </div>
+                                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${displayChecklistStats.night_total > 0 ? (displayChecklistStats.night_completed / displayChecklistStats.night_total) * 100 : 0}%` }} />
+                                </div>
                             </div>
                         </div>
 
-                        {/* Module Summary */}
-                        <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-sm">
-                            <h3 className="text-sm font-black text-slate-900 mb-4">Module Summary</h3>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-4 bg-blue-50 rounded-xl">
-                                    <div className="text-xs font-bold text-blue-600 mb-1">Tickets</div>
-                                    <div className="text-2xl font-black text-blue-900">{displayTicketStats.total_tickets}</div>
+                        {/* Diesel Stats */}
+                        <div
+                            onClick={() => onTabChange('diesel')}
+                            className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm cursor-pointer hover:border-yellow-500/30 transition-colors group"
+                        >
+                            <div className="flex justify-between items-center mb-3">
+                                <div className="flex items-center gap-2">
+                                    <Fuel className="w-4 h-4 text-yellow-500" />
+                                    <span className="text-xs font-bold text-slate-700">DG Consumption</span>
                                 </div>
-                                <div className="p-4 bg-emerald-50 rounded-xl">
-                                    <div className="text-xs font-bold text-emerald-600 mb-1">
-                                        Visitors {timePeriod === 'today' ? '(Today)' : timePeriod === 'month' ? '(Month)' : '(All Time)'}
+                                <span className="text-[10px] font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-full">Live</span>
+                            </div>
+                            
+                            <div className="flex items-center gap-4 px-2">
+                                {/* Visual Tank */}
+                                <div className="relative w-8 h-12 border-2 border-slate-200 rounded-lg overflow-hidden shrink-0 bg-slate-50">
+                                    <div className="absolute bottom-0 left-0 w-full bg-yellow-400 transition-all duration-1000" style={{ height: '65%' }}>
+                                        <div className="w-full h-1 bg-white/30 absolute top-0" />
                                     </div>
-                                    <div className="text-2xl font-black text-emerald-900">{displayVmsStats.total_visitors}</div>
                                 </div>
-                                <div className="p-4 bg-yellow-50 rounded-xl">
-                                    <div className="text-xs font-bold text-yellow-600 mb-1">Electricity ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div>
-                                    <div className="text-2xl font-black text-slate-900">{displayElectricityStats.total_units.toLocaleString()} <span className="text-sm text-slate-400 font-bold">kVAh</span></div>
+                                
+                                <div className="flex-1 space-y-2">
+                                    <div className="flex justify-between items-baseline">
+                                        <span className="text-xl font-black text-slate-900 leading-none">
+                                            {displayDieselStats?.total_units > 0 
+                                                ? displayDieselStats?.total_units?.toLocaleString() 
+                                                : displayDieselStats?.total_litres > 0 ? displayDieselStats?.total_litres?.toLocaleString() : (displayDieselStats?.total_kwh > 0 ? displayDieselStats?.total_kwh?.toLocaleString() : 0)}
+                                            <span className="text-[10px] font-bold text-slate-400 ml-1">
+                                                {(!displayDieselStats?.total_litres && displayDieselStats?.total_kwh > 0) ? 'kWh' : 'Units'}
+                                            </span>
+                                        </span>
+                                    </div>
+
                                 </div>
-                                <div className="p-4 bg-purple-50 rounded-xl">
-                                    <div className="text-xs font-bold text-purple-600 mb-1">Vendor Revenue ({timePeriod === 'today' ? 'Today' : timePeriod === 'month' ? 'Month' : 'All'})</div>
-                                    <div className="text-2xl font-black text-purple-900">₹{displayVendorStats.total_revenue.toLocaleString('en-IN')}</div>
+                            </div>
+                        </div>
+
+                        {/* Upcoming PPM Tasks */}
+                        <div
+                            onClick={() => onTabChange('ppm')}
+                            className="bg-white rounded-2xl p-3 border border-slate-100 shadow-sm cursor-pointer hover:border-purple-500/30 transition-colors"
+                        >
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="w-4 h-4 text-purple-500" />
+                                    <span className="text-xs font-bold text-slate-700">Upcoming PPM</span>
                                 </div>
+                                <span className="text-[10px] font-bold text-purple-600">Tasks</span>
+                            </div>
+                            <div className="space-y-1.5">
+                                {upcomingPpmTasks.length > 0 ? (
+                                    upcomingPpmTasks.map((task, idx) => {
+                                        const date = new Date(task.planned_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                                        return (
+                                            <div key={task.id} className={`flex justify-between items-center p-2 rounded-lg ${idx === 0 ? 'bg-purple-50' : 'bg-slate-50'}`}>
+                                                <div className="min-w-0 pr-2">
+                                                    <div className={`text-[10px] font-bold truncate ${idx === 0 ? 'text-slate-900' : 'text-slate-700'}`}>{task.system_name}</div>
+                                                    <div className={`text-[8px] truncate ${idx === 0 ? 'text-purple-600' : 'text-slate-500'}`}>{task.property?.name || 'All Properties'}</div>
+                                                </div>
+                                                <div className={`text-[9px] font-bold shrink-0 ${idx === 0 ? 'text-purple-600' : 'text-slate-500'}`}>{date}</div>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="text-center py-4 px-2">
+                                        <p className="text-[10px] font-bold text-slate-400">No upcoming PPM tasks</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </motion.div>

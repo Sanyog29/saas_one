@@ -385,9 +385,9 @@ const SOPTemplateManager: React.FC<SOPTemplateManagerProps> = ({ propertyId, pro
                                                     )}
                                                 </div>
 
-                                                {/* Icon buttons */}
+                                                {/* Icon buttons - Hidden on mobile, visible on tablet+ */}
                                                 {isAdmin && (
-                                                    <div className="flex items-center gap-0.5 pt-1.5 border-t border-slate-100">
+                                                    <div className="hidden sm:flex items-center gap-0.5 pt-1.5 border-t border-slate-100">
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); setEditingTemplate(template); setShowFormModal(true); }}
                                                             className="p-1.5 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-lg transition-all"

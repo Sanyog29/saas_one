@@ -216,24 +216,22 @@ export default function TicketCard({
             )}
 
             {/* Header: Title + Actions */}
-            <div className={`flex items-start justify-between gap-[clamp(0.5rem,3cqw,1.5rem)] relative z-20 ${photoUrl ? 'pl-16 min-h-[48px]' : ''}`}>
-                <div className="flex-1 flex items-start gap-[clamp(0.5rem,3cqw,1.25rem)] min-w-0">
+            <div className={`flex items-start justify-between gap-2 relative z-20 ${photoUrl ? 'pl-14 sm:pl-16 min-h-[48px]' : ''}`}>
+                <div className="flex-1 min-w-0">
                     {/* Title */}
-                    <div className="flex-1 space-y-1 min-w-0 pt-0.5 relative z-30">
-                        <h3 className="text-sm font-semibold text-gray-900 line-clamp-2 hover:line-clamp-none transition-all leading-snug min-w-0" title={title}>
-                            {title}
-                        </h3>
-                    </div>
+                    <h3 className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 break-words pr-2" title={title}>
+                        {title}
+                    </h3>
                 </div>
 
-                {/* Actions Container: Grouped and Top-Right */}
-                <div className="flex items-center gap-[clamp(0.125rem,1cqw,0.375rem)] shrink-0 bg-gray-50/80 p-1 rounded-xl border border-gray-100">
+                {/* Actions Container: Grouped and Top-Right - Compact on mobile */}
+                <div className="flex items-center gap-0.5 sm:gap-1 shrink-0 bg-gray-50/80 p-0.5 sm:p-1 rounded-lg sm:rounded-xl border border-gray-100">
                     <button
                         onClick={(e) => { e.stopPropagation(); setShareOpen(true); }}
-                        className="p-[clamp(0.375rem,1.5cqw,0.5rem)] text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all"
+                        className="p-1 sm:p-1.5 text-gray-400 hover:text-blue-600 hover:bg-white rounded-md sm:rounded-lg transition-all"
                         title="Share Ticket"
                     >
-                        <Share2 className="w-[clamp(0.875rem,2.5cqw,1rem)] h-[clamp(0.875rem,2.5cqw,1rem)]" />
+                        <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                     {onEdit && (
                         <button
@@ -241,10 +239,10 @@ export default function TicketCard({
                                 e.stopPropagation();
                                 onEdit(e);
                             }}
-                            className="p-[clamp(0.375rem,1.5cqw,0.5rem)] text-gray-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all"
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-blue-600 hover:bg-white rounded-md sm:rounded-lg transition-all"
                             title="Edit Request"
                         >
-                            <Pencil className="w-[clamp(0.875rem,2.5cqw,1rem)] h-[clamp(0.875rem,2.5cqw,1rem)]" />
+                            <Pencil className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         </button>
                     )}
                     {onDelete && (
@@ -253,10 +251,10 @@ export default function TicketCard({
                                 e.stopPropagation();
                                 onDelete(e);
                             }}
-                            className="p-[clamp(0.375rem,1.5cqw,0.5rem)] text-gray-400 hover:text-red-600 hover:bg-white rounded-lg transition-all"
+                            className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 hover:bg-white rounded-md sm:rounded-lg transition-all"
                             title="Delete Request"
                         >
-                            <Trash2 className="w-[clamp(0.875rem,2.5cqw,1rem)] h-[clamp(0.875rem,2.5cqw,1rem)]" />
+                            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         </button>
                     )}
                 </div>
