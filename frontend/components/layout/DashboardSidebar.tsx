@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
     LayoutDashboard, Users, Ticket, Package, Settings, LogOut,
-    Menu, X, GitMerge, Calendar, ShoppingCart
+    Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
+    FileUp, Bot, Building2
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -32,6 +33,16 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
         { label: 'Inventory', href: `/${orgId}/procurement-management`, icon: Package, domain: 'procurement' as const },
         { label: 'Procurement', href: `/${orgId}/procurement-management`, icon: ShoppingCart, domain: 'procurement' as const },
         { label: 'Staff', href: `/${orgId}/users`, icon: Users, domain: 'users' as const },
+    ], [orgId]);
+
+    const CRM_NAV_ITEMS = React.useMemo(() => [
+        { label: 'Dashboard', href: `/${orgId}/crm`, icon: BarChart3, domain: 'crm' as const },
+        { label: 'Leads', href: `/${orgId}/crm/leads`, icon: UsersRound, domain: 'crm' as const },
+        { label: 'Calendar', href: `/${orgId}/crm/calendar`, icon: Calendar, domain: 'crm' as const },
+        { label: 'Activities', href: `/${orgId}/crm/activities`, icon: Building2, domain: 'crm' as const },
+        { label: 'Reports', href: `/${orgId}/crm/reports`, icon: BarChart3, domain: 'crm' as const },
+        { label: 'Import Leads', href: `/${orgId}/crm/import`, icon: FileUp, domain: 'crm' as const },
+        { label: 'AI Insights', href: `/${orgId}/crm/ai`, icon: Bot, domain: 'crm' as const },
     ], [orgId]);
 
     const getUserInitials = (name: string) => {
@@ -107,6 +118,32 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                             </Link>
                         </CapabilityWrapper>
                     ))}
+
+                    {/* CRM Section */}
+                    <CapabilityWrapper domain="crm" action="view">
+                        <div className="pt-4 mt-4 border-t border-slate-200">
+                            <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
+                                CRM
+                            </p>
+                            {CRM_NAV_ITEMS.map((item) => (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    onClick={handleLinkClick}
+                                    className={`
+                                        flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
+                                        ${pathname?.startsWith(item.href)
+                                            ? 'bg-primary text-text-inverse shadow-sm'
+                                            : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                                        }
+                                    `}
+                                >
+                                    <item.icon className={`w-5 h-5 transition-smooth group-hover:scale-105 shrink-0`} />
+                                    <span className="font-body font-medium text-sm">{item.label}</span>
+                                </Link>
+                            ))}
+                        </div>
+                    </CapabilityWrapper>
                 </nav>
 
                 {/* Bottom Section */}

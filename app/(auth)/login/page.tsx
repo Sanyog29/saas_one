@@ -35,6 +35,10 @@ function AuthContent() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [fullName, setFullName] = useState('');
+    const [selectedRole, setSelectedRole] = useState<'bd_rep' | 'bd_admin'>('bd_rep');
+    const [selectedOrg, setSelectedOrg] = useState<string>('');
+    const [organizations, setOrganizations] = useState<{ id: string; name: string }[]>([]);
+    const [loadingOrgs, setLoadingOrgs] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [loading, setLoading] = useState(false);
@@ -48,6 +52,27 @@ function AuthContent() {
         else if (initialMode === 'reset') setAuthMode('update-password');
         setMounted(true);
     }, [initialMode]);
+
+    // Fetch organizations for signup
+    useEffect(() => {
+        if (authMode === 'signup' && organizations.length === 0) {
+            setLoadingOrgs(true);
+            supabase
+                .from('organizations')
+                .select('id, name')
+                .order('name')
+                .then(({ data, error }) => {
+                    if (!error && data) {
+                        setOrganizations(data);
+                        if (data.length === 1) {
+                            setSelectedOrg(data[0].id);
+                        }
+                    }
+                    setLoadingOrgs(false);
+                });
+        }
+    }, [authMode, supabase]);
+
     const formRef = React.useRef<HTMLFormElement>(null);
 
     const { signIn, signUp, signInWithGoogle, signInWithZoho, resetPassword, signOut } = useAuth();
@@ -150,12 +175,34 @@ function AuthContent() {
 
         try {
             if (authMode === 'signup') {
-                const data = await signUp(email, password, fullName);
+                // Validate organization is selected
+                if (!selectedOrg) {
+                    throw new Error('Please select an organization');
+                }
 
-                if (data?.session) {
+                // Call signup API with role and organization
+                const response = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email,
+                        password,
+                        fullName,
+                        role: selectedRole,
+                        organizationId: selectedOrg
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Signup failed');
+                }
+
+                if (result.data?.session) {
                     console.log('Signup successful, session found. Redirecting...');
                     router.push('/onboarding');
-                } else if (data?.user) {
+                } else if (result.data?.user) {
                     console.log('Signup successful, but no session. Email confirmation likely required.');
                     setSuccess('Account created! Please check your email inbox to verify your account before logging in.');
                     // Don't redirect if there's no session, as onboarding requires a logged-in user
@@ -200,14 +247,14 @@ function AuthContent() {
                 // Property-level roles (property_admin, staff, tenant, etc.) may also have
                 // an org_membership row (created by the user-create API), but they should
                 // be routed via Step 4 (property_memberships) instead.
-                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement'];
+                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement', 'bd_admin', 'bd_rep'];
                 const activeOrgMemberships = (orgMemberships || []).filter(
                     (m) => ORG_LEVEL_ROLES.includes(m.role) && (m.is_active === true || m.is_active === null)
                 );
 
                 if (activeOrgMemberships.length > 0) {
                     // Pick best by priority (org_super_admin first, then super_tenant, then others)
-                    const ORG_PRIORITY = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'member'];
+                    const ORG_PRIORITY = ['org_super_admin', 'bd_admin', 'org_admin', 'super_tenant', 'owner', 'admin', 'member', 'bd_rep'];
                     const best = [...activeOrgMemberships].sort((a, b) => {
                         const ai = ORG_PRIORITY.indexOf(a.role) === -1 ? 99 : ORG_PRIORITY.indexOf(a.role);
                         const bi = ORG_PRIORITY.indexOf(b.role) === -1 ? 99 : ORG_PRIORITY.indexOf(b.role);
@@ -216,6 +263,9 @@ function AuthContent() {
 
                     if (best.role === 'procurement') {
                         router.replace('/procurement');
+                    } else if (best.role === 'bd_admin' || best.role === 'bd_rep') {
+                        // CRM users route to CRM module
+                        router.replace(`/org/${best.organization_id}/crm`);
                     } else {
                         router.replace(
                             redirectPath && redirectPath !== '/'
@@ -264,6 +314,9 @@ function AuthContent() {
                         router.replace(`/property/${pId}/vendor`);
                     } else if (role === 'procurement') {
                         router.replace('/procurement');
+                    } else if (role === 'bd_rep' || role === 'bd_admin') {
+                        // CRM users route to org dashboard with CRM
+                        router.replace(`/org/${propMembership.organization_id}/crm`);
                     } else {
                         router.replace(`/property/${pId}/dashboard`);
                     }
@@ -441,17 +494,97 @@ function AuthContent() {
 
                                 <form className="space-y-4" onSubmit={handleAuthAction}>
                                     {authMode === 'signup' && (
-                                        <div className="space-y-2 relative z-20">
-                                            <label className="text-sm font-semibold text-text-primary font-body">Name*</label>
-                                            <input
-                                                type="text"
-                                                placeholder="Enter your name"
-                                                value={fullName}
-                                                onChange={(e) => setFullName(e.target.value)}
-                                                required
-                                                className="w-full h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface text-text-primary font-body placeholder:text-text-tertiary transition-smooth focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary hover:border-primary/50"
-                                            />
-                                        </div>
+                                        <>
+                                            <div className="space-y-2 relative z-20">
+                                                <label className="text-sm font-semibold text-text-primary font-body">Name*</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Enter your name"
+                                                    value={fullName}
+                                                    onChange={(e) => setFullName(e.target.value)}
+                                                    required
+                                                    className="w-full h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface text-text-primary font-body placeholder:text-text-tertiary transition-smooth focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary hover:border-primary/50"
+                                                />
+                                            </div>
+
+                                            {/* Role Selection */}
+                                            <div className="space-y-2 relative z-20">
+                                                <label className="text-sm font-semibold text-text-primary font-body">Role*</label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedRole('bd_rep')}
+                                                        className={`p-3 rounded-[var(--radius-md)] border text-left transition-smooth ${
+                                                            selectedRole === 'bd_rep'
+                                                                ? 'border-primary bg-primary/5'
+                                                                : 'border-border hover:border-primary/50'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                                                selectedRole === 'bd_rep' ? 'bg-primary text-white' : 'bg-slate-100'
+                                                            }`}>
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                                </svg>
+                                                            </div>
+                                                            <span className="text-sm font-semibold text-text-primary">BD Rep</span>
+                                                        </div>
+                                                        <p className="text-xs text-text-secondary">Sales Representative</p>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedRole('bd_admin')}
+                                                        className={`p-3 rounded-[var(--radius-md)] border text-left transition-smooth ${
+                                                            selectedRole === 'bd_admin'
+                                                                ? 'border-primary bg-primary/5'
+                                                                : 'border-border hover:border-primary/50'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                                                                selectedRole === 'bd_admin' ? 'bg-primary text-white' : 'bg-slate-100'
+                                                            }`}>
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                                                </svg>
+                                                            </div>
+                                                            <span className="text-sm font-semibold text-text-primary">BD Admin</span>
+                                                        </div>
+                                                        <p className="text-xs text-text-secondary">Admin/Manager</p>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Organization Selection */}
+                                            <div className="space-y-2 relative z-20">
+                                                <label className="text-sm font-semibold text-text-primary font-body">Organization*</label>
+                                                {loadingOrgs ? (
+                                                    <div className="h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface flex items-center">
+                                                        <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                                                    </div>
+                                                ) : organizations.length === 0 ? (
+                                                    <select
+                                                        disabled
+                                                        className="w-full h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface text-text-secondary font-body"
+                                                    >
+                                                        <option value="">No organizations available</option>
+                                                    </select>
+                                                ) : (
+                                                    <select
+                                                        value={selectedOrg}
+                                                        onChange={(e) => setSelectedOrg(e.target.value)}
+                                                        required
+                                                        className="w-full h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface text-text-primary font-body focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                                                    >
+                                                        <option value="">Select organization</option>
+                                                        {organizations.map(org => (
+                                                            <option key={org.id} value={org.id}>{org.name}</option>
+                                                        ))}
+                                                    </select>
+                                                )}
+                                            </div>
+                                        </>
                                     )}
 
                                     {(authMode === 'signin' || authMode === 'signup' || authMode === 'forgot') && (
