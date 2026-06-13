@@ -265,7 +265,12 @@ export default function OnboardingPage() {
             if (membershipError) {
                 // Ignore duplicate key errors, throw others
                 if (!membershipError.message.toLowerCase().includes('duplicate key')) {
-                    console.error('Membership insert failed:', membershipError);
+                    console.error('Membership insert failed:', {
+                        message: membershipError.message,
+                        code: (membershipError as any).code,
+                        details: (membershipError as any).details,
+                        hint: (membershipError as any).hint,
+                    });
                     throw membershipError;
                 }
             }

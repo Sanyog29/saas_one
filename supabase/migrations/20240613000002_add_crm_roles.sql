@@ -3,9 +3,12 @@
 -- Adds bd_rep and bd_admin roles
 -- ===========================================
 
--- Note: Roles are stored as plain text strings in this application.
--- User UUIDs come from auth.users and are already generated.
--- Territories are created dynamically via the CRM settings UI or API.
+-- IMPORTANT: membership roles are stored as the `app_role` ENUM
+-- (property_memberships.role / organization_memberships.role), NOT plain text.
+-- The new BD roles must be added as enum values or inserts will fail with
+-- "invalid input value for enum app_role". ADD VALUE IF NOT EXISTS is idempotent.
+ALTER TYPE app_role ADD VALUE IF NOT EXISTS 'bd_rep';
+ALTER TYPE app_role ADD VALUE IF NOT EXISTS 'bd_admin';
 
 -- ===========================================
 -- Role Definitions:
