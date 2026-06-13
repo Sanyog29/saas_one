@@ -61,12 +61,14 @@ export async function POST(request: NextRequest) {
 
 async function processAIQuery(query: string, data: any): Promise<string> {
     const lowerQuery = query.toLowerCase();
+    const leads: any[] = data.leads || [];
+    const events: any[] = data.events || [];
 
     // Leads not contacted for X days
     if (lowerQuery.includes('not contacted') || lowerQuery.includes('stale')) {
         const days = parseDays(lowerQuery) || 14;
         const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-        const staleLeads = data.leads.filter(l => {
+        const staleLeads = leads.filter(l => {
             if (!l.last_contacted) return true;
             return new Date(l.last_contacted) < cutoff;
         });
@@ -86,7 +88,7 @@ async function processAIQuery(query: string, data: any): Promise<string> {
     // High value opportunities
     if (lowerQuery.includes('high value') || lowerQuery.includes('lakh') || lowerQuery.includes('crore')) {
         const threshold = parseValueThreshold(lowerQuery);
-        const highValue = data.leads
+        const highValue = leads
             .filter(l => l.deal_value >= threshold)
             .sort((a, b) => b.deal_value - a.deal_value);
 
@@ -104,7 +106,7 @@ async function processAIQuery(query: string, data: any): Promise<string> {
 
     // Pipeline summary
     if (lowerQuery.includes('pipeline')) {
-        const activeLeads = data.leads.filter(l => !l.status_info?.is_terminal);
+        const activeLeads = leads.filter(l => !l.status_info?.is_terminal);
 
         return `📊 Your Pipeline Summary:\n\n` +
             `• Total Leads: ${data.totalLeads}\n` +
@@ -112,7 +114,7 @@ async function processAIQuery(query: string, data: any): Promise<string> {
             `• Pipeline Value: ${formatCurrency(data.totalPipeline)}\n` +
             `• Won This Month: ${data.wonCount} (${formatCurrency(data.revenueClosed)})\n\n` +
             `Status Breakdown:\n` +
-            Object.entries(getStatusBreakdown(data.leads)).map(([status, count]) =>
+            Object.entries(getStatusBreakdown(leads)).map(([status, count]) =>
                 `• ${status}: ${count}`
             ).join('\n');
     }
@@ -122,8 +124,8 @@ async function processAIQuery(query: string, data: any): Promise<string> {
         return `🏆 This Month's Performance:\n\n` +
             `• Deals Won: ${data.wonCount}\n` +
             `• Revenue Closed: ${formatCurrency(data.revenueClosed)}\n` +
-            `• Meetings Conducted: ${data.events.filter(e => e.event_type === 'meeting').length}\n` +
-            `• Site Visits: ${data.events.filter(e => e.event_type === 'site_visit').length}\n\n` +
+            `• Meetings Conducted: ${events.filter(e => e.event_type === 'meeting').length}\n` +
+            `• Site Visits: ${events.filter(e => e.event_type === 'site_visit').length}\n\n` +
             (data.wonCount > 0
                 ? `Average deal size: ${formatCurrency(data.revenueClosed / data.wonCount)}`
                 : 'Keep pushing to close your first deal!');
@@ -132,7 +134,7 @@ async function processAIQuery(query: string, data: any): Promise<string> {
     // Overdue follow-ups
     if (lowerQuery.includes('overdue') || lowerQuery.includes('follow up')) {
         const today = new Date().toISOString().split('T')[0];
-        const overdue = data.leads.filter(l =>
+        const overdue = leads.filter(l =>
             l.next_followup_date && l.next_followup_date.split('T')[0] < today
         );
 
@@ -158,10 +160,10 @@ async function processAIQuery(query: string, data: any): Promise<string> {
             `This Month:\n` +
             `• Won: ${data.wonCount} deals\n` +
             `• Revenue: ${formatCurrency(data.revenueClosed)}\n` +
-            `• Meetings: ${data.events.filter(e => e.event_type === 'meeting').length}\n\n` +
+            `• Meetings: ${events.filter(e => e.event_type === 'meeting').length}\n\n` +
             `Need attention:\n` +
-            `• Overdue: ${data.leads.filter(l => l.next_followup_date && l.next_followup_date.split('T')[0] < new Date().toISOString().split('T')[0]).length} follow-ups\n` +
-            `• Not contacted (14+ days): ${data.leads.filter(l => !l.last_contacted || new Date(l.last_contacted) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)).length}`;
+            `• Overdue: ${leads.filter(l => l.next_followup_date && l.next_followup_date.split('T')[0] < new Date().toISOString().split('T')[0]).length} follow-ups\n` +
+            `• Not contacted (14+ days): ${leads.filter(l => !l.last_contacted || new Date(l.last_contacted) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)).length}`;
     }
 
     // Default response

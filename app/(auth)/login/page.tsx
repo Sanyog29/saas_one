@@ -53,6 +53,9 @@ function AuthContent() {
         setMounted(true);
     }, [initialMode]);
 
+    // Memoize supabase client to prevent re-creation on every render
+    const supabase = React.useMemo(() => createClient(), []);
+
     // Fetch organizations for signup
     useEffect(() => {
         if (authMode === 'signup' && organizations.length === 0) {
@@ -77,10 +80,6 @@ function AuthContent() {
 
     const { signIn, signUp, signInWithGoogle, signInWithZoho, resetPassword, signOut } = useAuth();
     const router = useRouter();
-
-    // Memoize supabase client to prevent re-creation on every render
-    const supabase = React.useMemo(() => createClient(), []);
-
 
     useEffect(() => {
         if (urlError) {

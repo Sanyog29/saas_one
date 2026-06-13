@@ -100,8 +100,8 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                     description: 'Note added',
                     metadata: {},
                     created_at: new Date().toISOString(),
-                    user_info: { id: '', full_name: 'You' }
-                }, ...prev]);
+                    user_info: { id: '', full_name: 'You', email: '' }
+                } as CRMActivity, ...prev]);
                 setNewNote('');
             }
         } catch (error) {

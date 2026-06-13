@@ -140,7 +140,7 @@ export default function CRMDashboard() {
                         title="Open Follow-ups"
                         value={stats?.open_followups || 0}
                         icon={Bell}
-                        trend={stats?.open_followups > 5 ? { value: 'Needs attention', direction: 'down' as const } : undefined}
+                        trend={(stats?.open_followups || 0) > 5 ? { value: 'Needs attention', direction: 'down' as const } : undefined}
                         onClick={() => {}}
                     />
                 </Link>
@@ -207,7 +207,7 @@ export default function CRMDashboard() {
                                     cx="48"
                                     cy="48"
                                     r="40"
-                                    stroke={stats?.target_achievement_percent >= 100 ? '#22C55E' : '#3B82F6'}
+                                    stroke={(stats?.target_achievement_percent || 0) >= 100 ? '#22C55E' : '#3B82F6'}
                                     strokeWidth="8"
                                     fill="none"
                                     strokeDasharray={`${(stats?.target_achievement_percent || 0) * 2.51} 251`}

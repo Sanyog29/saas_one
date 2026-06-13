@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Activity, CRMActivity } from '@/frontend/types/crm';
-import { Phone, Video, Map, FileText, MessageSquare, CheckCircle, Edit, User, Clock, Filter } from 'lucide-react';
+import { CRMActivity } from '@/frontend/types/crm';
+import { Activity, Phone, Video, Map, FileText, MessageSquare, CheckCircle, Edit, User, Clock, Filter } from 'lucide-react';
 
 const ACTIVITY_ICONS: Record<string, any> = {
     created: CheckCircle,
