@@ -1,0 +1,165 @@
+'use client';
+
+import React, { useEffect, useState, useCallback } from 'react';
+import { Copy, Check, Loader2, ExternalLink, ShieldCheck } from 'lucide-react';
+
+interface Option { id: string; name?: string; full_name?: string; }
+
+export default function MetaIntegrationGuide({ orgId }: { orgId: string }) {
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [users, setUsers] = useState<Option[]>([]);
+    const [properties, setProperties] = useState<Option[]>([]);
+    const [sources, setSources] = useState<Option[]>([]);
+    const [cfg, setCfg] = useState<any>({
+        verify_token: '', app_secret: '', page_id: '', page_access_token: '',
+        default_assignee: '', default_property: '', default_lead_source: '', is_active: true,
+    });
+
+    const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/crm/webhooks/meta` : '/api/crm/webhooks/meta';
+    const q = useCallback((p: string) => `${p}${p.includes('?') ? '&' : '?'}org_id=${orgId}`, [orgId]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const [mRes, sRes] = await Promise.all([
+                    fetch(q('/api/crm/settings?type=meta')),
+                    fetch(q('/api/crm/settings?type=all')),
+                ]);
+                if (mRes.ok) {
+                    const m = (await mRes.json()).meta;
+                    if (m) setCfg((c: any) => ({ ...c, ...m, app_secret: m.app_secret || '', page_access_token: m.page_access_token || '' }));
+                }
+                if (sRes.ok) {
+                    const s = await sRes.json();
+                    setUsers(s.users || []); setProperties(s.properties || []); setSources(s.sources || []);
+                }
+            } finally {
+                setLoading(false);
+            }
+        })();
+    }, [q]);
+
+    const copy = () => {
+        navigator.clipboard?.writeText(webhookUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    };
+
+    const save = async () => {
+        setSaving(true); setSaved(false);
+        try {
+            const res = await fetch(q('/api/crm/settings'), {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'save_meta_config', organization_id: orgId, data: cfg }),
+            });
+            if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const set = (k: string, v: any) => setCfg((c: any) => ({ ...c, [k]: v }));
+
+    if (loading) return <div className="h-40 bg-slate-100 rounded-xl animate-pulse" />;
+
+    const steps = [
+        <>Create a Meta App at <a className="text-primary inline-flex items-center gap-0.5" href="https://developers.facebook.com/apps" target="_blank" rel="noreferrer">developers.facebook.com <ExternalLink className="w-3 h-3" /></a> and add the <b>Webhooks</b> and <b>Lead Ads</b> products.</>,
+        <>Connect your Facebook Page and generate a <b>Page Access Token</b> with <code className="bg-slate-100 px-1 rounded">leads_retrieval</code>, <code className="bg-slate-100 px-1 rounded">pages_manage_metadata</code>, and <code className="bg-slate-100 px-1 rounded">pages_show_list</code> permissions.</>,
+        <>In <b>Webhooks → Page</b>, set the <b>Callback URL</b> to the URL below and the <b>Verify Token</b> to the value you enter below, then subscribe to the <code className="bg-slate-100 px-1 rounded">leadgen</code> field.</>,
+        <>Copy your App's <b>App Secret</b> and <b>Page ID</b> into the form below — these let us verify and route incoming leads. Save, and your lead flow is live.</>,
+    ];
+
+    return (
+        <div className="space-y-6">
+            {/* Webhook URL */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <label className="text-xs font-medium text-text-secondary">Callback / Webhook URL</label>
+                <div className="flex items-center gap-2 mt-1">
+                    <code className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm break-all">{webhookUrl}</code>
+                    <button onClick={copy} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-100">
+                        {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-text-secondary" />}
+                    </button>
+                </div>
+            </div>
+
+            {/* Steps */}
+            <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-2">Connect your Meta account</h3>
+                <ol className="space-y-2">
+                    {steps.map((s, i) => (
+                        <li key={i} className="flex gap-3 text-sm text-text-secondary">
+                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center">{i + 1}</span>
+                            <span>{s}</span>
+                        </li>
+                    ))}
+                </ol>
+            </div>
+
+            {/* Config form */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-200 pt-4">
+                <Field label="Verify Token" hint="Any secret string — must match what you enter in Meta">
+                    <input value={cfg.verify_token || ''} onChange={(e) => set('verify_token', e.target.value)}
+                        className="input" placeholder="e.g. my-crm-verify-123" />
+                </Field>
+                <Field label="App Secret" hint="From your Meta App settings (used to verify payloads)">
+                    <input value={cfg.app_secret || ''} onChange={(e) => set('app_secret', e.target.value)}
+                        type="password" className="input" placeholder="••••••••" />
+                </Field>
+                <Field label="Page ID" hint="The Facebook Page receiving the lead forms">
+                    <input value={cfg.page_id || ''} onChange={(e) => set('page_id', e.target.value)} className="input" placeholder="1234567890" />
+                </Field>
+                <Field label="Page Access Token" hint="Used to fetch the submitted lead fields">
+                    <input value={cfg.page_access_token || ''} onChange={(e) => set('page_access_token', e.target.value)}
+                        type="password" className="input" placeholder="••••••••" />
+                </Field>
+                <Field label="Default Assignee" hint="New leads are assigned to this rep">
+                    <select value={cfg.default_assignee || ''} onChange={(e) => set('default_assignee', e.target.value || null)} className="input">
+                        <option value="">— None —</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+                    </select>
+                </Field>
+                <Field label="Default Property Interest" hint="Optional default property for Meta leads">
+                    <select value={cfg.default_property || ''} onChange={(e) => set('default_property', e.target.value || null)} className="input">
+                        <option value="">— None —</option>
+                        {properties.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                </Field>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <button onClick={save} disabled={saving}
+                    className="px-5 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50">
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
+                    {saved ? 'Saved' : 'Save & Connect'}
+                </button>
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                    <input type="checkbox" checked={!!cfg.is_active} onChange={(e) => set('is_active', e.target.checked)} />
+                    Integration active
+                </label>
+            </div>
+
+            <style jsx>{`
+                .input {
+                    width: 100%;
+                    border: 1px solid rgb(226 232 240);
+                    border-radius: 0.5rem;
+                    padding: 0.5rem 0.75rem;
+                    font-size: 0.875rem;
+                }
+            `}</style>
+        </div>
+    );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+    return (
+        <div>
+            <label className="text-xs font-medium text-text-primary">{label}</label>
+            {children}
+            {hint && <p className="text-[11px] text-text-secondary mt-1">{hint}</p>}
+        </div>
+    );
+}

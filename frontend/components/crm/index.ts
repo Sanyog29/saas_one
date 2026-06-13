@@ -6,3 +6,5 @@ export { default as LeadForm } from './LeadForm';
 export { default as CalendarView } from './CalendarView';
 export { default as ImportWizard } from './ImportWizard';
 export { default as AIInsightsPanel } from './AIInsightsPanel';
+export { default as CampaignsManager } from './CampaignsManager';
+export { default as MetaIntegrationGuide } from './MetaIntegrationGuide';

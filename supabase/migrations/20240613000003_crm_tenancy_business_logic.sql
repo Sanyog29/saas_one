@@ -240,3 +240,48 @@ UPDATE crm_leads l
 SET closed_at = l.updated_at
 FROM crm_lead_statuses s
 WHERE l.status = s.id AND s.is_won AND l.closed_at IS NULL;
+
+-- ---------------------------------------------------------------------
+-- 7. Re-point user FKs from auth.users -> public.users
+--    The rest of this application references public.users(id), which is what
+--    lets PostgREST resolve `users` embeds (creator:, assigned_user:,
+--    user_info:). The original CRM tables referenced auth.users(id), so those
+--    embeds would not resolve. public.users.id mirrors auth.users.id, so this
+--    is a safe re-point. Constraint names are preserved (the route SELECTs
+--    reference e.g. crm_leads_assigned_to_fkey by name).
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    -- crm_leads.created_by / assigned_to
+    ALTER TABLE crm_leads DROP CONSTRAINT IF EXISTS crm_leads_created_by_fkey;
+    ALTER TABLE crm_leads ADD CONSTRAINT crm_leads_created_by_fkey
+        FOREIGN KEY (created_by) REFERENCES users(id) NOT VALID;
+    ALTER TABLE crm_leads DROP CONSTRAINT IF EXISTS crm_leads_assigned_to_fkey;
+    ALTER TABLE crm_leads ADD CONSTRAINT crm_leads_assigned_to_fkey
+        FOREIGN KEY (assigned_to) REFERENCES users(id) NOT VALID;
+
+    -- crm_activity_log.user_id
+    ALTER TABLE crm_activity_log DROP CONSTRAINT IF EXISTS crm_activity_log_user_id_fkey;
+    ALTER TABLE crm_activity_log ADD CONSTRAINT crm_activity_log_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) NOT VALID;
+
+    -- crm_notes.user_id
+    ALTER TABLE crm_notes DROP CONSTRAINT IF EXISTS crm_notes_user_id_fkey;
+    ALTER TABLE crm_notes ADD CONSTRAINT crm_notes_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) NOT VALID;
+
+    -- crm_events.user_id
+    ALTER TABLE crm_events DROP CONSTRAINT IF EXISTS crm_events_user_id_fkey;
+    ALTER TABLE crm_events ADD CONSTRAINT crm_events_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) NOT VALID;
+
+    -- crm_targets.user_id
+    ALTER TABLE crm_targets DROP CONSTRAINT IF EXISTS crm_targets_user_id_fkey;
+    ALTER TABLE crm_targets ADD CONSTRAINT crm_targets_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) NOT VALID;
+
+    -- crm_territories.user_id (keep cascade)
+    ALTER TABLE crm_territories DROP CONSTRAINT IF EXISTS crm_territories_user_id_fkey;
+    ALTER TABLE crm_territories ADD CONSTRAINT crm_territories_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE NOT VALID;
+END $$;

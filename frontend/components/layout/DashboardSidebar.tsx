@@ -6,7 +6,7 @@ import { usePathname, useParams } from 'next/navigation';
 import {
     LayoutDashboard, Users, Ticket, Package, Settings, LogOut,
     Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
-    FileUp, Bot, Building2
+    FileUp, Bot, Building2, Send
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -42,7 +42,9 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
         { label: 'Activities', href: `/${orgId}/crm/activities`, icon: Building2, domain: 'crm' as const },
         { label: 'Reports', href: `/${orgId}/crm/reports`, icon: BarChart3, domain: 'crm' as const },
         { label: 'Import Leads', href: `/${orgId}/crm/import`, icon: FileUp, domain: 'crm' as const },
+        { label: 'Campaigns', href: `/${orgId}/crm/campaigns`, icon: Send, domain: 'crm' as const },
         { label: 'AI Insights', href: `/${orgId}/crm/ai`, icon: Bot, domain: 'crm' as const },
+        { label: 'Settings', href: `/${orgId}/crm/settings`, icon: Settings, domain: 'crm' as const },
     ], [orgId]);
 
     const getUserInitials = (name: string) => {

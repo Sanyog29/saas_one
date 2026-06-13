@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Palette, MapPin, Building2, Bell, Link2, Plus, Edit, Trash2, Loader2, Check } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useParams } from 'next/navigation';
+import { Settings, Palette, MapPin, Building2, Bell, Link2, Plus, Edit, Trash2, Loader2, Check, Send } from 'lucide-react';
+import Link from 'next/link';
 import { LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
+import { MetaIntegrationGuide } from '@/frontend/components/crm';
 
 type SettingsTab = 'statuses' | 'sources' | 'properties' | 'territories' | 'integrations';
 
 export default function CRMSettingsPage() {
+    const params = useParams();
+    const orgId = params?.orgId as string;
     const [activeTab, setActiveTab] = useState<SettingsTab>('statuses');
     const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [sources, setSources] = useState<LeadSource[]>([]);
@@ -24,7 +28,7 @@ export default function CRMSettingsPage() {
     const fetchSettings = async () => {
         setIsLoading(true);
         try {
-            const res = await fetch('/api/crm/settings?type=all');
+            const res = await fetch(`/api/crm/settings?type=all&org_id=${orgId}`);
             if (res.ok) {
                 const data = await res.json();
                 setStatuses(data.statuses || []);
@@ -45,6 +49,7 @@ export default function CRMSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'update_status',
+                    organization_id: orgId,
                     data: status
                 })
             });
@@ -68,6 +73,7 @@ export default function CRMSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'create_status',
+                    organization_id: orgId,
                     data: newStatus
                 })
             });
@@ -92,6 +98,7 @@ export default function CRMSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'delete_status',
+                    organization_id: orgId,
                     data: { id }
                 })
             });
@@ -114,6 +121,7 @@ export default function CRMSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'create_source',
+                    organization_id: orgId,
                     data: { name: newSource }
                 })
             });
@@ -138,6 +146,7 @@ export default function CRMSettingsPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     action: 'delete_source',
+                    organization_id: orgId,
                     data: { id }
                 })
             });
@@ -350,23 +359,35 @@ export default function CRMSettingsPage() {
                         )}
 
                         {activeTab === 'integrations' && (
-                            <div className="space-y-6">
-                                <h2 className="text-lg font-semibold text-text-primary">Integrations</h2>
+                            <div className="space-y-8">
+                                <div>
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                                            <span className="text-xl font-bold text-blue-600">M</span>
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-text-primary">Meta Lead Ads</h3>
+                                            <p className="text-sm text-text-secondary">Capture Facebook/Instagram leads directly into your CRM</p>
+                                        </div>
+                                    </div>
+                                    <MetaIntegrationGuide orgId={orgId} />
+                                </div>
 
-                                <div className="border border-slate-200 rounded-xl p-4">
-                                    <div className="flex items-center justify-between">
+                                <div className="border-t border-slate-200 pt-6">
+                                    <div className="flex items-center justify-between flex-wrap gap-3">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                                <span className="text-xl font-bold text-blue-600">M</span>
+                                            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                                                <Send className="w-6 h-6 text-green-600" />
                                             </div>
                                             <div>
-                                                <h3 className="font-semibold text-text-primary">Meta Lead Ads</h3>
-                                                <p className="text-sm text-text-secondary">Automatically capture leads from Facebook/Instagram</p>
+                                                <h3 className="font-semibold text-text-primary">WhatsApp Campaigns</h3>
+                                                <p className="text-sm text-text-secondary">Send broadcasts & drip sequences to leads via WhatsApp Business</p>
                                             </div>
                                         </div>
-                                        <button className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
-                                            Configure
-                                        </button>
+                                        <Link href={`/${orgId}/crm/campaigns`}
+                                            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">
+                                            Open Campaigns
+                                        </Link>
                                     </div>
                                 </div>
                             </div>
