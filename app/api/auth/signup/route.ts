@@ -3,6 +3,8 @@ import { createClient } from '@/frontend/utils/supabase/server';
 
 export async function POST(request: NextRequest) {
     try {
+        // role/organizationId are optional. The normal flow leaves them unset
+        // here and lets the onboarding flow assign role + property/org membership.
         const { email, password, fullName, role, organizationId } = await request.json();
 
         if (!email || !password) {
@@ -19,7 +21,7 @@ export async function POST(request: NextRequest) {
             options: {
                 data: {
                     full_name: fullName,
-                    role: role || 'bd_rep', // Default to bd_rep if no role specified
+                    ...(role ? { role } : {}),
                 },
             },
         });
@@ -31,32 +33,17 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // If organization and role are provided, add user to organization_memberships
+        // Back-compat: if an explicit role + org are supplied, create the
+        // org-level membership immediately (used by any direct API callers).
         if (data.user && role && organizationId) {
-            // Determine if this is an org-level role or property-level role
-            const ORG_LEVEL_ROLES = ['org_super_admin', 'org_admin', 'bd_admin'];
-
-            if (ORG_LEVEL_ROLES.includes(role)) {
-                // Add to organization_memberships
-                await supabase
-                    .from('organization_memberships')
-                    .insert({
-                        user_id: data.user.id,
-                        organization_id: organizationId,
-                        role: role,
-                        is_active: true
-                    });
-            } else {
-                // For bd_rep, add to organization_memberships
-                await supabase
-                    .from('organization_memberships')
-                    .insert({
-                        user_id: data.user.id,
-                        organization_id: organizationId,
-                        role: role,
-                        is_active: true
-                    });
-            }
+            await supabase
+                .from('organization_memberships')
+                .insert({
+                    user_id: data.user.id,
+                    organization_id: organizationId,
+                    role: role,
+                    is_active: true
+                });
         }
 
         return NextResponse.json({ success: true, data });
