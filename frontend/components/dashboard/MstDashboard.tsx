@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Ticket, Clock, CheckCircle2, AlertCircle, Plus,
     LogOut, Settings, Search, UserCircle, Coffee, Fuel, UsersRound,
     ClipboardList, FolderKanban, Moon, Sun, ChevronRight, Cog, X,
-    AlertOctagon, BarChart3, FileText, Wrench, Camera, Menu, Pencil, Loader2, Filter, Activity, Zap, Calendar, ClipboardCheck, ScanLine, Tag
+    AlertOctagon, BarChart3, FileText, Wrench, Camera, Menu, Pencil, Loader2, Filter, Activity, Zap, Calendar, ClipboardCheck, ScanLine, Tag, Droplets
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -31,8 +31,10 @@ import SOPDashboard from '@/frontend/components/sop/SOPDashboard';
 import dynamic from 'next/dynamic';
 const UniversalQRScannerModal = dynamic(() => import('@/frontend/components/shared/UniversalQRScannerModal'), { ssr: false });
 
+import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
+
 // Types
-type Tab = 'dashboard' | 'requests' | 'create_request' | 'visitors' | 'diesel' | 'electricity' | 'settings' | 'profile' | 'flow-map' | 'checklist';
+type Tab = 'dashboard' | 'requests' | 'create_request' | 'visitors' | 'diesel' | 'electricity' | 'settings' | 'profile' | 'flow-map' | 'checklist' | 'water';
 
 interface Property {
     id: string;
@@ -171,7 +173,7 @@ const MstDashboard = () => {
     // Restore state from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['dashboard', 'requests', 'create_request', 'visitors', 'diesel', 'electricity', 'settings', 'profile', 'flow-map', 'checklist'].includes(tab)) {
+        if (tab && ['dashboard', 'requests', 'create_request', 'visitors', 'diesel', 'electricity', 'settings', 'profile', 'flow-map', 'checklist', 'water'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
         
@@ -730,6 +732,16 @@ const MstDashboard = () => {
                                 Electricity Logger
                             </button>
                             <button
+                                onClick={() => handleTabChange('water')}
+                                className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === 'water'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Droplets className="w-4 h-4" />
+                                Water Logger
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('checklist')}
                                 className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === 'checklist'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -890,6 +902,7 @@ const MstDashboard = () => {
                             )}
                             {activeTab === 'diesel' && <DieselStaffDashboard isDark={isDarkMode} />}
                             {activeTab === 'electricity' && property && <ElectricityStaffDashboard propertyId={property.id} isDark={isDarkMode} />}
+                            {activeTab === 'water' && propertyId && <WaterDashboard propertyId={propertyId} />}
                             {activeTab === 'checklist' && property && <SOPDashboard propertyId={property.id} />}
                             {activeTab === 'settings' && <SettingsView />}
                             {activeTab === 'profile' && (

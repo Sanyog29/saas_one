@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Ticket, Settings, UserCircle, UsersRound,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Building2,
     Calendar, CheckCircle2, AlertCircle, Clock, Coffee, IndianRupee, FileDown, Fuel, Store, Activity, Upload, FileBarChart, Menu, X, Zap, RefreshCw,
-    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart
+    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -39,9 +39,12 @@ import EscalationHierarchyBuilder from '@/frontend/components/escalation/Escalat
 import PPMModule from '@/frontend/components/ppm/PPMModule';
 import ProcurementModule from '@/frontend/components/procurement/ProcurementModule';
 import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
+import { RosterDashboard } from '@/frontend/components/roster/RosterDashboard';
+import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
+import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
 
 // Types
-type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement';
+type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics';
 
 interface Property {
     id: string;
@@ -151,7 +154,7 @@ const PropertyAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist'].includes(tab)) {
+        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
         const filter = searchParams.get('filter');
@@ -163,7 +166,7 @@ const PropertyAdminDashboard = () => {
     }, [searchParams]);
 
     // Helper to change tab with URL persistence
-    const handleTabChange = (tab: Tab, filter: string = 'all') => {
+    const handleTabChange = (tab: Tab, filter: string = 'all', dateFrom?: string, dateTo?: string) => {
         setActiveTab(tab);
         setPendingStatusFilter(filter);
         setSidebarOpen(false);
@@ -173,6 +176,14 @@ const PropertyAdminDashboard = () => {
             url.searchParams.set('filter', filter);
         } else {
             url.searchParams.delete('filter');
+        }
+
+        if (dateFrom && dateTo) {
+            url.searchParams.set('dateFrom', dateFrom);
+            url.searchParams.set('dateTo', dateTo);
+        } else if (tab === 'requests') {
+            url.searchParams.delete('dateFrom');
+            url.searchParams.delete('dateTo');
         }
         window.history.pushState({}, '', url.toString());
     };
@@ -339,7 +350,7 @@ const PropertyAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('overview')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'overview'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'overview'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -349,7 +360,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('requests')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'requests'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'requests'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -359,7 +370,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('reports')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'reports'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'reports'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -380,7 +391,7 @@ const PropertyAdminDashboard = () => {
 
                             <button
                                 onClick={() => handleTabChange('users')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'users'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'users'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -390,7 +401,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('visitors')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'visitors'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'visitors'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -400,7 +411,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('rooms')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'rooms'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'rooms'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -410,7 +421,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('diesel')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'diesel'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'diesel'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -420,7 +431,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('diesel_analytics')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'diesel_analytics'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'diesel_analytics'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -430,7 +441,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('electricity')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'electricity'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'electricity'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -440,7 +451,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('electricity_analytics')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'electricity_analytics'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'electricity_analytics'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -449,8 +460,38 @@ const PropertyAdminDashboard = () => {
                                 Electricity Analytics
                             </button>
                             <button
+                                onClick={() => handleTabChange('roster')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'roster'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <CalendarDays className="w-4 h-4" />
+                                Roster Management
+                            </button>
+                            <button
+                                onClick={() => handleTabChange('water')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'water'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Droplets className="w-4 h-4" />
+                                Water Logger
+                            </button>
+                            <button
+                                onClick={() => handleTabChange('water_analytics')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'water_analytics'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Droplets className="w-4 h-4" />
+                                Water Analytics
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('stock')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'stock'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'stock'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -460,7 +501,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('procurement')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'procurement'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'procurement'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -470,7 +511,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('checklist')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'checklist'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'checklist'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -480,7 +521,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('ppm')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'ppm'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'ppm'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -490,7 +531,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('escalation')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'escalation'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'escalation'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -500,7 +541,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('vendor_revenue')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'vendor_revenue'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'vendor_revenue'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -520,7 +561,7 @@ const PropertyAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('settings')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'settings'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'settings'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -530,7 +571,7 @@ const PropertyAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('profile')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'profile'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'profile'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -705,6 +746,9 @@ const PropertyAdminDashboard = () => {
                                 __triggerModal: () => setShowAddMemberModal(true)
                             })}
                         />}
+                        {openTab === 'roster' && property && <RosterDashboard propertyId={property.id} />}
+                        {openTab === 'water' && property && <WaterDashboard propertyId={property.id} />}
+                        {openTab === 'water_analytics' && property && <WaterAnalyticsDashboard propertyId={property.id} />}
                         {openTab === 'vendor_revenue' && <VendorRevenueTab propertyId={propertyId} />}
                         {openTab === 'requests' && property && (
                             <TicketsView
@@ -946,12 +990,32 @@ const OverviewTab = memo(function OverviewTab({
     property: { name: string; code: string; address?: string; image_url?: string } | null,
     onMenuToggle?: () => void,
     onRefresh: () => void,
-    onTabChange: (tab: Tab, filter?: string) => void,
+    onTabChange: (tab: Tab, filter?: string, dateFrom?: string, dateTo?: string) => void,
     assignedProperties?: { id: string; name: string; code: string }[],
     onPropertySwitch?: (id: string) => void,
 }) {
     const { getCachedData, setCachedData } = useDataCache();
     const [timePeriod, setTimePeriod] = useState<'today' | 'month' | 'all'>('all');
+    
+    const handleKPIClick = (filter: string) => {
+        if (timePeriod === 'all') {
+            onTabChange('requests', filter);
+            return;
+        }
+        const date = new Date();
+        let dateFrom, dateTo;
+        if (timePeriod === 'today') {
+            const todayStr = date.toISOString().split('T')[0];
+            dateFrom = todayStr;
+            dateTo = todayStr;
+        } else if (timePeriod === 'month') {
+            const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+            const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
+            dateFrom = startOfMonth;
+            dateTo = endOfMonth;
+        }
+        onTabChange('requests', filter, dateFrom, dateTo);
+    };
     // v2 prefix busts any pre-API-migration cached data that had 0/0 for visitors
     const fetchKey = `v2-${propertyId}-${statsVersion}-${timePeriod}`;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1354,7 +1418,7 @@ const OverviewTab = memo(function OverviewTab({
                     {/* Card 1 — Total Tickets */}
                     <motion.div
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'all')}
+                        onClick={() => handleKPIClick('all')}
                         className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
@@ -1381,7 +1445,7 @@ const OverviewTab = memo(function OverviewTab({
                     {/* Card 2 — Open & Active */}
                     <motion.div
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'open,assigned,in_progress,blocked')}
+                        onClick={() => handleKPIClick('open,assigned,in_progress,blocked,waitlist')}
                         className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-blue-200 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
@@ -1415,7 +1479,7 @@ const OverviewTab = memo(function OverviewTab({
                     {/* Card 3 — Resolved & Closed */}
                     <motion.div
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'resolved,closed')}
+                        onClick={() => handleKPIClick('resolved,closed,pending_validation')}
                         className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-emerald-200 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
@@ -1444,7 +1508,7 @@ const OverviewTab = memo(function OverviewTab({
                     {validationEnabled && (
                         <motion.div
                             whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                            onClick={() => onTabChange('requests', 'pending_validation')}
+                            onClick={() => handleKPIClick('pending_validation')}
                             className={`bg-white rounded-2xl p-4 border shadow-sm hover:shadow-md cursor-pointer transition-all group relative overflow-hidden ${ticketStats.pending_validation > 0 ? 'border-amber-200 hover:border-amber-300' : 'border-slate-100 hover:border-slate-200'}`}
                         >
                             <div className="flex items-center justify-between mb-2">
@@ -1541,12 +1605,12 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
                             <div className="space-y-1">
                                 <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">
-                                    {(timePeriod === 'today' ? dieselStats.total_litres_today : timePeriod === 'month' ? dieselStats.total_litres_month : dieselStats.total_litres) === 0 && (timePeriod === 'today' ? dieselStats.total_kwh_today : timePeriod === 'month' ? dieselStats.total_kwh_month : dieselStats.total_kwh) > 0 ? 'kWh' : 'Units'} Consumed
+                                    {(timePeriod === 'today' ? dieselStats.total_litres_today : timePeriod === 'month' ? dieselStats.total_litres_month : dieselStats.total_litres) === 0 && (timePeriod === 'today' ? dieselStats.total_kwh_today : timePeriod === 'month' ? dieselStats.total_kwh_month : dieselStats.total_kwh) > 0 ? 'kWh' : 'Litres'} Consumed
                                 </div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
                                     {(timePeriod === 'today' ? dieselStats.total_units_today : timePeriod === 'month' ? dieselStats.total_units_month : dieselStats.total_units).toLocaleString()}
                                     <span className="text-sm text-slate-400 font-bold">
-                                        {(timePeriod === 'today' ? dieselStats.total_litres_today : timePeriod === 'month' ? dieselStats.total_litres_month : dieselStats.total_litres) === 0 && (timePeriod === 'today' ? dieselStats.total_kwh_today : timePeriod === 'month' ? dieselStats.total_kwh_month : dieselStats.total_kwh) > 0 ? 'kWh' : 'Units'}
+                                        {(timePeriod === 'today' ? dieselStats.total_litres_today : timePeriod === 'month' ? dieselStats.total_litres_month : dieselStats.total_litres) === 0 && (timePeriod === 'today' ? dieselStats.total_kwh_today : timePeriod === 'month' ? dieselStats.total_kwh_month : dieselStats.total_kwh) > 0 ? 'kWh' : 'Litres'}
                                     </span>
                                 </div>
                                 <div className="pt-2 border-t border-slate-50 mt-2">

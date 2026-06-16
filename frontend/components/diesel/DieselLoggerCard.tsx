@@ -133,19 +133,19 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
         <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`flex flex-col ${isDark ? 'bg-[#161b22] border-[#21262d]' : 'bg-white border-slate-200'} rounded-[1.5rem] sm:rounded-[2.5rem] border shadow-sm overflow-hidden`}
+            className={`flex flex-col ${isDark ? 'bg-[#161b22] border-[#21262d]' : 'bg-white border-slate-200'} rounded-2xl border shadow-sm overflow-hidden`}
         >
             {/* Header Area */}
-            <div className={`p-5 sm:p-8 border-b ${isDark ? 'border-[#21262d] bg-[#0d1117]/50' : 'border-slate-100 bg-slate-50/50'}`}>
-                <div className="flex justify-between items-start mb-4 sm:mb-6">
+            <div className={`p-4 sm:p-5 border-b ${isDark ? 'border-[#21262d] bg-[#0d1117]/50' : 'border-slate-100 bg-slate-50/50'}`}>
+                <div className="flex justify-between items-start mb-3 sm:mb-4">
                     <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-3">
-                            <h2 className={`text-2xl font-black ${isDark ? 'text-white' : 'text-slate-900'} tracking-tight`}>{generator.name}</h2>
-                            <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${getStatusColor()}`}>
+                            <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'} tracking-tight`}>{generator.name}</h2>
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${getStatusColor()}`}>
                                 {generator.status}
                             </span>
                         </div>
-                        <p className={`text-xs font-bold ${isDark ? 'text-slate-500' : 'text-slate-400'} uppercase tracking-widest`}>
+                        <p className={`text-[10px] font-bold ${isDark ? 'text-slate-500' : 'text-slate-400'} uppercase tracking-widest`}>
                             {generator.make || 'DG'} · {generator.capacity_kva} KVA
                         </p>
                     </div>
@@ -166,7 +166,7 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
             </div>
 
             {/* Inputs Section */}
-            <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
+            <div className="p-4 sm:p-5 space-y-4">
                 {/* Date Selection - Compact */}
                 <div className="flex items-center justify-between">
                     <span className={`text-[10px] font-bold ${isDark ? 'text-slate-500' : 'text-slate-500'} uppercase tracking-wide`}>
@@ -209,7 +209,7 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
                             placeholder="Current Run Hours"
                             value={closingHours}
                             onChange={(e) => setClosingHours(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            className={`w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl ${isDark ? 'bg-[#0d1117] border-[#21262d] text-white' : 'bg-white border-slate-200'} border-2 text-base sm:text-lg font-mono font-bold placeholder:text-slate-400 focus:outline-none focus:border-primary transition-all`}
+                            className={`w-full p-2.5 rounded-xl ${isDark ? 'bg-[#0d1117] border-[#21262d] text-white' : 'bg-white border-slate-200'} border-2 text-base font-mono font-bold placeholder:text-slate-400 focus:outline-none focus:border-primary transition-all`}
                         />
                         {closingHours !== '' && closingHours < openingHours && (
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -247,7 +247,7 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
                             placeholder="Current Energy (kWh)"
                             value={closingKwh}
                             onChange={(e) => setClosingKwh(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                            className={`w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl ${isDark ? 'bg-[#0d1117] border-[#21262d] text-white' : 'bg-white border-slate-200'} border-2 text-base sm:text-lg font-mono font-bold placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 transition-all`}
+                            className={`w-full p-2.5 rounded-xl ${isDark ? 'bg-[#0d1117] border-[#21262d] text-white' : 'bg-white border-slate-200'} border-2 text-base font-mono font-bold placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 transition-all`}
                         />
                         {closingKwh !== '' && closingKwh < openingKwh && (
                             <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -281,7 +281,7 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
                                     placeholder="Level"
                                     value={closingDiesel}
                                     onChange={(e) => setClosingDiesel(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                    className={`w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl ${isDark ? 'bg-[#0d1117] border-slate-600 text-white' : 'bg-white border-slate-300'} border-2 text-base sm:text-lg font-bold placeholder:text-slate-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all`}
+                                    className={`w-full p-2.5 rounded-xl ${isDark ? 'bg-[#0d1117] border-slate-600 text-white' : 'bg-white border-slate-300'} border-2 text-base font-bold placeholder:text-slate-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all`}
                                 />
                                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">L</span>
                             </div>
@@ -308,7 +308,7 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
                                     placeholder="0"
                                     value={dieselAdded || ''}
                                     onChange={(e) => setDieselAdded(e.target.value === '' ? 0 : parseInt(e.target.value, 10))}
-                                    className={`w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl ${isDark ? 'bg-[#0d1117] border-slate-600 text-white' : 'bg-white border-slate-300'} border-2 text-base sm:text-lg font-bold placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all`}
+                                    className={`w-full p-2.5 rounded-xl ${isDark ? 'bg-[#0d1117] border-slate-600 text-white' : 'bg-white border-slate-300'} border-2 text-base font-bold placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all`}
                                 />
                                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">L</span>
                             </div>
@@ -321,8 +321,8 @@ const DieselLoggerCard: React.FC<DieselLoggerCardProps> = ({
                     <button
                         onClick={handleSaveEntry}
                         disabled={!hasValidReading || isSubmitting}
-                        className={`w-full py-5 rounded-[2rem] font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-3 transition-all ${hasValidReading && !isSubmitting
-                            ? 'bg-primary text-white shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.01] active:scale-[0.99]'
+                        className={`w-full py-3 rounded-xl font-bold text-sm uppercase tracking-wider flex items-center justify-center gap-3 transition-all ${hasValidReading && !isSubmitting
+                            ? 'bg-primary text-white shadow-md shadow-primary/30 hover:shadow-lg hover:shadow-primary/40 hover:scale-[1.01] active:scale-[0.99]'
                             : `${isDark ? 'bg-slate-800/50 text-slate-600' : 'bg-slate-200 text-slate-400'} cursor-not-allowed opacity-60`
                             }`}
                     >

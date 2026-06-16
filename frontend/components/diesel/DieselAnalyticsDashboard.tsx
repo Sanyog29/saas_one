@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams } from 'next/navigation';
 import { createClient } from '@/frontend/utils/supabase/client';
+import { useDataCache } from '@/frontend/context/DataCacheContext';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, Area, AreaChart, YAxis, CartesianGrid } from 'recharts';
 import DGTariffModal from './DGTariffModal';
 import DieselStaffDashboard from './DieselStaffDashboard';
@@ -52,6 +53,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
     const params = useParams();
     const propertyId = propIdFromProps || (params?.propertyId as string);
     const supabase = useMemo(() => createClient(), []);
+    const { getCachedData, setCachedData, invalidateCache } = useDataCache();
 
     // UI State
     const [viewMode, setViewMode] = useState<'combined' | 'generator'>('combined');
@@ -79,6 +81,8 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
     const todayStr = new Date().toISOString().split('T')[0];
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
+    const [pendingDateFrom, setPendingDateFrom] = useState<string>('');
+    const [pendingDateTo, setPendingDateTo] = useState<string>('');
     const [isCustomRange, setIsCustomRange] = useState(false);
 
     const [activeTariff, setActiveTariff] = useState<number>(0);
@@ -87,7 +91,28 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
     // Fetch Initial Data
     const fetchData = useCallback(async () => {
         if (!isValidId(propertyId) && !isValidId(orgId)) return;
+        
+        const cacheKey = isCustomRange && dateFrom && dateTo
+            ? `diesel-analytics-${propertyId || orgId}-${dateFrom}-${dateTo}`
+            : `diesel-analytics-${propertyId || orgId}`;
+        const cached = getCachedData(cacheKey);
+
+        if (cached) {
+            console.log('[DieselAnalytics] Loading from cache:', propertyId || orgId);
+            if (cached.property) setProperty(cached.property);
+            if (cached.generators) setGenerators(cached.generators);
+            if (cached.activeTariff !== undefined) setActiveTariff(cached.activeTariff);
+            if (cached.rawReadings) setRawReadings(cached.rawReadings);
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
+
+        let propData = property;
+        let gensData: Generator[] = [];
+        let activeTariffValue = 0;
+        let readingsData = { today: [], month: [], prevMonth: [], trend: [], custom: [] };
 
         try {
             // 1. Property Name (if propertyId exists)
@@ -121,13 +146,17 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                     if (tariffRes.ok) {
                         const t = await tariffRes.json();
                         if (t && t.cost_per_litre) {
-                            setActiveTariff(t.cost_per_litre);
+                            activeTariffValue = t.cost_per_litre;
+                            setActiveTariff(activeTariffValue);
                             tariffFound = true;
                             break;
                         }
                     }
                 }
-                if (!tariffFound) setActiveTariff(0);
+                if (!tariffFound) {
+                    activeTariffValue = 0;
+                    setActiveTariff(0);
+                }
             }
 
             // 4. Readings (Batch or separate)
@@ -156,12 +185,21 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
 
             const [todayR, monthR, prevMonthR, trendR, customR] = await Promise.all(fetchTasks);
 
-            setRawReadings({
+            const newRawReadings = {
                 today: Array.isArray(todayR) ? todayR : [],
                 month: Array.isArray(monthR) ? monthR : [],
                 prevMonth: Array.isArray(prevMonthR) ? prevMonthR : [],
                 trend: Array.isArray(trendR) ? trendR : [],
                 custom: isCustomRange && Array.isArray(customR) ? customR : []
+            };
+
+            setRawReadings(newRawReadings);
+
+            setCachedData(cacheKey, {
+                property: propData,
+                generators: gens,
+                activeTariff: activeTariffValue,
+                rawReadings: newRawReadings
             });
 
         } catch (error) {
@@ -169,7 +207,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
         } finally {
             setIsLoading(false);
         }
-    }, [propertyId, orgId, dateFrom, dateTo, isCustomRange]);
+    }, [propertyId, orgId, dateFrom, dateTo, isCustomRange, getCachedData, setCachedData]);
 
     useEffect(() => {
         if (!isValidId(propertyId) && !isValidId(orgId)) return;
@@ -411,11 +449,7 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
             {/* Header Area */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-                        DG Power Analytics
-                        {property?.name && <span className="text-sm font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-wider">{property.name}</span>}
-                    </h1>
-                    <div className="flex items-center gap-3 mt-2">
+                    <div className="flex items-center gap-3">
                         {activeTariff > 0 ? (
                             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100">
                                 Active Tariff: ₹{activeTariff}/L
@@ -448,29 +482,31 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                             <Calendar className="w-4 h-4 text-slate-400" />
                             <input
                                 type="date"
-                                value={dateFrom}
-                                max={dateTo || todayStr}
-                                onChange={(e) => setDateFrom(e.target.value)}
+                                value={pendingDateFrom}
+                                max={pendingDateTo || todayStr}
+                                onChange={(e) => setPendingDateFrom(e.target.value)}
                                 className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none focus:ring-0"
                             />
                             <span className="text-xs text-slate-400">to</span>
                             <input
                                 type="date"
-                                value={dateTo}
-                                min={dateFrom}
+                                value={pendingDateTo}
+                                min={pendingDateFrom}
                                 max={todayStr}
-                                onChange={(e) => setDateTo(e.target.value)}
+                                onChange={(e) => setPendingDateTo(e.target.value)}
                                 className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none focus:ring-0"
                             />
                         </div>
                         <button
                             onClick={() => {
-                                if (dateFrom && dateTo) {
+                                if (pendingDateFrom && pendingDateTo) {
+                                    setDateFrom(pendingDateFrom);
+                                    setDateTo(pendingDateTo);
                                     setIsCustomRange(true);
                                 }
                             }}
-                            disabled={!dateFrom || !dateTo}
-                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-primary text-white hover:bg-primary-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled={!pendingDateFrom || !pendingDateTo}
+                            className="px-3 py-1.5 text-xs font-bold rounded-lg bg-orange-600 text-white hover:bg-orange-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                             Apply
                         </button>
@@ -480,6 +516,8 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
                                     setIsCustomRange(false);
                                     setDateFrom('');
                                     setDateTo('');
+                                    setPendingDateFrom('');
+                                    setPendingDateTo('');
                                 }}
                                 className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
                             >
@@ -521,128 +559,88 @@ const DieselAnalyticsDashboard: React.FC<DieselAnalyticsDashboardProps> = ({ pro
             </div>
 
             {/* 3-Tile Layout */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Tile 1: Cost (Primary) - Mint Green Theme */}
-                <div className="bg-[#ecfdf5] rounded-2xl p-6 shadow-sm border border-emerald-100 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-6 opacity-5">
-                        <IndianRupee className="w-24 h-24 text-emerald-600" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Tile 1: Cost (Primary) */}
+                <div className="bg-[#ecfdf5] rounded-2xl p-5 md:p-4 shadow-sm border border-emerald-100 relative flex flex-col items-center justify-center md:h-[150px]">
+                    <div className="absolute top-4 left-4">
+                        <span className="p-2.5 md:p-2 bg-emerald-50 rounded-full text-emerald-600 flex items-center justify-center">
+                            <IndianRupee className="w-5 h-5 md:w-4 md:h-4" />
+                        </span>
                     </div>
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                        <div>
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-3">
-                                    <span className="p-2.5 bg-emerald-100 rounded-full text-emerald-600">
-                                        <IndianRupee className="w-5 h-5" />
-                                    </span>
-                                    <span className="text-sm font-bold text-slate-700 uppercase tracking-widest leading-tight">
-                                        DIESEL<br />COST
-                                    </span>
-                                </div>
-                                {isCustomRange ? (
-                                    <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-emerald-600 shadow-sm">
-                                        Custom Range
-                                    </span>
-                                ) : (
-                                    <div className="flex bg-emerald-100/50 rounded-lg p-1">
-                                        <button onClick={() => setCostTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'today' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Today</button>
-                                        <button onClick={() => setCostTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${costTimeframe === 'month' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>This Month</button>
-                                    </div>
-                                )}
+                    <div className="absolute top-4 right-4 text-right">
+                        <span className="text-xs md:text-[10px] font-bold text-slate-700 uppercase tracking-widest block">DIESEL COST</span>
+                        {!isCustomRange && (
+                            <div className="flex bg-slate-100/50 rounded-lg p-0.5 mt-1 justify-end">
+                                <button onClick={() => setCostTimeframe('today')} className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${costTimeframe === 'today' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Today</button>
+                                <button onClick={() => setCostTimeframe('month')} className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${costTimeframe === 'month' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400 hover:text-emerald-600'}`}>Month</button>
                             </div>
-                            <div className="mt-4">
-                                <div className="text-3xl font-black text-slate-800 tracking-tight">
-                                    {fmtCost(displayCost)}
-                                </div>
-                                <div className="h-1.5 w-12 bg-emerald-500 rounded-full mt-4 mb-4" />
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    {isCustomRange
-                                        ? `${dateFrom} to ${dateTo}`
-                                        : (costTimeframe === 'today' ? 'Total today' : 'Total this month')}
-                                </p>
-                            </div>
+                        )}
+                    </div>
+                    <div className="text-center mt-6">
+                        <div className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+                            {fmtCost(displayCost)}
                         </div>
+                        <p className="text-[10px] md:text-[9px] font-medium text-slate-500 mt-1 uppercase tracking-wide truncate">
+                            {isCustomRange
+                                ? `${dateFrom} to ${dateTo}`
+                                : (costTimeframe === 'today' ? 'Total today' : 'Total this month')}
+                        </p>
                     </div>
                 </div>
 
-                {/* Tile 2: Litres (Secondary) - Amber/Yellow Theme */}
-                <div className="bg-[#fffbeb] rounded-2xl p-6 shadow-sm border border-amber-100 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-6 opacity-5">
-                        <Fuel className="w-24 h-24 text-amber-600" />
+                {/* Tile 2: Litres (Secondary) */}
+                <div className="bg-[#fffbeb] rounded-2xl p-5 md:p-4 shadow-sm border border-amber-100 relative flex flex-col items-center justify-center md:h-[150px]">
+                    <div className="absolute top-4 left-4">
+                        <span className="p-2.5 md:p-2 bg-amber-50 rounded-full text-amber-600 flex items-center justify-center">
+                            <Fuel className="w-5 h-5 md:w-4 md:h-4" />
+                        </span>
                     </div>
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                        <div>
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-3">
-                                    <span className="p-2.5 bg-amber-100 rounded-full text-amber-600">
-                                        <Fuel className="w-5 h-5" />
-                                    </span>
-                                    <span className="text-sm font-bold text-slate-700 uppercase tracking-widest leading-tight">
-                                        LITRES<br />CONSUMED
-                                    </span>
-                                </div>
-                                {isCustomRange ? (
-                                    <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-amber-600 shadow-sm">
-                                        Custom Range
-                                    </span>
-                                ) : (
-                                    <div className="flex bg-amber-100/50 rounded-lg p-1">
-                                        <button onClick={() => setLitresTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${litresTimeframe === 'today' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>Today</button>
-                                        <button onClick={() => setLitresTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${litresTimeframe === 'month' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>This Month</button>
-                                    </div>
-                                )}
+                    <div className="absolute top-4 right-4 text-right">
+                        <span className="text-xs md:text-[10px] font-bold text-slate-700 uppercase tracking-widest block">LITRES CONSUMED</span>
+                        {!isCustomRange && (
+                            <div className="flex bg-slate-100/50 rounded-lg p-0.5 mt-1 justify-end">
+                                <button onClick={() => setLitresTimeframe('today')} className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${litresTimeframe === 'today' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>Today</button>
+                                <button onClick={() => setLitresTimeframe('month')} className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${litresTimeframe === 'month' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-400 hover:text-amber-600'}`}>Month</button>
                             </div>
-                            <div className="mt-4">
-                                <div className="text-3xl font-black text-slate-800 tracking-tight">
-                                    {fmtLitres(displayLitres)}
-                                </div>
-                                <div className="h-1.5 w-12 bg-amber-500 rounded-full mt-4 mb-4" />
-                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                    {isCustomRange
-                                        ? `${dateFrom} to ${dateTo}`
-                                        : (litresTimeframe === 'today' ? 'Consumed today' : 'Consumed this month')}
-                                </p>
-                            </div>
+                        )}
+                    </div>
+                    <div className="text-center mt-6">
+                        <div className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+                            {fmtLitres(displayLitres)}
                         </div>
+                        <p className="text-[10px] md:text-[9px] font-medium text-slate-500 mt-1 uppercase tracking-wide truncate">
+                            {isCustomRange
+                                ? `${dateFrom} to ${dateTo}`
+                                : (litresTimeframe === 'today' ? 'Consumed today' : 'Consumed this month')}
+                        </p>
                     </div>
                 </div>
 
-                {/* Tile 3: Averages - Peach/Orange Theme */}
-                <div className="bg-[#fff7ed] rounded-2xl p-6 shadow-sm border border-orange-100 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-6 opacity-5">
-                        <Activity className="w-24 h-24 text-orange-500" />
+                {/* Tile 3: KWH Readings */}
+                <div className="bg-[#fff7ed] rounded-2xl p-5 md:p-4 shadow-sm border border-orange-100 relative flex flex-col items-center justify-center md:h-[150px]">
+                    <div className="absolute top-4 left-4">
+                        <span className="p-2.5 md:p-2 bg-orange-50 rounded-full text-orange-500 flex items-center justify-center">
+                            <Activity className="w-5 h-5 md:w-4 md:h-4" />
+                        </span>
                     </div>
-                    <div className="relative z-10 flex flex-col h-full justify-between">
-                        <div className="flex items-center gap-3 mb-4">
-                            <span className="p-2.5 bg-orange-100 rounded-full text-orange-500">
-                                <Activity className="w-5 h-5" />
-                            </span>
-                            <span className="text-sm font-bold text-slate-700 uppercase tracking-widest leading-tight">
-                                KWH<br />READINGS
-                            </span>
-                        </div>
-                        <div className="flex justify-between items-start">
-                            {isCustomRange ? (
-                                <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-white text-orange-500 shadow-sm">
-                                    Custom Range
-                                </span>
-                            ) : (
-                                <div className="flex bg-orange-100/50 rounded-lg p-1">
-                                    <button onClick={() => setKwhTimeframe('today')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${kwhTimeframe === 'today' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400 hover:text-orange-500'}`}>Today</button>
-                                    <button onClick={() => setKwhTimeframe('month')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${kwhTimeframe === 'month' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400 hover:text-orange-500'}`}>This Month</button>
-                                </div>
-                            )}
-                        </div>
-                        <div className="mt-4">
-                            <div className="text-3xl font-black text-slate-800 tracking-tight">
-                                {displayKwh > 0 ? `${Math.round(displayKwh).toLocaleString()} kWh` : '—'}
+                    <div className="absolute top-4 right-4 text-right">
+                        <span className="text-xs md:text-[10px] font-bold text-slate-700 uppercase tracking-widest block">KWH READINGS</span>
+                        {!isCustomRange && (
+                            <div className="flex bg-slate-100/50 rounded-lg p-0.5 mt-1 justify-end">
+                                <button onClick={() => setKwhTimeframe('today')} className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${kwhTimeframe === 'today' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400 hover:text-orange-500'}`}>Today</button>
+                                <button onClick={() => setKwhTimeframe('month')} className={`px-2 py-0.5 text-[8px] font-bold rounded-md transition-all ${kwhTimeframe === 'month' ? 'bg-white text-orange-500 shadow-sm' : 'text-slate-400 hover:text-orange-500'}`}>Month</button>
                             </div>
-                            <div className="h-1.5 w-12 bg-orange-400 rounded-full mt-4 mb-4" />
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">
-                                {isCustomRange
-                                    ? `${dateFrom} to ${dateTo}`
-                                    : (kwhTimeframe === 'today' ? 'Readings today' : 'Readings this month')}
-                            </p>
+                        )}
+                    </div>
+                    <div className="text-center mt-6">
+                        <div className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
+                            {displayKwh > 0 ? `${Math.round(displayKwh).toLocaleString()} kWh` : '-'}
                         </div>
+                        <p className="text-[10px] md:text-[9px] font-medium text-slate-500 mt-1 uppercase tracking-wide truncate">
+                            {isCustomRange
+                                ? `${dateFrom} to ${dateTo}`
+                                : (kwhTimeframe === 'today' ? 'Readings today' : 'Readings this month')}
+                        </p>
                     </div>
                 </div>
             </div>

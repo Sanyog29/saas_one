@@ -573,8 +573,8 @@ const TicketsView: React.FC<TicketsViewProps> = ({ propertyId, organizationId, c
                             className="h-9 w-full sm:w-auto px-3 bg-surface border border-border rounded-[var(--radius-md)] text-xs font-semibold font-body text-text-primary transition-smooth focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary hover:border-primary/50"
                         >
                             <option value="all">All</option>
-                            <option value="resolved,closed">Completed</option>
-                            <option value="open,assigned,in_progress,blocked">Open</option>
+                            <option value="resolved,closed,pending_validation">Completed</option>
+                            <option value="open,assigned,in_progress,blocked,waitlist">Open</option>
                             <option value="waitlist">Waitlist</option>
                             <option value="sla_breached">SLA Breached</option>
                             <option value="pending_validation">Pending Validation</option>

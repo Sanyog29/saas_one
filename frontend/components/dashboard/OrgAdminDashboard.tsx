@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle, Activity,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
-    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon
+    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon, Droplets
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -13,13 +13,17 @@ import { useAuth } from '@/frontend/context/AuthContext';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { HapticCard } from '@/frontend/components/ui/HapticCard';
+import { RosterDashboard } from '@/frontend/components/roster/RosterDashboard';
+import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
 import UserDirectory from './UserDirectory';
 import SignOutModal from '@/frontend/components/ui/SignOutModal';
 import AdminSPOCDashboard from '../tickets/AdminSPOCDashboard';
 import TicketsView from './TicketsView';
 import SettingsView from './SettingsView';
 import DieselAnalyticsDashboard from '../diesel/DieselAnalyticsDashboard';
+import DieselStaffDashboard from '../diesel/DieselStaffDashboard';
 import ElectricityAnalyticsDashboard from '../electricity/ElectricityAnalyticsDashboard';
+import ElectricityStaffDashboard from '../electricity/ElectricityStaffDashboard';
 import InviteMemberModal from './InviteMemberModal';
 import NotificationBell from './NotificationBell';
 import Image from 'next/image';
@@ -37,9 +41,11 @@ import { UniversalSearch } from '@/frontend/components/shared/UniversalSearch';
 import TicketFlowMap from '../ops/TicketFlowMap';
 import ProcurementModule from '../procurement/ProcurementModule';
 import VMSOrgVisitorDashboard from '@/frontend/components/vms/VMSOrgVisitorDashboard';
+import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
+import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
 
 // Types
-type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement';
+type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel_logger' | 'diesel' | 'electricity_logger' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement' | 'roster' | 'water_logger' | 'water';
 
 interface Property {
     id: string;
@@ -389,7 +395,7 @@ const OrgAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel', 'electricity', 'stock_reports', 'checklist', 'super_tenants', 'escalation', 'rooms', 'ppm', 'vendors', 'procurement'].includes(tab)) {
+        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel', 'electricity', 'stock_reports', 'checklist', 'super_tenants', 'escalation', 'rooms', 'ppm', 'vendors', 'procurement', 'roster', 'water'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -812,7 +818,7 @@ const OrgAdminDashboard = () => {
         router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
     };
 
-    const handleTabChange = (tab: Tab, filter: string = 'all') => {
+    const handleTabChange = (tab: Tab, filter: string = 'all', dateFrom?: string, dateTo?: string) => {
         setActiveTab(tab);
         setPendingStatusFilter(filter);
         setSidebarOpen(false);
@@ -822,6 +828,14 @@ const OrgAdminDashboard = () => {
             params.set('filter', filter);
         } else {
             params.delete('filter');
+        }
+
+        if (dateFrom && dateTo) {
+            params.set('dateFrom', dateFrom);
+            params.set('dateTo', dateTo);
+        } else if (tab === 'requests') {
+            params.delete('dateFrom');
+            params.delete('dateTo');
         }
         
         if (tab !== 'requests') {
@@ -927,7 +941,7 @@ const OrgAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('overview')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'overview'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'overview'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -937,7 +951,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('requests')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'requests'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'requests'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -947,7 +961,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('reports')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'reports'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'reports'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -967,7 +981,7 @@ const OrgAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('properties')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'properties'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'properties'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -977,7 +991,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('users')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'users'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'users'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -987,7 +1001,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('visitors')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'visitors'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'visitors'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -997,7 +1011,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('revenue')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'revenue'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'revenue'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1006,8 +1020,38 @@ const OrgAdminDashboard = () => {
                                 Cafeteria Revenue
                             </button>
                             <button
+                                onClick={() => handleTabChange('water_logger')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'water_logger'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Droplets className="w-4 h-4" />
+                                Water Logger
+                            </button>
+                            <button
+                                onClick={() => handleTabChange('water')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'water'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Droplets className="w-4 h-4" />
+                                Water Analytics
+                            </button>
+                            <button
+                                onClick={() => handleTabChange('diesel_logger')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'diesel_logger'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Fuel className="w-4 h-4" />
+                                Diesel Logger
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('diesel')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'diesel'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'diesel'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1016,8 +1060,18 @@ const OrgAdminDashboard = () => {
                                 Diesel Analytics
                             </button>
                             <button
+                                onClick={() => handleTabChange('electricity_logger')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'electricity_logger'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Zap className="w-4 h-4" />
+                                Electricity Logger
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('electricity')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'electricity'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'electricity'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1026,8 +1080,18 @@ const OrgAdminDashboard = () => {
                                 Electricity Analytics
                             </button>
                             <button
+                                onClick={() => handleTabChange('roster')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'roster'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <CalendarDays className="w-4 h-4" />
+                                Roster Management
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('stock_reports')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'stock_reports'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'stock_reports'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1037,7 +1101,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('procurement')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'procurement'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'procurement'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1047,7 +1111,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('checklist')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'checklist'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'checklist'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1057,7 +1121,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('ppm')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'ppm'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'ppm'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1067,7 +1131,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('escalation')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'escalation'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'escalation'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1077,7 +1141,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('rooms')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'rooms'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'rooms'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1097,7 +1161,7 @@ const OrgAdminDashboard = () => {
                         <div className="space-y-1">
                             <button
                                 onClick={() => handleTabChange('settings')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'settings'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'settings'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1107,7 +1171,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => handleTabChange('profile')}
-                                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'profile'
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'profile'
                                     ? 'bg-primary text-text-inverse shadow-sm'
                                     : 'text-text-secondary hover:bg-muted hover:text-text-primary'
                                     }`}
@@ -1336,6 +1400,35 @@ const OrgAdminDashboard = () => {
                             />
                         </div>
                         {activeTab === 'procurement' && org && <ProcurementModule key="procurement-admin" orgId={org.id} isAdmin={true} properties={properties} />}
+                        {activeTab === 'roster' && selectedPropertyId === 'all' && (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                                    <span className="text-3xl">📋</span>
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">Select a Property</h3>
+                                <p className="text-sm text-gray-500 max-w-xs">Please select a specific property from the dropdown above to view the roster.</p>
+                            </div>
+                        )}
+                        {activeTab === 'roster' && selectedPropertyId !== 'all' && <RosterDashboard propertyId={selectedPropertyId} />}
+                        {activeTab === 'water_logger' && selectedPropertyId === 'all' && (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                                    <span className="text-3xl">💧</span>
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">Select a Property</h3>
+                                <p className="text-sm text-gray-500 max-w-xs">Please select a specific property from the dropdown above to view water logs.</p>
+                            </div>
+                        )}
+                        {activeTab === 'water_logger' && selectedPropertyId !== 'all' && <WaterDashboard propertyId={selectedPropertyId} />}
+                        
+                        {activeTab === 'water' && (
+                            <WaterAnalyticsDashboard
+                                key="water-analytics-tab"
+                                propertyId={selectedPropertyId === 'all' ? undefined : selectedPropertyId}
+                                orgId={org?.id}
+                                properties={properties}
+                            />
+                        )}
                         {activeTab === 'revenue' && <RevenueTab key="revenue-tab" properties={properties} selectedPropertyId={selectedPropertyId} />}
                         {activeTab === 'properties' && (
                             <PropertiesTab
@@ -1403,12 +1496,38 @@ const OrgAdminDashboard = () => {
                             />
                         )}
 
+                        {activeTab === 'diesel_logger' && selectedPropertyId === 'all' && (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                                    <Fuel className="w-8 h-8 text-amber-600" />
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">Select a Property</h3>
+                                <p className="text-sm text-gray-500 max-w-xs">Please select a specific property from the dropdown above to view diesel logs.</p>
+                            </div>
+                        )}
+                        {activeTab === 'diesel_logger' && selectedPropertyId !== 'all' && (
+                            <DieselStaffDashboard propertyId={selectedPropertyId} />
+                        )}
+
                         {activeTab === 'diesel' && (
                             <DieselAnalyticsDashboard
                                 key="diesel-tab"
                                 propertyId={selectedPropertyId === 'all' ? undefined : selectedPropertyId}
                                 orgId={org?.id}
                             />
+                        )}
+
+                        {activeTab === 'electricity_logger' && selectedPropertyId === 'all' && (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4">
+                                    <Zap className="w-8 h-8 text-amber-600" />
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">Select a Property</h3>
+                                <p className="text-sm text-gray-500 max-w-xs">Please select a specific property from the dropdown above to view electricity logs.</p>
+                            </div>
+                        )}
+                        {activeTab === 'electricity_logger' && selectedPropertyId !== 'all' && (
+                            <ElectricityStaffDashboard propertyId={selectedPropertyId} />
                         )}
 
                         {activeTab === 'electricity' && (
@@ -1845,7 +1964,7 @@ const OverviewTab = memo(function OverviewTab({
     selectedPropertyId: string,
     setSelectedPropertyId: (id: string) => void,
     onMenuToggle: () => void,
-    onTabChange: (tab: Tab, filter?: string) => void,
+    onTabChange: (tab: Tab, filter?: string, dateFrom?: string, dateTo?: string) => void,
     ticketSummary: any,
     setTicketSummary: any,
     electricitySummary: any,
@@ -1868,6 +1987,26 @@ const OverviewTab = memo(function OverviewTab({
 }) {
     const [isOverviewSelectorOpen, setIsOverviewSelectorOpen] = useState(false);
     const isLoading = isSummariesLoading && !ticketSummary.total_tickets;
+
+    const handleTicketKPIClick = (filter: string) => {
+        if (ticketPeriod === 'all') {
+            onTabChange('requests', filter);
+            return;
+        }
+        const date = new Date();
+        let dateFrom, dateTo;
+        if (ticketPeriod === 'today') {
+            const todayStr = date.toISOString().split('T')[0];
+            dateFrom = todayStr;
+            dateTo = todayStr;
+        } else if (ticketPeriod === 'month') {
+            const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+            const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
+            dateFrom = startOfMonth;
+            dateTo = endOfMonth;
+        }
+        onTabChange('requests', filter, dateFrom, dateTo);
+    };
 
     const activeProperty = selectedPropertyId === 'all'
         ? null
@@ -2149,7 +2288,7 @@ const OverviewTab = memo(function OverviewTab({
                     <motion.div
                         variants={cardVariants}
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'all')}
+                        onClick={() => handleTicketKPIClick('all')}
                         className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
@@ -2178,7 +2317,7 @@ const OverviewTab = memo(function OverviewTab({
                     <motion.div
                         variants={cardVariants}
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'open')}
+                        onClick={() => handleTicketKPIClick('open,assigned,in_progress,blocked,waitlist')}
                         className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
@@ -2213,7 +2352,7 @@ const OverviewTab = memo(function OverviewTab({
                     <motion.div
                         variants={cardVariants}
                         whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                        onClick={() => onTabChange('requests', 'resolved')}
+                        onClick={() => handleTicketKPIClick('resolved,closed,pending_validation')}
                         className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm hover:shadow-md cursor-pointer hover:border-slate-300 transition-all group relative overflow-hidden"
                     >
                         <div className="flex items-center justify-between mb-2">
@@ -2246,7 +2385,7 @@ const OverviewTab = memo(function OverviewTab({
                         <motion.div
                             variants={cardVariants}
                             whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                            onClick={() => onTabChange('requests', 'pending_validation')}
+                            onClick={() => handleTicketKPIClick('pending_validation')}
                             className="bg-white rounded-2xl p-4 border-l-4 border-b-4 border-amber-400 shadow-sm hover:shadow-md cursor-pointer transition-all group relative overflow-hidden"
                         >
                             <div className="flex items-center justify-between mb-2">
@@ -2494,7 +2633,7 @@ const OverviewTab = memo(function OverviewTab({
                                                 ? displayDieselStats?.total_units?.toLocaleString() 
                                                 : displayDieselStats?.total_litres > 0 ? displayDieselStats?.total_litres?.toLocaleString() : (displayDieselStats?.total_kwh > 0 ? displayDieselStats?.total_kwh?.toLocaleString() : 0)}
                                             <span className="text-[10px] font-bold text-slate-400 ml-1">
-                                                {(!displayDieselStats?.total_litres && displayDieselStats?.total_kwh > 0) ? 'kWh' : 'Units'}
+                                                {(!displayDieselStats?.total_litres && displayDieselStats?.total_kwh > 0) ? 'kWh' : 'L'}
                                             </span>
                                         </span>
                                     </div>

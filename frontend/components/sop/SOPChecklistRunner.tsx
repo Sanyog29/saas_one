@@ -242,7 +242,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
                 console.log('SOPChecklistRunner: Template fetched', templateData?.id);
 
                 // Use resolved propertyId — fall back to template row's property_id if prop not passed
-                const resolvedPropertyId = propertyId || templateData.property_id;
+                const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+                const resolvedPropertyId = validPropId || templateData.property_id;
                 if (!resolvedPropertyId) throw new Error('Property ID could not be resolved for this template. Check RLS on sop_templates or properties table.');
 
                 let completionData: any;
@@ -384,7 +385,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             // Refresh session before API call to prevent timeout
             await supabase.auth.refreshSession();
 
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+            const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
             const res = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -504,7 +506,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
         if (!item) return;
 
-        const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+        const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+        const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
         const uploadKey = `${item.id}-photo`;
 
         // Capture actual photo time BEFORE any async processing
@@ -625,7 +628,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
         if (!item) return;
 
-        const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+        const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+        const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
         const uploadKey = `${item.id}-video`;
 
         // STEP 1: Show original video IMMEDIATELY (before any processing)
@@ -737,7 +741,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         if (!completion || !itemId) return;
         try {
             setIsSaving(true);
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+            const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
             const item = completion.items.find((i: any) => i.checklist_item_id === itemId);
             if (!item) return;
 
@@ -807,7 +812,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             // Evidence check logic removed per user request (staff can add if they want)
 
             // Update completion status via API (supabaseAdmin, bypasses RLS)
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+            const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
             const submitRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },

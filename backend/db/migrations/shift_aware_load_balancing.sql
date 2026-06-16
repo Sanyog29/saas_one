@@ -66,7 +66,7 @@ BEGIN
     GROUP BY assigned_to
   ) t ON t.assigned_to = rs.user_id
   WHERE rs.property_id = p_property_id
-    AND rs.is_checked_in = true -- PRD requirement: Distinguish on-duty vs off-duty
+    -- Removed strict check-in requirement to allow fallback to off-duty staff
     AND rs.is_available = true
     AND pm.is_active = true
     AND (
@@ -81,6 +81,7 @@ BEGIN
       )
     )
   ORDER BY 
+    rs.is_checked_in DESC NULLS LAST, -- Priority: On-duty staff first
     COALESCE(t.active_count, 0) ASC, -- Priority: Lowest load
     rs.last_assigned_at ASC NULLS FIRST, -- Tie-breaker: Oldest assignment
     RANDOM()
@@ -103,8 +104,13 @@ BEGIN
   FROM skill_groups sg
   WHERE sg.id = NEW.skill_group_id;
 
-  -- Attempt assignment
+  -- Attempt assignment with the exact skill required
   v_resolver_id := find_best_resolver(NEW.property_id, v_skill_group_code, NEW.floor_number);
+
+  -- Fallback: If no staff found for the specific skill (e.g. Plumbing, Vendor), fallback to Technical staff
+  IF v_resolver_id IS NULL AND v_skill_group_code != 'technical' THEN
+    v_resolver_id := find_best_resolver(NEW.property_id, 'technical', NEW.floor_number);
+  END IF;
 
   IF v_resolver_id IS NOT NULL THEN
     NEW.assigned_to := v_resolver_id;

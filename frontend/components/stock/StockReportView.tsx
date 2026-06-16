@@ -32,8 +32,8 @@ interface Movement {
     quantity_change: number;
     created_at: string;
     item_id: string;
-    stock_items: { name: string; item_code: string; unit?: string }[];
-    users: { full_name: string }[];
+    stock_items: { name: string; item_code: string; unit?: string } | null;
+    users: { full_name: string } | null;
 }
 
 const StockReportView: React.FC<StockReportViewProps> = ({ propertyId, propertyName }) => {
@@ -97,7 +97,7 @@ const StockReportView: React.FC<StockReportViewProps> = ({ propertyId, propertyN
             const { data: movementsData } = await movementQuery;
 
             setItems(itemsData || []);
-            setMovements(movementsData || []);
+            setMovements((movementsData as unknown as Movement[]) || []);
         } catch (err) {
             console.error('Error fetching report data:', err);
         } finally {
@@ -348,14 +348,15 @@ const StockReportView: React.FC<StockReportViewProps> = ({ propertyId, propertyN
 
     // Top movers (most frequently moved items)
     const topMovers = useMemo(() => {
-        const map: Record<string, { name: string; code: string; unit: string; added: number; removed: number; total: number }> = {};
+        const map: Record<string, { name: string; code: string; unit: string; added: number; removed: number; total: number; user_name: string }> = {};
         movements.forEach(m => {
             const id = m.item_id;
-            const stockItem = m.stock_items?.[0];
+            const stockItem = m.stock_items;
             const name = stockItem?.name || 'Unknown';
             const code = stockItem?.item_code || '';
             const unit = stockItem?.unit || 'units';
-            if (!map[id]) map[id] = { name, code, unit, added: 0, removed: 0, total: 0 };
+            const userName = m.users?.full_name || 'Unknown';
+            if (!map[id]) map[id] = { name, code, unit, added: 0, removed: 0, total: 0, user_name: userName };
             const abs = Math.abs(m.quantity_change);
             if (m.action === 'add') map[id].added += abs;
             else if (m.action === 'remove') map[id].removed += abs;
@@ -606,6 +607,8 @@ const StockReportView: React.FC<StockReportViewProps> = ({ propertyId, propertyN
                                             <span className="text-red-500">−{data.removed}</span>
                                             {' '}
                                             {data.unit}
+                                            {' • '}
+                                            <span className="text-blue-500">{data.user_name}</span>
                                         </p>
                                     </div>
                                     <div className="text-right">

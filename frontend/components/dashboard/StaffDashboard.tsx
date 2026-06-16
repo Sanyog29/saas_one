@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Ticket, Clock, CheckCircle2, AlertCircle, Plus,
     LogOut, Settings, Search, UserCircle, Coffee, Fuel, UsersRound,
     ClipboardList, FolderKanban, Moon, Sun, ChevronRight, RefreshCw, Cog, X,
-    AlertOctagon, BarChart3, FileText, Camera, Menu, Pencil, Loader2, Zap, Activity, Filter, Calendar, Package, Scan
+    AlertOctagon, BarChart3, FileText, Camera, Menu, Pencil, Loader2, Zap, Activity, Filter, Calendar, Package, Scan, Droplets
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -33,8 +33,10 @@ import dynamic from 'next/dynamic';
 import type { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
 const UniversalQRScannerModal = dynamic(() => import('@/frontend/components/shared/UniversalQRScannerModal'), { ssr: false });
 
+import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
+
 // Types
-type Tab = 'dashboard' | 'requests' | 'create_request' | 'visitors' | 'rooms' | 'diesel' | 'electricity' | 'stock' | 'checklist' | 'settings' | 'profile' | 'flow-map';
+type Tab = 'dashboard' | 'requests' | 'create_request' | 'visitors' | 'rooms' | 'diesel' | 'electricity' | 'stock' | 'checklist' | 'settings' | 'profile' | 'flow-map' | 'water';
 
 interface Property {
     id: string;
@@ -147,7 +149,7 @@ const StaffDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['dashboard', 'requests', 'create_request', 'visitors', 'rooms', 'diesel', 'electricity', 'settings', 'profile', 'flow-map'].includes(tab)) {
+        if (tab && ['dashboard', 'requests', 'create_request', 'visitors', 'rooms', 'diesel', 'electricity', 'stock', 'checklist', 'settings', 'profile', 'flow-map', 'water'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -559,6 +561,16 @@ const StaffDashboard = () => {
                                 </button>
                             )}
                             <button
+                                onClick={() => handleTabChange('water')}
+                                className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === 'water'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Droplets className="w-4 h-4" />
+                                Water Logger
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('stock')}
                                 className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === 'stock'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -738,6 +750,7 @@ const StaffDashboard = () => {
                             {activeTab === 'electricity' && canAccessElectricityLogger(userRole) && (
                                 property && <ElectricityStaffDashboard propertyId={property.id} isDark={isDarkMode} />
                             )}
+                            {activeTab === 'water' && property && <WaterDashboard propertyId={property.id} />}
                             {activeTab === 'stock' && property && (
                                 <StockDashboard
                                     propertyId={property.id}

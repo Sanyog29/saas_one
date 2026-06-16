@@ -350,10 +350,11 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
     const filterBySearch = (items: any[]) => {
         if (!searchQuery.trim()) return items;
         const query = searchQuery.toLowerCase().trim();
-        return items.filter(item =>
-            (item.title || '').toLowerCase().includes(query) ||
-            (item.description || '').toLowerCase().includes(query)
-        );
+        return items.filter(item => {
+            const template = item.template || item;
+            return (template.title || '').toLowerCase().includes(query) ||
+                   (template.description || '').toLowerCase().includes(query);
+        });
     };
 
     // Always use IST for current date selection
@@ -527,7 +528,8 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 ...template, 
                 dueLabel: dueStatus.label, 
                 inProgressId: inProgress?.id || null, 
-                slotCompletedId: slotCompleted?.id || null 
+                slotCompletedId: slotCompleted?.id || null,
+                currentSlot: currentSlot
             };
 
             if (slotCompleted) {
@@ -542,7 +544,7 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
             } else if (isToday && template.is_running && dueStatus.status === 'upcoming') {
                 upcoming.push({ ...templateWithMeta, upcomingLabel: dueStatus.label, progressPct: 0 });
             } else if (actualLogicalDate === selectedDate) {
-                if (template.is_running || inProgress) {
+                if (!isHourly && (template.is_running || inProgress)) {
                     missed.push({ ...templateWithMeta, historicalDate: actualLogicalDate });
                 }
             }
@@ -571,8 +573,10 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 if (isOvernight && istRef.totalMins < (eh * 60 + em)) {
                     currentShiftStart = new Date(currentShiftStart.getTime() - 24 * 3600000);
                 }
+                
+                const templateStartedAt = template.started_at ? new Date(template.started_at) : null;
 
-                for (let i = 1; i <= daysToCheck; i++) {
+                for (let i = 0; i <= daysToCheck; i++) {
                     // For weekly, only check the same day of week
                     if (isWeeklyTemplate) {
                         const pastDayOfWeek = new Date(new Date(currentShiftStart).getTime() - i * 24 * 3600000).getDay();
@@ -598,8 +602,9 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                             const slotStart = new Date(pastShiftStart.getTime() + slot * intervalHours * 60 * 60 * 1000);
                             const slotEnd = new Date(slotStart.getTime() + intervalHours * 60 * 60 * 1000);
 
-                            // Skip future slots
+                            // Skip future slots or slots before the template started
                             if (slotEnd > liveNow) continue;
+                            if (templateStartedAt && slotStart < templateStartedAt) continue;
 
                             const slotTime = slotStart.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
                             const slotDate = pastIst.isoDate;
@@ -620,10 +625,9 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                             const isMissed = !anyRecord && (!partialRecord || partialRecord.status !== 'completed');
 
                             if (isMissed) {
-                                const timeAgo = i === 1 ? 'Yesterday' : i === 0 ? 'Today' : `${i}d ago`;
                                 historicalMissed.push({
                                     ...template,
-                                    dueLabel: `Missed ${timeAgo} ${slotTime}`,
+                                    dueLabel: `Missed`,
                                     historicalDate: slotDate,
                                     slotTime: slotTime,
                                     isHistorical: true
@@ -632,6 +636,8 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                         }
                     } else {
                         // Daily/weekly template logic
+                        if (templateStartedAt && pastShiftStart < templateStartedAt) continue;
+
                         const anyRecord = completions.find(c => c.template_id === template.id && c.completion_date === pastLogicalDate);
                         const isMissed = !anyRecord || anyRecord.status === 'missed' || anyRecord.status === 'pending';
 
@@ -658,14 +664,19 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
             if (isAllTime) return true;
             return c.completion_date === selectedDate;
         });
+        
+        let allMissed = [...missed, ...historicalMissed];
+        if (!isAllTime) {
+            allMissed = allMissed.filter(m => m.historicalDate === selectedDate);
+        }
 
-        const totalForDay = completed.length + due.length + missed.length;
-        const totalAllTime = totalForDay + historicalMissed.length;
+        const totalForDay = completed.length + due.length + allMissed.length;
+        const totalAllTime = completed.length + due.length + missed.length + historicalMissed.length;
 
         return {
             dueTemplates: due,
             upcomingTemplates: upcoming,
-            missedTemplates: [...missed, ...historicalMissed],
+            missedTemplates: allMissed,
             completedToday: completed,
             doneList,
             stats: {
@@ -673,7 +684,7 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                 completed: doneList.length,
                 pending: due.length,
                 due: due.length,
-                missed: isAllTime ? (missed.length + historicalMissed.length) : missed.length,
+                missed: allMissed.length,
                 historicalMissed: historicalMissed.length
             }
         };
@@ -757,6 +768,21 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                                 <h4 className="font-black text-[15px] line-clamp-2" title={t.title}>{t.title}</h4>
                                 <div className="flex items-center gap-2 mt-1">
                                     <span className="px-2 py-0.5 bg-rose-500 text-white text-[8px] font-black rounded-full">{t.dueLabel}</span>
+                                    {t.currentSlot && (
+                                        <span className="px-2 py-0.5 bg-rose-50 text-rose-400 text-[8px] font-bold rounded-full border border-rose-100 flex items-center gap-1">
+                                            <Clock size={8} /> 
+                                            {(() => {
+                                                if (t.frequency?.includes('every_')) {
+                                                    const slotStr = getCompletionSlot(null, t.frequency, t.start_time, t.currentSlot);
+                                                    if (slotStr) {
+                                                        const [start, end] = slotStr.split(' – ');
+                                                        return `${fmt12h(start)} - ${fmt12h(end)}`;
+                                                    }
+                                                }
+                                                return fmt12h(t.currentSlot);
+                                            })()}
+                                        </span>
+                                    )}
                                 </div>
                             </div>
                             <div className="bg-slate-900 text-white p-2.5 rounded-xl"><Play size={14} fill="currentColor" /></div>
@@ -798,10 +824,29 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                                                 <span className="px-2 py-0.5 bg-rose-100 text-rose-600 text-[8px] font-black rounded-full uppercase tracking-tight">
                                                     {t.dueLabel || 'Missed'}
                                                 </span>
-                                                <div className="w-1 h-1 rounded-full bg-slate-200" />
-                                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
-                                                    {t.start_time ? fmt12h(t.start_time) : ''}
-                                                </span>
+                                                {t.slotTime && (
+                                                    <span className="px-2 py-0.5 bg-rose-50 text-rose-400 text-[8px] font-bold rounded-full border border-rose-100 flex items-center gap-1">
+                                                        <Clock size={8} /> 
+                                                        {(() => {
+                                                            if (t.frequency?.includes('every_')) {
+                                                                const slotStr = getCompletionSlot(null, t.frequency, t.start_time, t.slotTime);
+                                                                if (slotStr) {
+                                                                    const [start, end] = slotStr.split(' – ');
+                                                                    return `${fmt12h(start)} - ${fmt12h(end)}`;
+                                                                }
+                                                            }
+                                                            return fmt12h(t.slotTime);
+                                                        })()}
+                                                    </span>
+                                                )}
+                                                {!t.slotTime && t.start_time && (
+                                                    <>
+                                                        <div className="w-1 h-1 rounded-full bg-slate-200" />
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">
+                                                            {fmt12h(t.start_time)}
+                                                        </span>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="bg-rose-500 text-white p-2.5 rounded-xl group-hover:bg-rose-600 transition-colors shadow-lg shadow-rose-200">
@@ -821,9 +866,23 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                         {activeFilter === 'all' ? 'Completed Today' : 'Completed Checklists'}
                     </h3>
                     {(() => {
-                        const items = filterBySearch(activeFilter === 'all' ? completedToday : doneList);
+                        const items = activeFilter === 'all' 
+                            ? completedToday.map(t => ({
+                                id: t.slotCompletedId || t.id,
+                                template_id: t.id,
+                                property_id: t.property_id,
+                                is_late: t.is_late,
+                                completed_at: t.completedAt,
+                                completion_date: todayIST,
+                                slot_time: t.currentSlot,
+                                template: t,
+                                user: null
+                            }))
+                            : doneList;
+                            
+                        const itemsToRender = filterBySearch(items);
                         const groups: Record<string, any[]> = {};
-                        items.forEach(c => {
+                        itemsToRender.forEach(c => {
                             const d = c.completion_date || 'Unknown';
                             if (!groups[d]) groups[d] = [];
                             groups[d].push(c);
@@ -857,7 +916,24 @@ const SOPCompletionHistory: React.FC<SOPCompletionHistoryProps> = ({ propertyId,
                                                     )}
                                                 </h4>
                                                 <div className="flex items-center gap-2 mt-1">
-                                                    <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-tight">
+                                                    {c.slot_time && (
+                                                        <>
+                                                            <div className={`flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-tight ${c.is_late ? 'text-amber-600 bg-amber-50 border-amber-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100'}`}>
+                                                                {(() => {
+                                                                    if (template.frequency?.includes('every_')) {
+                                                                        const slotStr = getCompletionSlot(null, template.frequency, template.start_time, c.slot_time);
+                                                                        if (slotStr) {
+                                                                            const [start, end] = slotStr.split(' – ');
+                                                                            return `${fmt12h(start)} - ${fmt12h(end)}`;
+                                                                        }
+                                                                    }
+                                                                    return fmt12h(c.slot_time);
+                                                                })()}
+                                                            </div>
+                                                            <div className="w-1 h-1 rounded-full bg-slate-200" />
+                                                        </>
+                                                    )}
+                                                    <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-tight" title="Completed At">
                                                         <Clock size={10} />
                                                         {time}
                                                     </div>
