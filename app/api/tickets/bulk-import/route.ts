@@ -343,7 +343,7 @@ export async function POST(request: NextRequest) {
             .from('tickets')
             .select('id, property_id, skill_group_code, status')
             .in('id', insertedTickets.map(t => t.id))
-            .in('status', ['open', 'waitlist']); // Only assign those not already assigned by DB triggers
+            .eq('status', 'open'); // Only assign unassigned tickets
 
         let assignmentSummary = null;
         if (ticketsToAssign && ticketsToAssign.length > 0) {

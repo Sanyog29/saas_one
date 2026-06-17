@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
             const updates: any = {
                 updated_at: now,
                 assigned_to: assigned_to,
-                status: assigned_to ? 'assigned' : 'waitlist',
+                status: assigned_to ? 'assigned' : 'open',
                 assigned_at: assigned_to ? now : null
             };
 

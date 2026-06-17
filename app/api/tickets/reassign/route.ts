@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         // Get ticket details
         const { data: ticket, error: ticketError } = await supabase
             .from('tickets')
-            .select('id, skill_group_id, property_id, assigned_to')
+            .select('id, skill_group_id, skill_group_code, property_id, assigned_to')
             .eq('id', ticketId)
             .single();
 
@@ -59,10 +59,9 @@ export async function POST(request: NextRequest) {
         };
 
         if (newAssigneeId === null) {
-            // Unassign → move to waitlist
+            // Unassign → auto-reassign to another resolver
             updateData.assigned_to = null;
             updateData.assigned_at = null;
-            updateData.status = 'waitlist';
         } else {
             updateData.assigned_to = newAssigneeId;
             updateData.assigned_at = new Date().toISOString();
@@ -90,20 +89,38 @@ export async function POST(request: NextRequest) {
             new_value: newAssigneeId,
         });
 
+        // If unassigned, auto-reassign to another resolver
+        if (newAssigneeId === null) {
+            try {
+                const { processIntelligentAssignment } = await import('@/backend/lib/ticketing/assignment');
+                await processIntelligentAssignment(
+                    supabase,
+                    [{ id: ticketId, property_id: ticket.property_id, skill_group_code: ticket.skill_group_code }],
+                    ticket.property_id
+                );
+
+                // Re-fetch to get updated assignment
+                const { data: reAssignedTicket } = await supabase
+                    .from('tickets')
+                    .select('status, assigned_to')
+                    .eq('id', ticketId)
+                    .single();
+
+                if (reAssignedTicket) {
+                    data.status = reAssignedTicket.status;
+                    data.assigned_to = reAssignedTicket.assigned_to;
+                }
+            } catch (assignErr) {
+                // Silent fail
+            }
+        }
+
         // Trigger Notifications
         try {
             const { NotificationService } = await import('@/backend/services/NotificationService');
-            if (newAssigneeId) {
-                NotificationService.afterTicketReassigned(ticketId).catch(err => {
-                    console.error('[Reassign API] Reassign Notification error:', err);
-                });
-            } else {
-                NotificationService.afterTicketWaitlisted(ticketId).catch(err => {
-                    console.error('[Reassign API] Waitlist Notification error:', err);
-                });
-            }
+            NotificationService.afterTicketReassigned(ticketId).catch(() => {});
         } catch (err) {
-            console.error('[Reassign API] Failed to load NotificationService:', err);
+            // Silent fail
         }
 
         return NextResponse.json({

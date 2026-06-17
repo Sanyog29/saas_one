@@ -78,12 +78,7 @@ BEGIN
   IF NEW.department IS NULL OR NEW.department = 'technical' THEN
     NEW.department := public.classify_ticket_department(COALESCE(NEW.description, '') || ' ' || COALESCE(NEW.title, ''));
   END IF;
-  
-  -- Auto-transition to waitlist status for new tickets
-  IF NEW.status = 'open' AND OLD IS NULL THEN
-    NEW.status := 'waitlist';
-  END IF;
-  
+
   RETURN NEW;
 END;
 $$;

@@ -333,12 +333,48 @@
     position: relative;
     display: flex;
     flex-direction: column;
+    /* Prevent font size inflation on mobile */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   html {
     scroll-behavior: smooth;
     overflow-x: hidden;
     height: 100%;
+    /* Prevent browser zoom on double tap */
+    touch-action: manipulation;
+  }
+
+  /* Mobile-specific fixes for larger font sizes */
+  @media screen and (max-width: 768px) {
+    html {
+      /* Force consistent font scaling on mobile */
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+
+    body {
+      /* Prevent layout overflow with larger fonts */
+      min-width: 320px;
+      min-width: -webkit-fill-available;
+    }
+
+    /* Ensure buttons and interactive elements are touch-friendly */
+    button, a, [role="button"] {
+      /* Prevent double-tap zoom */
+      touch-action: manipulation;
+    }
+  }
+
+  /* Handle devices with large font scaling (120%+ zoom) */
+  @media screen and (max-width: 640px) {
+    /* Use clamp for responsive spacing */
+    :root {
+      --spacing-base: clamp(0.75rem, 2vw, 1rem);
+      --spacing-sm: clamp(0.5rem, 1.5vw, 0.75rem);
+      --spacing-lg: clamp(1rem, 3vw, 1.5rem);
+    }
   }
 
   /* Universal Layout Containers */

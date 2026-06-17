@@ -502,7 +502,7 @@ const ElectricityReadingHistory: React.FC<ElectricityReadingHistoryProps> = ({
                                                     ? (isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
                                                     : (isDark ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')
                                                     }`}>
-                                                    {(log.final_units ?? log.computed_units ?? 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })} kVAh
+                                                    {(log.final_units ?? log.computed_units ?? 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })} kWh
                                                 </span>
                                             </td>
                                             <td className="px-6 py-4 text-right whitespace-nowrap">

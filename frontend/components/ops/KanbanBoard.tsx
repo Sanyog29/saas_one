@@ -103,7 +103,7 @@ export default function KanbanBoard({ propertyId, organizationId }: KanbanBoardP
                 // Process MST groups
                 data.mstGroups?.forEach((group: any) => {
                     group.tickets?.forEach((t: Ticket) => {
-                        const status = t.status === 'open' ? 'waitlist' : t.status;
+                        const status = t.status;
                         if (grouped[status]) {
                             grouped[status].push(t);
                         } else {

@@ -6,7 +6,7 @@ import { usePathname, useParams } from 'next/navigation';
 import {
     LayoutDashboard, Users, Ticket, Package, Settings, LogOut,
     Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
-    FileUp, Bot, Building2, Send
+    FileUp, Bot, Building2, Send, CalendarDays, Droplets, Coffee
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -26,14 +26,33 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
     const { signOut, user } = useAuth();
     const [showSignOutModal, setShowSignOutModal] = React.useState(false);
 
-    const NAV_ITEMS = React.useMemo(() => [
-        { label: 'Overview', href: `/${orgId}/dashboard`, icon: LayoutDashboard, domain: 'dashboards' as const },
-        { label: 'Tickets', href: `/${orgId}/dashboard`, icon: Ticket, domain: 'tickets' as const },
-        { label: 'Flow Map', href: `/${orgId}/flow-map`, icon: GitMerge, domain: 'tickets' as const },
-        { label: 'Inventory', href: `/${orgId}/procurement-management`, icon: Package, domain: 'procurement' as const },
-        { label: 'Procurement', href: `/${orgId}/procurement-management`, icon: ShoppingCart, domain: 'procurement' as const },
-        { label: 'Staff', href: `/${orgId}/users`, icon: Users, domain: 'users' as const },
-    ], [orgId]);
+    const NAV_ITEMS = React.useMemo(() => {
+        const userRole = user?.user_metadata?.role;
+        const isAdmin = userRole === 'org_super_admin' || userRole === 'property_admin';
+
+        const items = [
+            { label: 'Overview', href: `/${orgId}/dashboard`, icon: LayoutDashboard, domain: 'dashboards' as const },
+            { label: 'Tickets', href: `/${orgId}/dashboard`, icon: Ticket, domain: 'tickets' as const },
+            { label: 'Flow Map', href: `/${orgId}/flow-map`, icon: GitMerge, domain: 'tickets' as const },
+            { label: 'Inventory', href: `/${orgId}/procurement-management`, icon: Package, domain: 'procurement' as const },
+            { label: 'Procurement', href: `/${orgId}/procurement-management`, icon: ShoppingCart, domain: 'procurement' as const },
+            { label: 'Staff', href: `/${orgId}/users`, icon: Users, domain: 'users' as const },
+        ];
+
+        // Roster Management - only for org_super_admin and property_admin
+        if (isAdmin) {
+            items.push({ label: 'Roster Management', href: `/${orgId}/dashboard?tab=roster`, icon: CalendarDays, domain: 'dashboards' as const });
+        }
+
+        items.push({ label: 'Cafeteria', href: `/${orgId}/dashboard?tab=cafeteria`, icon: Coffee, domain: 'dashboards' as const });
+        items.push({ label: 'Water Level', href: `/${orgId}/dashboard?tab=water`, icon: Droplets, domain: 'dashboards' as const });
+
+        if (userRole === 'org_super_admin') {
+            items.push({ label: 'Water Analytics', href: `/${orgId}/dashboard?tab=water_analytics`, icon: Droplets, domain: 'dashboards' as const });
+        }
+
+        return items;
+    }, [orgId, user?.user_metadata?.role]);
 
     const CRM_NAV_ITEMS = React.useMemo(() => [
         { label: 'Dashboard', href: `/${orgId}/crm`, icon: BarChart3, domain: 'crm' as const },

@@ -53,7 +53,7 @@ export default function HeroSection() {
                         className="absolute inset-0"
                     >
                         <Image
-                            src={!mounted ? "/landing-hero-day.jpg" : (isNight ? "/landing-hero-night.jpg" : "/landing-hero-day.jpg")}
+                            src={!mounted ? "/landing-hero-day.jpg" : (isNight ? "/landing-hero-night.png" : "/landing-hero-day.jpg")}
                             alt="Modern Office Building"
                             fill
                             className="object-cover object-center"

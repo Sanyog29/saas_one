@@ -180,7 +180,7 @@ const UtilitiesSummaryTile: React.FC<UtilitiesSummaryTileProps> = ({
                             </span>
                         </div>
                         <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                            {electricityData?.totalUnits?.toFixed(0) || 0} {electricityData?.unitLabel || 'kVAh'}
+                            {electricityData?.totalUnits?.toFixed(0) || 0} {electricityData?.unitLabel || 'kWh'}
                         </p>
                     </div>
                 </button>

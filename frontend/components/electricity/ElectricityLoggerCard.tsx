@@ -405,7 +405,7 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                                 <button
                                     onClick={() => setIsFlipped(true)}
                                     className={`${isDark ? 'text-slate-600 hover:text-primary bg-[#21262d]' : 'text-slate-400 hover:text-primary bg-slate-100'} p-2 rounded-lg transition-colors`}
-                                    title="Configure Multiplier"
+                                    title="Configure Meter Constant"
                                 >
                                     <Settings2 className="w-4 h-4" />
                                 </button>
@@ -433,7 +433,7 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                                 Opening Reading (Auto)
                             </span>
                             <div className={`text-lg font-mono font-bold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                {openingReading.toFixed(2)} <span className="text-xs font-bold">kVAh</span>
+                                {openingReading.toFixed(2)} <span className="text-xs font-bold">kWh</span>
                             </div>
                         </div>
 
@@ -473,7 +473,7 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                                     placeholder="Reading"
                                 />
                                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                                    <span className={`text-[10px] font-bold ${isDark ? 'text-slate-600' : 'text-slate-400'} uppercase`}>kVAh</span>
+                                    <span className={`text-[10px] font-bold ${isDark ? 'text-slate-600' : 'text-slate-400'} uppercase`}>kWh</span>
                                     
                                     <div className="relative">
                                         <button 
@@ -611,10 +611,10 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                                 </div>
                                 <div className="text-2xl font-black text-primary flex items-baseline gap-1">
                                     {((numericClosing - openingReading) * selectedMultiplierValue).toFixed(1)}
-                                    <span className="text-sm font-bold opacity-60">kVAh</span>
+                                    <span className="text-sm font-bold opacity-60">kWh</span>
                                 </div>
                                 <p className={`text-[10px] mt-0.5 ${isDark ? 'text-slate-600' : 'text-slate-400 font-medium'}`}>
-                                    Raw: {(numericClosing - openingReading).toFixed(1)} kVAh
+                                    Raw: {(numericClosing - openingReading).toFixed(1)} kWh
                                 </p>
                             </div>
                         )}
@@ -650,7 +650,7 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                         <div className="flex justify-between items-center mb-6">
                             <div>
                                 <h3 className="text-lg font-bold text-slate-900">Meter Constant</h3>
-                                <p className="text-xs text-slate-400">Multiplier Config</p>
+                                <p className="text-xs text-slate-400">Meter Constant Config</p>
                             </div>
                             <button
                                 onClick={() => setIsFlipped(false)}

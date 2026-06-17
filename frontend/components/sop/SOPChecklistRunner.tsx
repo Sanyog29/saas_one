@@ -201,6 +201,13 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
 
             try {
                 setIsLoading(true);
+
+                // Refresh session to prevent timeout
+                const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+                if (sessionError) {
+                    console.warn('SOPChecklistRunner: Session refresh warning:', sessionError.message);
+                }
+
                 const { data: { user } } = await supabase.auth.getUser();
                 setCurrentUser(user);
                 console.log('SOPChecklistRunner: User fetched', user?.id);
@@ -235,7 +242,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
                 console.log('SOPChecklistRunner: Template fetched', templateData?.id);
 
                 // Use resolved propertyId — fall back to template row's property_id if prop not passed
-                const resolvedPropertyId = propertyId || templateData.property_id;
+                const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+                const resolvedPropertyId = validPropId || templateData.property_id;
                 if (!resolvedPropertyId) throw new Error('Property ID could not be resolved for this template. Check RLS on sop_templates or properties table.');
 
                 let completionData: any;
@@ -297,7 +305,25 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         }, 30000);
 
         initializeChecklist();
-        return () => clearTimeout(timeoutId);
+
+        // Periodic session refresh every 5 minutes to prevent timeout on long checklists
+        const sessionRefreshInterval = setInterval(async () => {
+            try {
+                const { error: refreshError } = await supabase.auth.refreshSession();
+                if (refreshError) {
+                    console.warn('[SOPChecklistRunner] Periodic session refresh failed:', refreshError.message);
+                } else {
+                    console.log('[SOPChecklistRunner] Session refreshed successfully');
+                }
+            } catch (err) {
+                console.warn('[SOPChecklistRunner] Periodic session refresh error:', err);
+            }
+        }, 5 * 60 * 1000); // 5 minutes
+
+        return () => {
+            clearTimeout(timeoutId);
+            clearInterval(sessionRefreshInterval);
+        };
     }, [templateId, completionId, propertyId, completionDate]);
 
     const handleItemToggle = async (itemId: string, value: any = null) => {
@@ -356,7 +382,11 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             setCompletion({ ...completion, items: optimisticItems });
             setItemValues({ ...itemValues, [itemId]: newValue });
 
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            // Refresh session before API call to prevent timeout
+            await supabase.auth.refreshSession();
+
+            const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+            const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
             const res = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -371,6 +401,37 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             
             if (!res.ok) {
                 const errorData = await res.json();
+
+                // Handle session expiry specifically
+                if (res.status === 401) {
+                    // Try to refresh session and retry once
+                    const { error: refreshErr } = await supabase.auth.refreshSession();
+                    if (!refreshErr) {
+                        // Retry the request once
+                        const retryRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                item: {
+                                    completionItemId: item.id,
+                                    is_checked: isChecked,
+                                    value: dbValue,
+                                }
+                            }),
+                        });
+
+                        if (retryRes.ok) {
+                            const data = await retryRes.json();
+                            if (data.success && data.completion) {
+                                setCompletion(data.completion);
+                                return;
+                            }
+                        }
+                    }
+                    setToast({ message: 'Session expired. Please refresh the page.', type: 'error' });
+                    return;
+                }
+
                 throw new Error(errorData.error || 'Failed to update checklist point');
             }
 
@@ -445,7 +506,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
         if (!item) return;
 
-        const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+        const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+        const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
         const uploadKey = `${item.id}-photo`;
 
         // Capture actual photo time BEFORE any async processing
@@ -566,7 +628,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         const item = completion.items.find((i: any) => i.checklist_item_id === targetItemId);
         if (!item) return;
 
-        const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+        const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+        const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
         const uploadKey = `${item.id}-video`;
 
         // STEP 1: Show original video IMMEDIATELY (before any processing)
@@ -678,7 +741,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
         if (!completion || !itemId) return;
         try {
             setIsSaving(true);
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+            const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
             const item = completion.items.find((i: any) => i.checklist_item_id === itemId);
             if (!item) return;
 
@@ -748,7 +812,8 @@ const SOPChecklistRunner: React.FC<SOPChecklistRunnerProps> = ({ templateId, com
             // Evidence check logic removed per user request (staff can add if they want)
 
             // Update completion status via API (supabaseAdmin, bypasses RLS)
-            const resolvedPropId = propertyId || completion?.property_id || template?.property_id;
+            const validPropId = (!propertyId || propertyId === 'undefined' || propertyId === 'null') ? null : propertyId;
+            const resolvedPropId = validPropId || completion?.property_id || template?.property_id;
             const submitRes = await fetch(`/api/properties/${resolvedPropId}/sop/completions/${completion.id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },

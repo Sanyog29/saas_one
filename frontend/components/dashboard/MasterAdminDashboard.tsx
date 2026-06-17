@@ -29,8 +29,9 @@ import ResolverStatsList from '@/frontend/components/mst/ResolverStatsList';
 import { MessageSquareCode } from 'lucide-react';
 import WhatsAppTemplatesManager from '@/frontend/components/admin/WhatsAppTemplatesManager';
 import WhatsAppSystemControl from '@/frontend/components/ops/WhatsAppSystemControl';
+import IssueTrackingDashboard from '@/frontend/components/master-admin/IssueTrackingDashboard';
 
-type Tab = 'overview' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates';
+type Tab = 'overview' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
 
 interface Organization {
     id: string;
@@ -110,7 +111,7 @@ const MasterAdminDashboard = () => {
     // Restore tab from URL and handle back navigation
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'analytics', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates'].includes(tab)) {
+        if (tab && ['overview', 'analytics', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -351,6 +352,7 @@ const MasterAdminDashboard = () => {
         { id: 'ai-insights', label: 'AI Intelligence', icon: Brain },
         { id: 'ai-assistant', label: 'AI Assistant', icon: MessageSquareCode },
         { id: 'issue-config', label: 'Issue Mapping', icon: LayoutGrid },
+        { id: 'issues', label: 'Issue Tracker', icon: AlertTriangle },
         { id: 'whatsapp-templates', label: 'WhatsApp Templates', icon: MessageCircle },
         { id: 'modules', label: 'Module Control', icon: LayoutGrid },
         { id: 'settings', label: 'System', icon: Settings },
@@ -540,6 +542,9 @@ const MasterAdminDashboard = () => {
                         )}
                         {activeTab === 'issue-config' && (
                             <IssueCategoryKanban />
+                        )}
+                        {activeTab === 'issues' && (
+                            <IssueTrackingDashboard />
                         )}
                         {activeTab === 'settings' && (
                             <SystemSettings onRestore={handleRestoreWithSecret} />

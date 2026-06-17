@@ -95,6 +95,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
     const [editDoneDate, setEditDoneDate] = useState('');
     const [editRemark, setEditRemark] = useState('');
     const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
 
     useEffect(() => {
         setUploadPropertyId(propertyId || '');
@@ -180,12 +181,13 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
     const handleTaskClick = (task: PPMSchedule) => {
         setSelectedTask(task);
         setEditStatus(task.status);
-        setEditDoneDate(task.done_date || '');
+        setEditDoneDate(task.done_date || new Date().toISOString().split('T')[0]);
         setEditRemark(task.remark || '');
         setEditVendorId(task.vendor_id || null);
         setEditVendorName(task.vendor_name || '');
         setEditVendorPhone(task.vendor_phone || '');
         setEditVendorContact(task.vendor_contact_person || '');
+        setIsEditMode(task.status !== 'done');
     };
 
     const handleUpdateTask = async () => {
@@ -508,7 +510,7 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-5 border-b border-slate-100 flex-shrink-0">
                             <div>
-                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Update Task</p>
+                                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{selectedTask.status === 'done' && !isEditMode ? 'Task Details' : 'Update Task'}</p>
                                 <h3 className="text-lg font-black text-slate-900">{selectedTask.system_name}</h3>
                             </div>
                             <button onClick={() => setSelectedTask(null)} className="p-1.5 hover:bg-slate-100 rounded-lg">
@@ -532,17 +534,21 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                 )}
                                 {selectedTask.location && <p><span className="font-bold">Location:</span> {selectedTask.location}</p>}
                                 {selectedTask.maker && <p><span className="font-bold">Maker:</span> {selectedTask.maker} {selectedTask.checker ? `· Checker: ${selectedTask.checker}` : ''}</p>}
+                                {selectedTask.remark && !isEditMode && <p><span className="font-bold">Remark:</span> {selectedTask.remark}</p>}
                                 <p><span className="font-bold">Planned:</span> {new Date(selectedTask.planned_date + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
-                                {selectedTask.status === 'done' && selectedTask.attachments?.completed_by_name && (
-                                    <p className="text-emerald-700 font-semibold">
-                                        <span className="font-bold">Completed by:</span> {selectedTask.attachments.completed_by_name}
-                                        {selectedTask.attachments.completed_at && ` · ${new Date(selectedTask.attachments.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`}
+                                {selectedTask.status === 'done' && (
+                                    <p className="text-emerald-700 font-semibold mt-1">
+                                        <span className="font-bold">Status:</span> Done
+                                        {selectedTask.done_date && ` on ${new Date(selectedTask.done_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                                        {selectedTask.attachments?.completed_by_name && ` by ${selectedTask.attachments.completed_by_name}`}
                                     </p>
                                 )}
                             </div>
 
                             {/* Status */}
-                            <div>
+                            {isEditMode && (
+                                <>
+                                    <div>
                                 <label className="text-xs font-black text-slate-700 uppercase tracking-widest mb-2 block">Status</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {(Object.entries(STATUS_CONFIG) as [PPMSchedule['status'], typeof STATUS_CONFIG['pending']][]).map(([key, cfg]) => {
@@ -624,6 +630,8 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                     </div>
                                 </div>
                             </div>
+                            </>
+                            )}
 
                             {/* Completion Proof — hidden when vendor has submitted/verified proof */}
                             {editStatus === 'done' && !['submitted', 'verified'].includes(selectedTask.verification_status || '') && (
@@ -635,9 +643,10 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                         <div className="flex items-center gap-2 mb-2">
                                             <Camera className="w-3.5 h-3.5 text-slate-500" />
                                             <span className="text-xs font-bold text-slate-600">Photos</span>
-                                            <label className="ml-auto cursor-pointer">
-                                                <input
-                                                    type="file"
+                                            {isEditMode && (
+                                                <label className="ml-auto cursor-pointer">
+                                                    <input
+                                                        type="file"
                                                     accept="image/*"
                                                     multiple
                                                     className="hidden"
@@ -652,18 +661,21 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                                     {isUploadingAttachment ? '...' : '+ Add'}
                                                 </span>
                                             </label>
+                                            )}
                                         </div>
                                         {(selectedTask.completion_photos || []).length > 0 ? (
                                             <div className="flex flex-wrap gap-2">
                                                 {(selectedTask.completion_photos || []).map((photoUrl, idx) => (
                                                     <div key={idx} className="relative group">
                                                         <img src={photoUrl} alt={`Photo ${idx + 1}`} className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
-                                                        <button
-                                                            onClick={() => handleAttachmentDelete(photoUrl, 'photo')}
-                                                            className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        >
-                                                            <X className="w-2.5 h-2.5" />
-                                                        </button>
+                                                        {isEditMode && (
+                                                            <button
+                                                                onClick={() => handleAttachmentDelete(photoUrl, 'photo')}
+                                                                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            >
+                                                                <X className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 ))}
                                             </div>
@@ -681,14 +693,16 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                         {selectedTask.completion_doc_url ? (
                                             <div className="flex items-center gap-2">
                                                 <a href={selectedTask.completion_doc_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary underline">View Certificate</a>
-                                                <button
-                                                    onClick={() => handleAttachmentDelete(selectedTask.completion_doc_url!, 'doc')}
-                                                    className="text-rose-500 hover:text-rose-700 transition-colors"
-                                                >
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
+                                                {isEditMode && (
+                                                    <button
+                                                        onClick={() => handleAttachmentDelete(selectedTask.completion_doc_url!, 'doc')}
+                                                        className="text-rose-500 hover:text-rose-700 transition-colors"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                             </div>
-                                        ) : (
+                                        ) : isEditMode ? (
                                             <label className="cursor-pointer">
                                                 <input
                                                     type="file"
@@ -705,6 +719,8 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                                     {isUploadingAttachment ? 'Uploading...' : 'Upload PDF'}
                                                 </span>
                                             </label>
+                                        ) : (
+                                            <p className="text-[11px] text-slate-400">No certificate</p>
                                         )}
                                     </div>
 
@@ -717,14 +733,16 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                         {selectedTask.invoice_url ? (
                                             <div className="flex items-center gap-2">
                                                 <a href={selectedTask.invoice_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary underline">View Invoice</a>
-                                                <button
-                                                    onClick={() => handleAttachmentDelete(selectedTask.invoice_url!, 'invoice')}
-                                                    className="text-rose-500 hover:text-rose-700 transition-colors"
-                                                >
-                                                    <X className="w-3.5 h-3.5" />
-                                                </button>
+                                                {isEditMode && (
+                                                    <button
+                                                        onClick={() => handleAttachmentDelete(selectedTask.invoice_url!, 'invoice')}
+                                                        className="text-rose-500 hover:text-rose-700 transition-colors"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
                                             </div>
-                                        ) : (
+                                        ) : isEditMode ? (
                                             <label className="cursor-pointer">
                                                 <input
                                                     type="file"
@@ -741,6 +759,8 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                                     {isUploadingAttachment ? 'Uploading...' : 'Upload PDF'}
                                                 </span>
                                             </label>
+                                        ) : (
+                                            <p className="text-[11px] text-slate-400">No invoice</p>
                                         )}
                                     </div>
                                 </div>
@@ -847,13 +867,24 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                 </div>
                             )}
 
-                            <button
-                                onClick={handleUpdateTask}
-                                disabled={isUpdating}
-                                className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
-                            >
-                                {isUpdating ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : 'Save Update'}
-                            </button>
+                            {!isEditMode && selectedTask.status === 'done' && (
+                                <button
+                                    onClick={() => setIsEditMode(true)}
+                                    className="w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-all flex items-center justify-center gap-2"
+                                >
+                                    Edit Task Details
+                                </button>
+                            )}
+
+                            {isEditMode && (
+                                <button
+                                    onClick={handleUpdateTask}
+                                    disabled={isUpdating}
+                                    className="w-full py-3 bg-primary text-white font-bold rounded-xl hover:bg-primary/90 disabled:opacity-60 transition-all flex items-center justify-center gap-2"
+                                >
+                                    {isUpdating ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : 'Save Update'}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

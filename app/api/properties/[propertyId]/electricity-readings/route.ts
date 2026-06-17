@@ -193,43 +193,45 @@ export async function POST(
             body.readings.map((r: ReadingInput) => computeReadingWithCost(supabase, propertyId, r, user.id))
         );
 
-        // 3.6 Store/Update Reading (Safe Lookup-then-Update)
-        // This is more robust than upsert if the unique constraint is missing
-        for (const reading of processedReadings) {
-            const { data: existingReading } = await supabase
-                .from('electricity_readings')
-                .select('id')
-                .eq('meter_id', reading.meter_id)
-                .eq('reading_date', reading.reading_date)
-                .maybeSingle();
+        try {
+            for (const reading of processedReadings) {
+                const { data: existingReading } = await supabase
+                    .from('electricity_readings')
+                    .select('id')
+                    .eq('meter_id', reading.meter_id)
+                    .eq('reading_date', reading.reading_date)
+                    .maybeSingle();
 
-            if (existingReading) {
-                console.log('[ElectricityReadings] Updating existing batch reading:', existingReading.id);
-                const { error: updateError } = await supabase
-                    .from('electricity_readings')
-                    .update(reading)
-                    .eq('id', existingReading.id);
-                if (updateError) throw updateError;
-            } else {
-                console.log('[ElectricityReadings] Creating new batch reading record');
-                const { error: insertError } = await supabase
-                    .from('electricity_readings')
-                    .insert(reading);
-                if (insertError) throw insertError;
+                if (existingReading) {
+                    console.log('[ElectricityReadings] Updating existing batch reading:', existingReading.id);
+                    const { error: updateError } = await supabase
+                        .from('electricity_readings')
+                        .update(reading)
+                        .eq('id', existingReading.id);
+                    if (updateError) throw updateError;
+                } else {
+                    console.log('[ElectricityReadings] Creating new batch reading record');
+                    const { error: insertError } = await supabase
+                        .from('electricity_readings')
+                        .insert(reading);
+                    if (insertError) throw insertError;
+                }
             }
+
+            // Update last_reading on meters
+            for (const r of body.readings) {
+                await supabase
+                    .from('electricity_meters')
+                    .update({ last_reading: r.closing_reading, updated_at: new Date().toISOString() })
+                    .eq('id', r.meter_id);
+            }
+
+            console.log('[ElectricityReadings] Batch submission successful');
+            return NextResponse.json({ success: true }, { status: 201 });
+        } catch (error: any) {
+            console.error('[ElectricityReadings] Batch import error:', error);
+            return NextResponse.json({ error: error.message || 'Database error occurred during batch import' }, { status: 500 });
         }
-
-
-        // Update last_reading on meters
-        for (const r of body.readings) {
-            await supabase
-                .from('electricity_meters')
-                .update({ last_reading: r.closing_reading, updated_at: new Date().toISOString() })
-                .eq('id', r.meter_id);
-        }
-
-        console.log('[ElectricityReadings] Batch submission successful');
-        return NextResponse.json({ success: true }, { status: 201 });
     }
 
     // Single reading submission

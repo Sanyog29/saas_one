@@ -871,7 +871,7 @@ const ComingSoonView = ({ title, icon: Icon, description }: { title: string, ico
 const OverviewTab = ({ onNavigate, property, onMenuToggle, meetingRoomCredits }: { onNavigate: (tab: Tab) => void, property: Property | null, onMenuToggle?: () => void, meetingRoomCredits?: { remaining_hours: number; monthly_hours: number } | null }) => {
     const { user } = useAuth();
     const params = useParams();
-    const [ticketCount, setTicketCount] = useState({ active: 0, completed: 0 });
+    const [ticketCount, setTicketCount] = useState({ open: 0, closed: 0 });
     const [visitorCount, setVisitorCount] = useState(0);
     const propertyId = params?.propertyId as string;
     const supabase = createClient();
@@ -888,9 +888,9 @@ const OverviewTab = ({ onNavigate, property, onMenuToggle, meetingRoomCredits }:
                 .eq('internal', false);
 
             if (tickets) {
-                const active = tickets.filter(t => !['resolved', 'closed'].includes(t.status)).length;
-                const completed = tickets.filter(t => ['resolved', 'closed'].includes(t.status)).length;
-                setTicketCount({ active, completed });
+                const open = tickets.filter(t => !['resolved', 'closed', 'pending_validation'].includes(t.status)).length;
+                const closed = tickets.filter(t => ['resolved', 'closed', 'pending_validation'].includes(t.status)).length;
+                setTicketCount({ open, closed });
             }
 
             // Fetch Active Visitor Count
@@ -935,7 +935,7 @@ const OverviewTab = ({ onNavigate, property, onMenuToggle, meetingRoomCredits }:
                 >
                     {/* Badge */}
                     <div className="absolute top-6 right-6 w-9 h-9 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100 shadow-sm">
-                        <span className="text-slate-400 font-bold text-xs">{ticketCount.active}</span>
+                        <span className="text-slate-400 font-bold text-xs">{ticketCount.open}</span>
                     </div>
 
                     <div className="relative z-10 flex-1 flex flex-col">
@@ -945,7 +945,7 @@ const OverviewTab = ({ onNavigate, property, onMenuToggle, meetingRoomCredits }:
                         <h3 className="text-3xl font-display font-semibold text-slate-800 mb-4">Helpdesk & Ticketing</h3>
                         <p className="text-slate-500 text-base mb-8 leading-relaxed">Report issues, track requests & get support instantly.</p>
                         <div className="text-[10px] font-black uppercase tracking-[0.2em] text-secondary">
-                            • {ticketCount.active} Active • {ticketCount.completed} Completed
+                            • {ticketCount.open} Open • {ticketCount.closed} Closed
                         </div>
                     </div>
                 </button>

@@ -89,12 +89,27 @@ function useNotificationPermission() {
 
     const requestPermission = async () => {
         if (typeof window === 'undefined' || !('Notification' in window)) return;
-        const result = await Notification.requestPermission();
-        setPermission(result);
+        
+        // Hide our prompt and remember that they interacted with it
         setShouldShowPrompt(false);
-        if (result === 'granted') {
-            // Trigger FCM sync by reloading or dispatching event
-            window.dispatchEvent(new Event('visibilitychange'));
+        localStorage.setItem('notif_prompt_dismissed', '1');
+
+        try {
+            const result = await Notification.requestPermission();
+            setPermission(result);
+            if (result === 'granted') {
+                // Trigger FCM sync by reloading or dispatching event
+                window.dispatchEvent(new Event('visibilitychange'));
+            }
+        } catch (err) {
+            console.error('Failed to request notification permission:', err);
+            // Fallback for older Safari
+            Notification.requestPermission((result) => {
+                setPermission(result);
+                if (result === 'granted') {
+                    window.dispatchEvent(new Event('visibilitychange'));
+                }
+            });
         }
     };
 

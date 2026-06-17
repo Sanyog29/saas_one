@@ -287,6 +287,31 @@ export async function POST(
         }
     }
 
+    // ── Self-heal: insert any missing sop_completion_items rows ──────────
+    const templateItems: any[] = (template as any)?.items || [];
+    const existingIds = new Set((existingCompletion.items || []).map((i: any) => i.checklist_item_id));
+    const missing = templateItems.filter((ti: any) => !existingIds.has(ti.id));
+
+    if (missing.length > 0) {
+        const completionItems = missing.map((ti: any) => ({
+            completion_id: existingCompletion.id,
+            checklist_item_id: ti.id,
+            is_checked: false
+        }));
+
+        await supabaseAdmin
+            .from('sop_completion_items')
+            .insert(completionItems);
+
+        const { data: healed } = await supabaseAdmin
+            .from('sop_completions')
+            .select('*, items:sop_completion_items(*)')
+            .eq('id', existingCompletion.id)
+            .single();
+
+        existingCompletion = healed;
+    }
+
     // Update to in_progress if it was just pending/missed
         if (existingCompletion.status === 'pending' || existingCompletion.status === 'missed') {
             const [sH, sM] = (startTime ?? '00:00').slice(0, 5).split(':').map(Number);

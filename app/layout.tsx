@@ -7,6 +7,7 @@ import { ThemeProvider } from "@/frontend/context/ThemeContext";
 import { DataCacheProvider } from "@/frontend/context/DataCacheContext";
 import { SessionProvider, CookieConsentToast } from "@/frontend/components/analytics";
 import NotificationSystem from "@/frontend/components/ops/NotificationSystem";
+import ErrorTrackingProvider from "@/frontend/components/ErrorTrackingProvider";
 
 const poppins = Poppins({
     subsets: ["latin"],
@@ -27,9 +28,18 @@ export const metadata: Metadata = {
     description: "Facilities that run without constant follow-ups. Fewer complaints. Faster fixes. Clear accountability. The operating system for modern buildings.",
     keywords: ["facility management", "building maintenance", "operations automation", "property management", "SaaS"],
     manifest: "/manifest.json",
+    icons: {
+        icon: '/autopilot-logo.png',
+        apple: '/autopilot-logo.png',
+    },
 };
 
 export const viewport: Viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    minimumScale: 1,
+    userScalable: false,
     themeColor: "#ffffff",
 };
 
@@ -49,6 +59,7 @@ export default function RootLayout({
                 />
             </head>
             <body className="bg-background text-foreground antialiased overflow-x-hidden font-body">
+                <ErrorTrackingProvider>
                 <script
                     dangerouslySetInnerHTML={{
                         __html: `
@@ -131,6 +142,7 @@ export default function RootLayout({
                         </GlobalProvider>
                     </AuthProvider>
                 </ThemeProvider>
+                </ErrorTrackingProvider>
             </body>
         </html>
     );

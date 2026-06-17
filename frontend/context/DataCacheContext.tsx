@@ -20,7 +20,7 @@ const DataCacheContext = createContext<DataCacheContextType | undefined>(undefin
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Keys that should persist to localStorage (large data worth preserving across refreshes)
-const PERSISTENT_KEY_PREFIXES = ['tickets-', 'electricity-', 'sop-', 'dashboard-', 'stock-', 'rooms-'];
+const PERSISTENT_KEY_PREFIXES = ['tickets-', 'electricity-', 'sop-', 'dashboard-', 'stock-', 'rooms-', 'water-', 'diesel-', 'analytics-', 'roster-'];
 
 const isPersistentKey = (key: string) =>
     PERSISTENT_KEY_PREFIXES.some(prefix => key.startsWith(prefix));

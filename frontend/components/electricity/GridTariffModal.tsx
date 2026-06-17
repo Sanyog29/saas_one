@@ -147,7 +147,7 @@ const GridTariffModal: React.FC<GridTariffModalProps> = ({
                                 </div>
                                 <div>
                                     <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Grid Tariff Configuration</h2>
-                                    <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>Set and update electricity rates (kVAh)</p>
+                                    <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>Set and update electricity rates (kWh)</p>
                                 </div>
                             </div>
                             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
@@ -165,7 +165,7 @@ const GridTariffModal: React.FC<GridTariffModalProps> = ({
                             </h3>
                             <form onSubmit={handleSubmit} className="space-y-4">
                                 <div className="space-y-1.5">
-                                    <label className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Rate per kVAh (₹)</label>
+                                    <label className={`text-[10px] font-black uppercase tracking-widest ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Rate per kWh (₹)</label>
                                     <input
                                         type="number"
                                         step="0.01"

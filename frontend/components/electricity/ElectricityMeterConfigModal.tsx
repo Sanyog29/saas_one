@@ -15,7 +15,7 @@ interface ElectricityMeterConfigModalProps {
 /**
  * Modal for adding/editing electricity meters
  * PRD v2: Includes multiplier configuration (CT/PT ratios)
- * PRD: Unit is kVAh exclusively
+ * PRD: Unit is kWh exclusively
  * Uses global primary color theme
  */
 const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = ({
@@ -190,10 +190,10 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                             </select>
                         </label>
 
-                        {/* Current Reading - PRD: kVAh unit */}
+                        {/* Current Reading - PRD: kWh unit */}
                         <label className="flex flex-col gap-1.5">
                             <span className={`text-xs font-bold ${isDark ? 'text-slate-500' : 'text-slate-500'} uppercase tracking-wide`}>
-                                Current Reading (kVAh)
+                                Current Reading (kWh)
                             </span>
                             <input
                                 type="text"
@@ -215,7 +215,7 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                                 <div className="flex items-center gap-2">
                                     <Calculator className={`w-4 h-4 ${isDark ? 'text-primary' : 'text-primary'}`} />
                                     <span className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                                        Meter Factor (Multiplier)
+                                        Meter Constant
                                     </span>
                                     <span className={`text-xs ${isDark ? 'text-primary' : 'text-primary'} font-mono`}>
                                         ×{computedMultiplier().toFixed(2)}
@@ -239,7 +239,7 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                                     >
                                         <div className={`px-4 pb-4 space-y-4 ${isDark ? 'border-t border-[#21262d]' : 'border-t border-slate-100'}`}>
                                             <p className={`text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'} pt-3`}>
-                                                Configure CT/PT ratios to calculate the meter multiplier for accurate readings.
+                                                Configure CT/PT ratios to calculate the meter constant for accurate readings.
                                             </p>
 
                                             {/* CT Ratio */}
@@ -310,7 +310,7 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                                             {/* Multiplier Preview */}
                                             <div className={`rounded-lg p-3 ${isDark ? 'bg-primary/10 border-primary/20' : 'bg-primary/5 border-primary/20'} border`}>
                                                 <div className="flex justify-between items-center">
-                                                    <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Computed Multiplier</span>
+                                                    <span className={`text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Computed Constant</span>
                                                     <span className={`text-lg font-black ${isDark ? 'text-primary' : 'text-primary'}`}>
                                                         ×{computedMultiplier().toFixed(2)}
                                                     </span>

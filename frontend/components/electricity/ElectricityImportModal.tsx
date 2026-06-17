@@ -32,7 +32,7 @@ function parseDate(raw: string): string | null {
     const trimmed = raw.trim();
     // YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-    // DD/MM/YYYY or DD-MM-YYYY
+    // DD/MM/YYYY or DD-MM-YYYY or YY-MM-DD
     const parts = trimmed.split(/[\/\-]/);
     if (parts.length === 3) {
         const [a, b, c] = parts;
@@ -40,8 +40,20 @@ function parseDate(raw: string): string | null {
             // YYYY-MM-DD already
             return `${a}-${b.padStart(2, '0')}-${c.padStart(2, '0')}`;
         }
+        
+        let year = c;
+        // If year is 2 digits, prepend 20
+        if (year.length === 2) {
+            year = `20${year}`;
+        } else if (year.length !== 4 && a.length === 2) {
+            // It might be YY-MM-DD like 26-02-02
+            let y = a;
+            if (y.length === 2) y = `20${y}`;
+            return `${y}-${b.padStart(2, '0')}-${c.padStart(2, '0')}`;
+        }
+        
         // DD/MM/YYYY
-        return `${c}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`;
+        return `${year}-${b.padStart(2, '0')}-${a.padStart(2, '0')}`;
     }
     return null;
 }
@@ -96,7 +108,7 @@ const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
     isOpen, onClose, propertyId, meters, onSuccess
 }) => {
     const [selectedMeterId, setSelectedMeterId] = useState('');
-    const [multiplier, setMultiplier] = useState(1.0);
+    const [meterConstant, setMeterConstant] = useState(1.0);
     const [rows, setRows] = useState<ParsedRow[]>([]);
     const [fileName, setFileName] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -136,7 +148,7 @@ const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
                 reading_date: r.date,
                 opening_reading: r.openingReading,
                 closing_reading: r.closingReading,
-                multiplier_value_used: multiplier,
+                multiplier_value_used: meterConstant,
                 notes: r.notes || undefined,
             }));
 
@@ -162,7 +174,7 @@ const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
 
     const handleClose = () => {
         setSelectedMeterId('');
-        setMultiplier(1.0);
+        setMeterConstant(1.0);
         setRows([]);
         setFileName('');
         setSubmitError('');
@@ -222,20 +234,20 @@ const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
                         </select>
                     </div>
 
-                    {/* Step 2.1: Multiplier */}
+                    {/* Step 2.1: Meter Constant */}
                     <div>
                         <label className="block text-sm font-bold text-gray-700 mb-1.5 flex items-center justify-between">
-                            Step 2.1: Multiplier (Factor)
+                            Step 2.1: Meter Constant
                             <span className="text-[10px] font-normal text-gray-400 capitalize italic">usually 1, 10, or 40 (CT ratio)</span>
                         </label>
                         <input
                             type="number"
                             step="any"
                             min="0"
-                            value={multiplier || ''}
-                            onChange={e => setMultiplier(parseFloat(e.target.value) || 0)}
+                            value={meterConstant || ''}
+                            onChange={e => setMeterConstant(parseFloat(e.target.value) || 0)}
                             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 bg-white"
-                            placeholder="Enter multiplier (e.g. 1.0)"
+                            placeholder="Enter meter constant (e.g. 1.0)"
                         />
                     </div>
 
@@ -297,7 +309,7 @@ const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
                                                     <td className="py-2 px-3 text-xs whitespace-nowrap">{isNaN(row.closingReading) ? '—' : row.closingReading}</td>
                                                     <td className="py-2 px-3 text-xs font-bold whitespace-nowrap">
                                                         {(!isNaN(row.openingReading) && !isNaN(row.closingReading))
-                                                            ? `${((row.closingReading - row.openingReading) * multiplier).toFixed(2)} kVAh`
+                                                            ? `${((row.closingReading - row.openingReading) * meterConstant).toFixed(2)} kWh`
                                                             : '—'}
                                                     </td>
                                                     <td className="py-2 px-3 text-xs text-gray-400 whitespace-nowrap">{row.notes || '—'}</td>
