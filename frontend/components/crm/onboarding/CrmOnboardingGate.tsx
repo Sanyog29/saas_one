@@ -20,11 +20,6 @@ export default function CrmOnboardingGate({ children }: { children: React.ReactN
     const pathname = usePathname();
     const orgId = params.orgId as string;
 
-    const isSettingsPage = pathname.endsWith('/settings');
-    const currentRouteMatchesNext = nextTourId
-        ? pathname.endsWith(TOUR_ROUTES[nextTourId]) || pathname.endsWith(TOUR_ROUTES[nextTourId] + '/')
-        : false;
-
     if (!isLoaded) {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">
@@ -33,7 +28,7 @@ export default function CrmOnboardingGate({ children }: { children: React.ReactN
         );
     }
 
-    if (allCompleted || isSettingsPage || currentRouteMatchesNext) return <>{children}</>;
+    if (allCompleted || completedCount > 0) return <>{children}</>;
 
     const progress = (completedCount / totalCount) * 100;
 

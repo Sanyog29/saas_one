@@ -24,19 +24,38 @@ export default function CrmTour({ tourId, steps, delayMs = 800, onComplete }: Cr
         return () => clearTimeout(t);
     }, [shouldAutoStart, delayMs]);
 
+    const finishTour = useCallback(() => {
+        setRun(false);
+        setStepIndex(0);
+        markComplete();
+        onComplete?.();
+    }, [markComplete, onComplete]);
+
     const handleEvent = useCallback((data: EventData, controls: Controls) => {
-        const { action, type, status } = data;
+        const { action, type, status, index } = data;
 
         if (type === EVENTS.STEP_AFTER) {
-            if (action === ACTIONS.NEXT) setStepIndex(i => i + 1);
-            if (action === ACTIONS.PREV) setStepIndex(i => i - 1);
+            if (action === ACTIONS.NEXT) {
+                if (index >= steps.length - 1) {
+                    finishTour();
+                } else {
+                    setStepIndex(i => i + 1);
+                }
+            }
+            if (action === ACTIONS.PREV) setStepIndex(i => Math.max(0, i - 1));
+        }
+
+        if ((type as string) === 'error:target_not_found') {
+            if (index >= steps.length - 1) {
+                finishTour();
+            } else {
+                setStepIndex(i => i + 1);
+            }
+            return;
         }
 
         if (status === STATUS.FINISHED) {
-            setRun(false);
-            setStepIndex(0);
-            markComplete();
-            onComplete?.();
+            finishTour();
             return;
         }
 
@@ -44,7 +63,7 @@ export default function CrmTour({ tourId, steps, delayMs = 800, onComplete }: Cr
             setRun(false);
             setStepIndex(0);
         }
-    }, [markComplete]);
+    }, [markComplete, onComplete, steps.length, finishTour]);
 
     useEffect(() => {
         const handler = (e: CustomEvent) => {
