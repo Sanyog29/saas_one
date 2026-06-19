@@ -15,6 +15,16 @@ async function orgMemberIds(organizationId: string): Promise<string[]> {
     return [...new Set([...(p.data || []), ...(o.data || [])].map((m: any) => m.user_id))];
 }
 
+async function bdMemberIds(organizationId: string): Promise<string[]> {
+    const { data } = await supabaseAdmin
+        .from('organization_memberships')
+        .select('user_id')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+        .in('role', ['bd_rep', 'bd_admin']);
+    return (data || []).map((m: any) => m.user_id);
+}
+
 // GET /api/crm/settings?type=statuses|sources|properties|meta|all
 export async function GET(request: NextRequest) {
     const access = await resolveCrmAccess(request, readOrgId(request));
@@ -59,7 +69,8 @@ export async function GET(request: NextRequest) {
         orgOrGlobal(supabaseAdmin.from('crm_lead_sources').select('*').eq('is_active', true), org).order('name'),
         supabaseAdmin.from('properties').select('id, name, code').eq('organization_id', org).order('name'),
     ]);
-    const memberIds = await orgMemberIds(org);
+    const scope = new URL(request.url).searchParams.get('scope');
+    const memberIds = scope === 'bd' ? await bdMemberIds(org) : await orgMemberIds(org);
     const { data: users } = memberIds.length
         ? await supabaseAdmin.from('users').select('id, full_name, email').in('id', memberIds).order('full_name')
         : { data: [] as any[] };

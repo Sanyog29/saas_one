@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
     const requestedType = searchParams.get('type') || 'rep';
     const propertyId = searchParams.get('property_id');
     const userId = searchParams.get('user_id');
+    const city = searchParams.get('city');
     const period = (searchParams.get('period') || 'all') as 'today' | 'month' | 'all';
     const org = access.organizationId;
 
@@ -105,6 +106,7 @@ export async function GET(request: NextRequest) {
             .eq('organization_id', org)
             .eq('is_archived', false);
         if (!adminAllOrg) leadsQ = leadsQ.eq('assigned_to', targetUserId);
+        if (city) leadsQ = leadsQ.or(`city.ilike.%${city}%,location.ilike.%${city}%`);
         const { data: leads } = await leadsQ;
 
         const all = (leads || []) as any[];
@@ -194,6 +196,7 @@ export async function GET(request: NextRequest) {
         .eq('organization_id', org)
         .eq('is_archived', false);
     if (propertyId) leadQ = leadQ.eq('property_interest', propertyId);
+    if (city) leadQ = leadQ.or(`city.ilike.%${city}%,location.ilike.%${city}%`);
     const { data: allLeads } = await leadQ;
     const leads = (allLeads || []) as any[];
 

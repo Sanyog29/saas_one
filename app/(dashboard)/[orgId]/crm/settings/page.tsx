@@ -159,7 +159,7 @@ export default function CRMSettingsPage() {
     useEffect(() => {
         if (activeTab === 'properties') fetchProperties();
         if (activeTab === 'territories') {
-            fetch(`/api/crm/settings?type=all&org_id=${orgId}`)
+            fetch(`/api/crm/settings?type=all&org_id=${orgId}&scope=bd`)
                 .then(r => r.ok ? r.json() : null)
                 .then(data => { if (data?.users) setUsers(data.users); })
                 .catch(() => {});

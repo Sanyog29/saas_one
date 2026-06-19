@@ -425,7 +425,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                                 body: JSON.stringify({ next_followup_date: val }),
                                                             });
                                                             if (res.ok) {
-                                                                const updated = { ...lead, next_followup_date: val };
+                                                                const updated: CRMLead = { ...lead, next_followup_date: val || undefined };
                                                                 setLead(updated);
                                                                 onLeadUpdate?.(updated);
                                                             }
@@ -450,7 +450,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                                 body: JSON.stringify({ followup_notes: val }),
                                                             });
                                                             if (res.ok) {
-                                                                const updated = { ...lead, followup_notes: val };
+                                                                const updated: CRMLead = { ...lead, followup_notes: val || undefined };
                                                                 setLead(updated);
                                                                 onLeadUpdate?.(updated);
                                                             }

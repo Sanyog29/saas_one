@@ -1153,7 +1153,7 @@ const OrgAdminDashboard = () => {
                             </button>
                             <button
                                 onClick={() => router.push(`/${org?.id}/crm`)}
-                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200"
+                                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm text-text-secondary hover:bg-muted hover:text-text-primary"
                             >
                                 <TrendingUp className="w-4 h-4" />
                                 Business Development

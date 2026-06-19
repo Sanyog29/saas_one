@@ -167,6 +167,8 @@ function LeadRow({ lead, index, showCampaign = false }: { lead: PriorityLead | A
     );
 }
 
+const CITIES = ['Mumbai', 'Bangalore', 'Noida'];
+
 export default function CRMDashboard() {
     const { user } = useAuth();
     const params = useParams();
@@ -174,14 +176,26 @@ export default function CRMDashboard() {
     const [stats, setStats] = useState<CRMDashboardStats | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [period, setPeriod] = useState<StatPeriod>('all');
+    const [selectedCity, setSelectedCity] = useState('all');
+    const [isCityOpen, setIsCityOpen] = useState(false);
+    const cityRef = React.useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (cityRef.current && !cityRef.current.contains(e.target as Node)) setIsCityOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
 
     useEffect(() => {
         setIsLoading(true);
-        fetch(`/api/crm/stats?type=rep&period=${period}`)
+        const cityParam = selectedCity !== 'all' ? `&city=${encodeURIComponent(selectedCity)}` : '';
+        fetch(`/api/crm/stats?type=rep&period=${period}${cityParam}`)
             .then(r => r.ok ? r.json() : null)
             .then(data => { setStats(data); setIsLoading(false); })
             .catch(() => setIsLoading(false));
-    }, [period]);
+    }, [period, selectedCity]);
 
     if (isLoading) {
         return (
@@ -228,6 +242,45 @@ export default function CRMDashboard() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
+                    <div ref={cityRef} className="relative">
+                        <button
+                            onClick={() => setIsCityOpen(!isCityOpen)}
+                            className="flex items-center gap-2 px-4 py-2 bg-surface-elevated border border-border rounded-xl hover:border-primary transition-all text-sm font-bold text-text-primary min-w-[140px]"
+                        >
+                            <MapPin className="w-4 h-4 text-primary" />
+                            <span className="truncate">{selectedCity === 'all' ? 'All Cities' : selectedCity}</span>
+                            <ChevronRight className={`w-4 h-4 text-text-tertiary transition-transform ${isCityOpen ? 'rotate-90' : ''}`} />
+                        </button>
+                        <AnimatePresence>
+                            {isCityOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -4 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -4 }}
+                                    transition={{ duration: 0.15 }}
+                                    className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-xl z-50 min-w-[180px] overflow-hidden"
+                                >
+                                    <button
+                                        onClick={() => { setSelectedCity('all'); setIsCityOpen(false); }}
+                                        className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${selectedCity === 'all' ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-muted'}`}
+                                    >
+                                        <MapPin className="w-3.5 h-3.5" />
+                                        All Cities
+                                    </button>
+                                    {CITIES.map(c => (
+                                        <button
+                                            key={c}
+                                            onClick={() => { setSelectedCity(c); setIsCityOpen(false); }}
+                                            className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${selectedCity === c ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-muted'}`}
+                                        >
+                                            <MapPin className="w-3.5 h-3.5" />
+                                            {c}
+                                        </button>
+                                    ))}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
                     <Link
                         href={`/${orgId}/crm/leads`}
                         data-tour="crm-add-lead"

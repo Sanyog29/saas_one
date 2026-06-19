@@ -10,7 +10,6 @@ import {
     User,
     Building,
     X,
-    Command,
     Loader2,
     ArrowRight,
     SearchX,
@@ -280,10 +279,6 @@ export function UniversalSearch() {
                         <X className="w-3.5 h-3.5" />
                     </button>
                 )}
-                <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] text-text-tertiary shrink-0">
-                    <Command className="w-3 h-3" />
-                    <span>K</span>
-                </div>
             </div>
 
             {/* Dropdown anchored below search bar */}
