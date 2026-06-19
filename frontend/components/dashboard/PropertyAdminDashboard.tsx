@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Ticket, Settings, UserCircle, UsersRound,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Building2,
     Calendar, CheckCircle2, AlertCircle, Clock, Coffee, IndianRupee, FileDown, Fuel, Store, Activity, Upload, FileBarChart, Menu, X, Zap, RefreshCw,
-    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets
+    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets, TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -548,6 +548,13 @@ const PropertyAdminDashboard = () => {
                             >
                                 <Coffee className="w-4 h-4" />
                                 Cafeteria Revenue
+                            </button>
+                            <button
+                                onClick={() => router.push(`/${property?.organization_id}/crm`)}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm text-text-secondary hover:bg-muted hover:text-text-primary"
+                            >
+                                <TrendingUp className="w-4 h-4" />
+                                CRM
                             </button>
                         </div>
                     </div>

@@ -1,16 +1,114 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { LeadsTable, LeadDetailDrawer, LeadForm } from '@/frontend/components/crm';
 import { CRMLead, CreateLeadInput } from '@/frontend/types/crm';
+import { CrmTour, leadsTableSteps, leadDetailSteps } from '@/frontend/components/crm/onboarding';
+import { useCrmTour } from '@/frontend/hooks/useCrmTour';
+
+function useResolvedFilters() {
+    const searchParams = useSearchParams();
+    const [statusFilter, setStatusFilter] = useState<string[]>([]);
+    const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+
+    useEffect(() => {
+        const names = searchParams.getAll('status');
+        const filterVal = searchParams.get('filter');
+
+        if (filterVal && !names.length) {
+            if (filterVal === 'all') {
+                setStatusFilter([]);
+                return;
+            }
+            fetch('/api/crm/statuses')
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (!data?.statuses) return;
+                    const allStatuses = data.statuses as any[];
+                    const terminalIds = new Set(
+                        allStatuses.filter((s: any) => s.is_terminal).map((s: any) => s.id)
+                    );
+                    const nonTerminalIds = new Set(
+                        allStatuses.filter((s: any) => !s.is_terminal).map((s: any) => s.id)
+                    );
+
+                    switch (filterVal) {
+                        case 'open':
+                            setStatusFilter([...nonTerminalIds]);
+                            break;
+                        case 'closed':
+                            setStatusFilter([...terminalIds]);
+                            break;
+                        case 'in_progress':
+                        case 'overdue':
+                            setStatusFilter([...nonTerminalIds]);
+                            break;
+                        default:
+                            setStatusFilter([]);
+                    }
+                })
+                .catch(() => setStatusFilter([]));
+            return;
+        }
+
+        if (!names.length) { setStatusFilter([]); return; }
+
+        fetch('/api/crm/statuses')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data?.statuses) return;
+                const uuids: string[] = [];
+                for (const name of names) {
+                    const norm = name.toLowerCase().replace(/\s+/g, '');
+                    const match = (data.statuses as any[]).find(
+                        (s: any) => s.name.toLowerCase().replace(/\s+/g, '') === norm
+                    );
+                    if (match) uuids.push(match.id);
+                }
+                setStatusFilter(uuids);
+            })
+            .catch(() => setStatusFilter([]));
+    }, [searchParams]);
+
+    return { statusFilter, priorityFilter };
+}
 
 export default function LeadsPage() {
     const { membership } = useAuth();
+    const router = useRouter();
+    const params = useParams();
+    const searchParams = useSearchParams();
+    const orgId = params.orgId as string;
     const [selectedLead, setSelectedLead] = useState<CRMLead | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [editingLead, setEditingLead] = useState<CRMLead | null>(null);
+    const { statusFilter } = useResolvedFilters();
+    const { isCompleted: leadsTableDone } = useCrmTour('crm-leads');
+    const { isCompleted: leadDetailDone } = useCrmTour('crm-lead-detail');
+    const autoOpenedRef = useRef(false);
+    const queryLeadRef = useRef(false);
+
+    // Auto-open lead drawer when navigated from dashboard with ?lead=id
+    useEffect(() => {
+        if (queryLeadRef.current) return;
+        const leadId = searchParams.get('lead');
+        if (!leadId) return;
+        queryLeadRef.current = true;
+
+        fetch(`/api/crm/leads/${leadId}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.lead) {
+                    setSelectedLead(data.lead);
+                    setIsDetailOpen(true);
+                    router.replace(`/${orgId}/crm/leads`);
+                }
+            })
+            .catch(() => {});
+    }, [searchParams, orgId, router]);
 
     const handleLeadSelect = (lead: CRMLead) => {
         setSelectedLead(lead);
@@ -44,11 +142,27 @@ export default function LeadsPage() {
         }
     };
 
+    const handleLeadsTableComplete = () => {
+        if (!leadDetailDone && !autoOpenedRef.current) {
+            autoOpenedRef.current = true;
+            fetch('/api/crm/leads?limit=1')
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                    if (data?.leads?.[0]) {
+                        setSelectedLead(data.leads[0]);
+                        setIsDetailOpen(true);
+                    }
+                })
+                .catch(() => {});
+        }
+    };
+
     return (
         <div>
             <LeadsTable
                 onLeadSelect={handleLeadSelect}
                 onCreateLead={handleCreateLead}
+                filters={statusFilter.length ? { status: statusFilter } : undefined}
             />
 
             <LeadDetailDrawer
@@ -71,6 +185,20 @@ export default function LeadsPage() {
                 initialData={editingLead || undefined}
                 mode={editingLead ? 'edit' : 'create'}
             />
+
+            <CrmTour
+                tourId="crm-leads"
+                steps={leadsTableSteps}
+                onComplete={handleLeadsTableComplete}
+            />
+            {isDetailOpen && (
+                <CrmTour
+                    tourId="crm-lead-detail"
+                    steps={leadDetailSteps}
+                    delayMs={1200}
+                    onComplete={() => router.push(`/${orgId}/crm/calendar`)}
+                />
+            )}
         </div>
     );
 }

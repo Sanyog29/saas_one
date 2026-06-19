@@ -5,6 +5,7 @@ import { Search, Filter, Download, Plus, ChevronDown, MoreHorizontal, Phone, Mai
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { CRMLead, LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
+import { getStageVisual } from '@/frontend/lib/crm/stages';
 
 interface LeadsTableProps {
     onLeadSelect?: (lead: CRMLead) => void;
@@ -15,19 +16,6 @@ interface LeadsTableProps {
         property_interest?: string[];
     };
 }
-
-const STATUS_COLORS: Record<string, string> = {
-    'New Lead': 'bg-blue-100 text-blue-700 border-blue-200',
-    'Contacted': 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    'Meeting Scheduled': 'bg-orange-100 text-orange-700 border-orange-200',
-    'Site Visit Scheduled': 'bg-orange-100 text-orange-700 border-orange-200',
-    'Proposal Shared': 'bg-purple-100 text-purple-700 border-purple-200',
-    'Negotiation': 'bg-teal-100 text-teal-700 border-teal-200',
-    'Won': 'bg-green-100 text-green-700 border-green-200',
-    'Lost': 'bg-red-100 text-red-700 border-red-200',
-    'Dropped': 'bg-gray-100 text-gray-600 border-gray-200',
-    'On Hold': 'bg-slate-100 text-slate-600 border-slate-200'
-};
 
 export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: LeadsTableProps) {
     const { user } = useAuth();
@@ -40,11 +28,14 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     const [showFilters, setShowFilters] = useState(false);
     const [selectedFilters, setSelectedFilters] = useState<{
         status?: string[];
-        priority?: string[];
-        assigned_to?: string[];
+        campaign?: string[];
+        city?: string[];
+        date_from?: string;
+        date_to?: string;
     }>({});
     const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [sources, setSources] = useState<LeadSource[]>([]);
+    const [campaigns, setCampaigns] = useState<string[]>([]);
     const [sortBy, setSortBy] = useState('created_at');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -67,9 +58,14 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
             if (selectedFilters.status?.length) {
                 selectedFilters.status.forEach(s => params.append('status', s));
             }
-            if (selectedFilters.priority?.length) {
-                selectedFilters.priority.forEach(p => params.append('priority', p));
+            if (selectedFilters.campaign?.length) {
+                selectedFilters.campaign.forEach(c => params.append('campaign', c));
             }
+            if (selectedFilters.city?.length) {
+                selectedFilters.city.forEach(c => params.append('city', c));
+            }
+            if (selectedFilters.date_from) params.set('date_from', selectedFilters.date_from);
+            if (selectedFilters.date_to) params.set('date_to', selectedFilters.date_to);
 
             const res = await fetch(`/api/crm/leads?${params}`);
             if (res.ok) {
@@ -87,11 +83,18 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
 
     const fetchConfigs = async () => {
         try {
-            const res = await fetch('/api/crm/settings?type=all');
-            if (res.ok) {
-                const data = await res.json();
+            const [settingsRes, campaignsRes] = await Promise.all([
+                fetch('/api/crm/settings?type=all'),
+                fetch('/api/crm/campaigns'),
+            ]);
+            if (settingsRes.ok) {
+                const data = await settingsRes.json();
                 setStatuses(data.statuses || []);
                 setSources(data.sources || []);
+            }
+            if (campaignsRes.ok) {
+                const data = await campaignsRes.json();
+                setCampaigns((data.campaigns || []).map((c: any) => c.name).filter(Boolean));
             }
         } catch (error) {
             console.error('Failed to fetch configs:', error);
@@ -125,23 +128,16 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
 
     const getStatusBadge = (lead: CRMLead) => {
         const statusName = lead.status_info?.name || 'Unknown';
+        const v = getStageVisual(statusName);
+        const color = lead.status_info?.color || v.color;
+        const Icon = v.icon;
         return (
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${STATUS_COLORS[statusName] || 'bg-gray-100 text-gray-600'}`}>
+            <span
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border"
+                style={{ backgroundColor: `${color}1A`, color, borderColor: `${color}44` }}
+            >
+                <Icon className="w-3 h-3" />
                 {statusName}
-            </span>
-        );
-    };
-
-    const getPriorityBadge = (priority: string) => {
-        const colors = {
-            'Low': 'bg-slate-100 text-slate-600',
-            'Medium': 'bg-blue-100 text-blue-600',
-            'High': 'bg-orange-100 text-orange-600',
-            'Urgent': 'bg-red-100 text-red-600'
-        };
-        return (
-            <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[priority as keyof typeof colors] || colors.Medium}`}>
-                {priority}
             </span>
         );
     };
@@ -149,27 +145,13 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     return (
         <div className="space-y-4">
             {/* Header */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex-1 max-w-md">
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
-                        <input
-                            type="text"
-                            placeholder="Search leads..."
-                            value={search}
-                            onChange={(e) => {
-                                setSearch(e.target.value);
-                                setPage(1);
-                            }}
-                            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                        />
-                    </div>
-                </div>
+            <div className="flex items-center justify-end gap-3">
                 <div className="flex items-center gap-3">
                     <button
+                        data-tour="leads-filters"
                         onClick={() => setShowFilters(!showFilters)}
-                        className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-medium transition-colors ${
-                            showFilters ? 'bg-primary text-white border-primary' : 'border-slate-200 text-text-secondary hover:bg-slate-50'
+                        className={`flex items-center gap-2 px-4 py-2.5 border rounded-xl text-sm font-bold transition-colors ${
+                            showFilters ? 'bg-primary text-white border-primary' : 'border-border text-text-secondary hover:bg-surface-elevated'
                         }`}
                     >
                         <Filter className="w-4 h-4" />
@@ -178,14 +160,15 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                             <span className="w-2 h-2 bg-primary rounded-full" />
                         )}
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-text-secondary hover:bg-slate-50 transition-colors">
+                    <button className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl text-sm font-bold text-text-secondary hover:bg-surface-elevated transition-colors opacity-50 cursor-not-allowed" disabled title="Coming soon">
                         <Download className="w-4 h-4" />
                         Export
                     </button>
                     {onCreateLead && (
                         <button
+                            data-tour="leads-add"
                             onClick={onCreateLead}
-                            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors"
+                            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors"
                         >
                             <Plus className="w-4 h-4" />
                             Add Lead
@@ -203,53 +186,145 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                         exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden"
                     >
-                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                {/* Status Filter */}
+                        <div className="bg-surface-elevated rounded-xl p-4 border border-border space-y-4">
+                            <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-2">Status</label>
-                                    <select
-                                        multiple
-                                        value={selectedFilters.status || []}
-                                        onChange={(e) => {
-                                            const values = Array.from(e.target.selectedOptions, opt => opt.value);
-                                            setSelectedFilters({ ...selectedFilters, status: values });
-                                        }}
-                                        className="w-full border border-slate-200 rounded-lg p-2 text-sm h-24"
-                                    >
-                                        {statuses.map(s => (
-                                            <option key={s.id} value={s.id}>{s.name}</option>
-                                        ))}
-                                    </select>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Status</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {statuses.map(s => {
+                                            const active = selectedFilters.status?.includes(s.id);
+                                            return (
+                                                <button
+                                                    key={s.id}
+                                                    onClick={() => {
+                                                        const current = selectedFilters.status || [];
+                                                        const next = active ? current.filter(v => v !== s.id) : [...current, s.id];
+                                                        setSelectedFilters({ ...selectedFilters, status: next });
+                                                        setPage(1);
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-primary text-white border-primary'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                    }`}
+                                                    style={active ? {} : { borderColor: s.color ? `${s.color}44` : undefined }}
+                                                >
+                                                    {active && <span className="mr-1">✓</span>}{s.name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                {/* Priority Filter */}
                                 <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-2">Priority</label>
-                                    <select
-                                        multiple
-                                        value={selectedFilters.priority || []}
-                                        onChange={(e) => {
-                                            const values = Array.from(e.target.selectedOptions, opt => opt.value);
-                                            setSelectedFilters({ ...selectedFilters, priority: values });
-                                        }}
-                                        className="w-full border border-slate-200 rounded-lg p-2 text-sm h-24"
-                                    >
-                                        <option value="Low">Low</option>
-                                        <option value="Medium">Medium</option>
-                                        <option value="High">High</option>
-                                        <option value="Urgent">Urgent</option>
-                                    </select>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Date Range</label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="date"
+                                            value={selectedFilters.date_from || ''}
+                                            onChange={(e) => { setSelectedFilters({ ...selectedFilters, date_from: e.target.value || undefined }); setPage(1); }}
+                                            className="px-3 py-1.5 rounded-xl text-xs font-bold border border-border bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        />
+                                        <span className="text-xs text-text-tertiary">to</span>
+                                        <input
+                                            type="date"
+                                            value={selectedFilters.date_to || ''}
+                                            onChange={(e) => { setSelectedFilters({ ...selectedFilters, date_to: e.target.value || undefined }); setPage(1); }}
+                                            className="px-3 py-1.5 rounded-xl text-xs font-bold border border-border bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                        />
+                                    </div>
                                 </div>
-                                {/* Quick Actions */}
-                                <div className="flex items-end">
+                                {campaigns.length > 0 && (
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Campaign</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {campaigns.map(c => {
+                                            const active = selectedFilters.campaign?.includes(c);
+                                            return (
+                                                <button
+                                                    key={c}
+                                                    onClick={() => {
+                                                        const current = selectedFilters.campaign || [];
+                                                        const next = active ? current.filter(v => v !== c) : [...current, c];
+                                                        setSelectedFilters({ ...selectedFilters, campaign: next });
+                                                        setPage(1);
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-primary text-white border-primary'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                    }`}
+                                                >
+                                                    {active && <span className="mr-1">✓</span>}{c}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                )}
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">City</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {['Mumbai', 'Bangalore', 'Noida'].map(c => {
+                                            const active = selectedFilters.city?.includes(c);
+                                            return (
+                                                <button
+                                                    key={c}
+                                                    onClick={() => {
+                                                        const current = selectedFilters.city || [];
+                                                        const next = active ? current.filter(v => v !== c) : [...current, c];
+                                                        setSelectedFilters({ ...selectedFilters, city: next });
+                                                        setPage(1);
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-primary text-white border-primary'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                    }`}
+                                                >
+                                                    {active && <span className="mr-1">✓</span>}{c}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Ring</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {Array.from({ length: 10 }, (_, i) => i + 1).map(r => {
+                                            const ringStatusIds = statuses.filter(s => s.name.toLowerCase() === `ring ${r}`).map(s => s.id);
+                                            const active = ringStatusIds.some(id => selectedFilters.status?.includes(id));
+                                            return (
+                                                <button
+                                                    key={r}
+                                                    onClick={() => {
+                                                        const current = selectedFilters.status || [];
+                                                        const next = active
+                                                            ? current.filter(v => !ringStatusIds.includes(v))
+                                                            : [...current, ...ringStatusIds];
+                                                        setSelectedFilters({ ...selectedFilters, status: next });
+                                                        setPage(1);
+                                                    }}
+                                                    className={`w-9 h-9 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-orange-500 text-white border-orange-500'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-orange-400'
+                                                    }`}
+                                                >
+                                                    {r}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <div className="flex justify-end">
                                     <button
                                         onClick={() => {
                                             setSelectedFilters({});
                                             setPage(1);
                                         }}
-                                        className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary"
+                                        className="px-4 py-2 text-xs font-bold text-text-secondary hover:text-text-primary transition-colors"
                                     >
-                                        Clear Filters
+                                        Clear All
                                     </button>
                                 </div>
                             </div>
@@ -259,35 +334,35 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
             </AnimatePresence>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-surface rounded-xl border border-border overflow-hidden" data-tour="leads-table">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200">
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Lead</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Contact</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Location</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Assigned To</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Status</th>
-                                <th className="text-right px-4 py-3 text-xs font-medium text-text-secondary">Deal Value</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Next Follow-up</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-text-secondary">Created</th>
+                            <tr className="bg-surface-elevated border-b border-border">
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Lead</th>
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Contact</th>
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Location</th>
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Assigned To</th>
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Status</th>
+                                <th className="text-right px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Deal Value</th>
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Follow-up</th>
+                                <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Created</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-border">
                             {isLoading ? (
                                 [...Array(5)].map((_, i) => (
                                     <tr key={i}>
                                         <td colSpan={8} className="px-4 py-4">
-                                            <div className="h-8 bg-slate-100 rounded animate-pulse" />
+                                            <div className="h-8 bg-muted rounded animate-pulse" />
                                         </td>
                                     </tr>
                                 ))
                             ) : leads.length === 0 ? (
                                 <tr>
                                     <td colSpan={8} className="px-4 py-12 text-center text-text-secondary">
-                                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <Search className="w-8 h-8 text-slate-400" />
+                                        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <Search className="w-8 h-8 text-text-tertiary" />
                                         </div>
                                         <p className="font-medium">No leads found</p>
                                         <p className="text-sm mt-1">Try adjusting your search or filters</p>
@@ -298,7 +373,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                     <tr
                                         key={lead.id}
                                         onClick={() => onLeadSelect?.(lead)}
-                                        className="hover:bg-slate-50 cursor-pointer transition-colors"
+                                        className="hover:bg-surface-elevated cursor-pointer transition-colors"
                                     >
                                         <td className="px-4 py-3">
                                             <div>
@@ -342,10 +417,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                             )}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <div className="flex items-center gap-2">
-                                                {getStatusBadge(lead)}
-                                                {getPriorityBadge(lead.priority)}
-                                            </div>
+                                            {getStatusBadge(lead)}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <p className="font-medium text-text-primary text-sm">
@@ -377,7 +449,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
 
                 {/* Pagination */}
                 {totalPages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-border">
                         <p className="text-sm text-text-secondary">
                             Showing {(page - 1) * 20 + 1} to {Math.min(page * 20, totalCount)} of {totalCount} leads
                         </p>
@@ -385,7 +457,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                             <button
                                 onClick={() => setPage(p => Math.max(1, p - 1))}
                                 disabled={page === 1}
-                                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+                                className="px-3 py-1.5 border border-border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-elevated"
                             >
                                 Previous
                             </button>
@@ -395,7 +467,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                             <button
                                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                                 disabled={page === totalPages}
-                                className="px-3 py-1.5 border border-slate-200 rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+                                className="px-3 py-1.5 border border-border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface-elevated"
                             >
                                 Next
                             </button>

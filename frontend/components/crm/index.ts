@@ -8,3 +8,8 @@ export { default as ImportWizard } from './ImportWizard';
 export { default as AIInsightsPanel } from './AIInsightsPanel';
 export { default as CampaignsManager } from './CampaignsManager';
 export { default as MetaIntegrationGuide } from './MetaIntegrationGuide';
+export { default as StatusInfoTooltip } from './StatusInfoTooltip';
+export { default as CallCoachPanel } from './CallCoachPanel';
+export { default as CoachingTrendChart } from './CoachingTrendChart';
+export { default as ExecutiveImpactReport } from './ExecutiveImpactReport';
+export { default as CampaignSpendManager } from './CampaignSpendManager';

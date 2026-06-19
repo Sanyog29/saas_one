@@ -4,12 +4,12 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { addRecentItem, getRecentItems, addRecentSearch, getRecentSearches, type RecentItem } from '@/frontend/utils/searchHistory';
-import { 
-    Search, 
-    Ticket, 
-    User, 
-    Building, 
-    X, 
+import {
+    Search,
+    Ticket,
+    User,
+    Building,
+    X,
     Command,
     Loader2,
     ArrowRight,
@@ -31,7 +31,7 @@ import {
 
 interface SearchResult {
     id: string;
-    type: 'ticket' | 'user' | 'property' | 'organization' | 'module';
+    type: 'ticket' | 'user' | 'property' | 'organization' | 'module' | 'lead';
     label: string;
     sublabel?: string;
     route?: string;
@@ -65,13 +65,22 @@ export function UniversalSearch() {
     const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
     const [recentSearches, setRecentSearches] = useState<string[]>([]);
     const inputRef = useRef<HTMLInputElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const abortRef = useRef<AbortController | null>(null);
     const router = useRouter();
     const params = useParams();
     const orgId = params?.orgId as string;
+    const [isCrmContext, setIsCrmContext] = useState(false);
 
-    // Pre-compute org-scoped modules once (instant, no network)
-    const scopedModules = useMemo(() => 
+    useEffect(() => {
+        setIsCrmContext(window.location.pathname.includes('/crm'));
+    }, []);
+
+    useEffect(() => {
+        setIsCrmContext(window.location.pathname.includes('/crm'));
+    }, [isOpen]);
+
+    const scopedModules = useMemo(() =>
         MODULES.map(m => ({
             ...m,
             route: orgId ? `/${orgId}${m.route}` : m.route
@@ -94,12 +103,24 @@ export function UniversalSearch() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Load recent items from localStorage when modal opens
+    // Click outside to close
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleClick = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClick);
+        return () => document.removeEventListener('mousedown', handleClick);
+    }, [isOpen]);
+
+    // Load recent items when opened
     useEffect(() => {
         if (isOpen) {
             setRecentItems(getRecentItems());
             setRecentSearches(getRecentSearches());
-            setTimeout(() => inputRef.current?.focus(), 100);
+            setTimeout(() => inputRef.current?.focus(), 50);
         } else {
             setQuery('');
             setResults([]);
@@ -108,7 +129,6 @@ export function UniversalSearch() {
 
     // Instant local filter + debounced DB search
     useEffect(() => {
-        // Cancel any in-flight request
         if (abortRef.current) {
             abortRef.current.abort();
             abortRef.current = null;
@@ -120,15 +140,13 @@ export function UniversalSearch() {
             return;
         }
 
-        // Layer 1: Instant module filter (0ms, no network)
         const q = query.toLowerCase();
-        const filteredModules: SearchResult[] = scopedModules.filter(m =>
+        const filteredModules: SearchResult[] = isCrmContext ? [] : scopedModules.filter(m =>
             m.label.toLowerCase().includes(q) ||
             m.sublabel.toLowerCase().includes(q) ||
             m.keywords.some(k => k.includes(q))
         );
 
-        // Layer 2: Instant recent items filter (0ms, from localStorage)
         const filteredRecent: SearchResult[] = recentItems
             .filter(r =>
                 r.label.toLowerCase().includes(q) ||
@@ -136,11 +154,9 @@ export function UniversalSearch() {
             )
             .map(r => ({ ...r, icon: undefined }));
 
-        // Show instant results immediately
         setResults([...filteredModules, ...filteredRecent]);
         setSelectedIndex(0);
 
-        // Layer 3: DB search (debounced, background)
         if (query.length >= 2) {
             setIsLoading(true);
             const controller = new AbortController();
@@ -148,13 +164,12 @@ export function UniversalSearch() {
 
             const timer = setTimeout(async () => {
                 try {
-                    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, {
+                    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}${isCrmContext ? '&scope=crm' : ''}${orgId ? `&org_id=${orgId}` : ''}`, {
                         signal: controller.signal
                     });
                     const data = await response.json();
                     const dbResults: SearchResult[] = data.results || [];
 
-                    // Merge: modules first, then recent, then fresh DB results (deduped)
                     const existingIds = new Set([...filteredModules, ...filteredRecent].map(r => r.id));
                     const newDbResults = dbResults.filter(r => !existingIds.has(r.id));
                     setResults([...filteredModules, ...filteredRecent, ...newDbResults]);
@@ -178,7 +193,6 @@ export function UniversalSearch() {
     const handleSelect = useCallback((item: SearchResult) => {
         setIsOpen(false);
 
-        // Save to recent items for instant future access
         let route = '';
         if (item.type === 'module' && item.route) {
             route = item.route;
@@ -190,6 +204,8 @@ export function UniversalSearch() {
             route = `/users/${item.id}`;
         } else if (item.type === 'organization') {
             route = `/org/${item.id}/dashboard`;
+        } else if (item.type === 'lead') {
+            route = orgId ? `/${orgId}/crm/leads?lead=${item.id}` : (item.organization_id ? `/${item.organization_id}/crm/leads?lead=${item.id}` : '');
         }
 
         addRecentItem({
@@ -225,192 +241,175 @@ export function UniversalSearch() {
             case 'user': return <User className="w-4 h-4" />;
             case 'property': return <Building2 className="w-4 h-4" />;
             case 'organization': return <Building className="w-4 h-4" />;
+            case 'lead': return <Handshake className="w-4 h-4" />;
             default: return <Search className="w-4 h-4" />;
         }
     };
 
+    const hasDropdownContent = isOpen && (
+        query.length >= 1 ||
+        recentSearches.length > 0 ||
+        recentItems.length > 0 ||
+        !isCrmContext
+    );
+
     return (
-        <>
-            {/* Search Trigger Button */}
-            <button
-                onClick={() => setIsOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 text-sm text-text-secondary bg-muted hover:bg-muted-hover border border-border rounded-lg transition-smooth w-full min-w-[160px] max-w-[320px] group shadow-sm hover:shadow-md"
+        <div ref={containerRef} className="relative w-full min-w-[160px] max-w-[420px]">
+            {/* Search Input Bar */}
+            <div
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm border rounded-xl transition-all w-full ${
+                    isOpen
+                        ? 'bg-surface border-primary/40 shadow-lg ring-2 ring-primary/10'
+                        : 'bg-muted hover:bg-muted-hover border-border shadow-sm hover:shadow-md'
+                }`}
             >
-                <Search className="w-4 h-4 group-hover:text-primary transition-colors" />
-                <span className="flex-1 text-left">Search anything...</span>
-                <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] text-text-tertiary">
+                <Search className={`w-4 h-4 shrink-0 transition-colors ${isOpen ? 'text-primary' : 'text-text-tertiary'}`} />
+                <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder={isCrmContext ? 'Search leads, companies...' : 'Search anything...'}
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-text-primary placeholder:text-text-tertiary font-body"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onFocus={() => setIsOpen(true)}
+                />
+                {isLoading && <Loader2 className="w-4 h-4 text-primary animate-spin shrink-0" />}
+                {isOpen && query.length > 0 && !isLoading && (
+                    <button onClick={() => setQuery('')} className="p-0.5 hover:bg-muted rounded-full text-text-tertiary">
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                )}
+                <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] text-text-tertiary shrink-0">
                     <Command className="w-3 h-3" />
                     <span>K</span>
                 </div>
-            </button>
+            </div>
 
-            {/* Search Modal Overlay */}
+            {/* Dropdown anchored below search bar */}
             <AnimatePresence>
-                {isOpen && (
-                    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh]">
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsOpen(false)}
-                            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-                        />
-                        
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.95, y: -20 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -20 }}
-                            className="relative w-full max-w-2xl mx-4 bg-surface rounded-2xl border border-border shadow-2xl overflow-hidden glass-morphism"
-                        >
-                            {/* Search Header */}
-                            <div className="relative border-b border-border p-4 flex items-center gap-3">
-                                <Search className="w-5 h-5 text-text-tertiary" />
-                                <input
-                                    ref={inputRef}
-                                    type="text"
-                                    placeholder="Type to search (tickets, properties, users...)"
-                                    className="flex-1 bg-transparent border-none outline-none text-text-primary placeholder:text-text-tertiary text-lg font-body"
-                                    value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                />
-                                {isLoading ? (
-                                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
-                                ) : (
-                                    <button 
-                                        onClick={() => setIsOpen(false)}
-                                        className="p-1.5 hover:bg-muted rounded-full text-text-tertiary transition-smooth"
-                                    >
-                                        <X className="w-5 h-5" />
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Search Content */}
-                            <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden">
-                                {query.length < 1 ? (
-                                    <div className="p-2">
-                                        {/* Recent Searches */}
-                                        {recentSearches.length > 0 && (
-                                            <div className="mb-3">
-                                                <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold text-text-tertiary">Recent Searches</p>
-                                                <div className="flex flex-wrap gap-1.5 px-3 pb-2">
-                                                    {recentSearches.map((s, i) => (
-                                                        <button
-                                                            key={`rs-${i}`}
-                                                            onClick={() => setQuery(s)}
-                                                            className="px-2.5 py-1 rounded-lg text-xs bg-muted hover:bg-muted-hover text-text-secondary border border-border transition-smooth"
-                                                        >
-                                                            {s}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Recent Items */}
-                                        {recentItems.length > 0 && (
-                                            <div className="mb-3">
-                                                <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold text-text-tertiary">Recently Visited</p>
-                                                <div className="space-y-0.5">
-                                                    {recentItems.slice(0, 5).map((item, index) => (
-                                                        <button
-                                                            key={`ri-${item.id}`}
-                                                            onClick={() => handleSelect(item as SearchResult)}
-                                                            className="w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-smooth hover:bg-muted group"
-                                                        >
-                                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted text-text-tertiary group-hover:bg-primary/10 group-hover:text-primary transition-smooth">
-                                                                {getIcon(item.type)}
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-sm font-medium text-text-primary truncate">{item.label}</p>
-                                                                {item.sublabel && <p className="text-xs text-text-tertiary truncate">{item.sublabel}</p>}
-                                                            </div>
-                                                            <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-muted text-text-tertiary border border-border">{item.type}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* All Modules — Always Visible */}
-                                        <div>
-                                            <p className="px-3 py-1.5 text-[10px] uppercase tracking-wider font-bold text-text-tertiary">Quick Navigation</p>
-                                            <div className="grid grid-cols-2 gap-1">
-                                                {scopedModules.map((m) => (
+                {hasDropdownContent && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute top-full left-0 right-0 mt-1.5 bg-surface border border-border rounded-xl shadow-2xl overflow-hidden z-[9999]"
+                    >
+                        <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden">
+                            {query.length < 1 ? (
+                                <div className="p-2">
+                                    {/* Recent Searches */}
+                                    {recentSearches.length > 0 && (
+                                        <div className="mb-2">
+                                            <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-text-tertiary">Recent Searches</p>
+                                            <div className="flex flex-wrap gap-1.5 px-3 pb-1">
+                                                {recentSearches.map((s, i) => (
                                                     <button
-                                                        key={m.id}
-                                                        onClick={() => handleSelect(m as SearchResult)}
-                                                        className="flex items-center gap-2.5 p-2.5 rounded-xl text-left transition-smooth hover:bg-muted group"
+                                                        key={`rs-${i}`}
+                                                        onClick={() => setQuery(s)}
+                                                        className="px-2.5 py-1 rounded-lg text-xs bg-muted hover:bg-muted-hover text-text-secondary border border-border transition-smooth"
                                                     >
-                                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-muted text-text-tertiary group-hover:bg-primary/10 group-hover:text-primary transition-smooth">
-                                                            <m.icon className="w-3.5 h-3.5" />
+                                                        {s}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Recent Items */}
+                                    {recentItems.length > 0 && (
+                                        <div className="mb-2">
+                                            <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-text-tertiary">Recently Visited</p>
+                                            <div className="space-y-0.5">
+                                                {recentItems.slice(0, 5).map((item) => (
+                                                    <button
+                                                        key={`ri-${item.id}`}
+                                                        onClick={() => handleSelect(item as SearchResult)}
+                                                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-smooth hover:bg-muted group"
+                                                    >
+                                                        <div className="w-6 h-6 rounded-md flex items-center justify-center bg-muted text-text-tertiary group-hover:bg-primary/10 group-hover:text-primary transition-smooth">
+                                                            {getIcon(item.type)}
                                                         </div>
-                                                        <div className="min-w-0">
-                                                            <p className="text-sm font-medium text-text-primary truncate">{m.label}</p>
-                                                            <p className="text-[10px] text-text-tertiary truncate">{m.sublabel}</p>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm font-medium text-text-primary truncate">{item.label}</p>
+                                                            {item.sublabel && <p className="text-xs text-text-tertiary truncate">{item.sublabel}</p>}
                                                         </div>
                                                     </button>
                                                 ))}
                                             </div>
                                         </div>
-                                    </div>
-                                ) : results.length > 0 ? (
-                                    <div className="p-2 space-y-1">
-                                        {results.map((result, index) => (
-                                            <button
-                                                key={`${result.type}-${result.id}-${index}`}
-                                                onClick={() => handleSelect(result)}
-                                                onMouseEnter={() => setSelectedIndex(index)}
-                                                className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-smooth group ${
-                                                    selectedIndex === index ? 'bg-primary/10 border-primary/20 bg-muted/50 ring-1 ring-primary/20 shadow-sm' : 'hover:bg-muted border-transparent'
-                                                }`}
-                                            >
-                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-smooth ${
-                                                    selectedIndex === index ? 'bg-primary text-white' : 'bg-muted text-text-tertiary group-hover:bg-background'
-                                                }`}>
-                                                    {result.type === 'module' && result.icon ? <result.icon className="w-4 h-4" /> : getIcon(result.type)}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <p className="font-semibold text-text-primary truncate">{result.label}</p>
-                                                        <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-muted text-text-tertiary border border-border group-hover:bg-background">
-                                                            {result.type}
-                                                        </span>
-                                                    </div>
-                                                    {result.sublabel && (
-                                                        <p className="text-xs text-text-tertiary truncate">{result.sublabel}</p>
-                                                    )}
-                                                </div>
-                                                <ArrowRight className={`w-4 h-4 transition-smooth ${
-                                                    selectedIndex === index ? 'text-primary opacity-100 translate-x-0' : 'text-text-tertiary opacity-0 -translate-x-4'
-                                                }`} />
-                                            </button>
-                                        ))}
-                                    </div>
-                                ) : !isLoading && (
-                                    <div className="p-12 text-center">
-                                        <div className="w-12 h-12 bg-muted rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                            <SearchX className="w-6 h-6 text-text-tertiary" />
+                                    )}
+
+                                    {/* Quick Navigation — hidden in CRM context */}
+                                    {!isCrmContext && (
+                                        <div>
+                                            <p className="px-3 py-1 text-[10px] uppercase tracking-wider font-bold text-text-tertiary">Quick Navigation</p>
+                                            <div className="grid grid-cols-2 gap-0.5">
+                                                {scopedModules.map((m) => (
+                                                    <button
+                                                        key={m.id}
+                                                        onClick={() => handleSelect(m as SearchResult)}
+                                                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-smooth hover:bg-muted group"
+                                                    >
+                                                        <div className="w-6 h-6 rounded-md flex items-center justify-center bg-muted text-text-tertiary group-hover:bg-primary/10 group-hover:text-primary transition-smooth">
+                                                            <m.icon className="w-3.5 h-3.5" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-medium text-text-primary truncate">{m.label}</p>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
                                         </div>
-                                        <h3 className="text-lg font-semibold text-text-primary">No matching results</h3>
-                                        <p className="text-text-tertiary">We couldn't find anything matching "{query}"</p>
-                                    </div>
-                                )}
-                            </div>
-                            
-                            {/* Search Footer */}
-                            <div className="p-3 border-t border-border bg-muted/50 flex items-center justify-between text-[11px] text-text-tertiary font-body">
-                                <div className="flex items-center gap-4">
-                                    <span className="flex items-center gap-1.5"><kbd className="px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] shadow-sm">↵</kbd> to select</span>
-                                    <span className="flex items-center gap-1.5"><kbd className="px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] shadow-sm">↑↓</kbd> to navigate</span>
+                                    )}
+
+                                    {/* CRM empty state */}
+                                    {isCrmContext && recentItems.length === 0 && recentSearches.length === 0 && (
+                                        <div className="py-6 text-center">
+                                            <Handshake className="w-6 h-6 text-text-tertiary mx-auto mb-2" />
+                                            <p className="text-xs text-text-tertiary">Type a name, company, or email</p>
+                                        </div>
+                                    )}
                                 </div>
-                                <span className="flex items-center gap-1.5"><kbd className="px-1.5 py-0.5 rounded border border-border bg-background font-mono text-[10px] shadow-sm">ESC</kbd> to close</span>
-                            </div>
-                        </motion.div>
-                    </div>
+                            ) : results.length > 0 ? (
+                                <div className="p-1.5 space-y-0.5">
+                                    {results.map((result, index) => (
+                                        <button
+                                            key={`${result.type}-${result.id}-${index}`}
+                                            onClick={() => handleSelect(result)}
+                                            onMouseEnter={() => setSelectedIndex(index)}
+                                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-smooth group ${
+                                                selectedIndex === index ? 'bg-primary/10 ring-1 ring-primary/20' : 'hover:bg-muted'
+                                            }`}
+                                        >
+                                            <div className={`w-7 h-7 rounded-md flex items-center justify-center transition-smooth shrink-0 ${
+                                                selectedIndex === index ? 'bg-primary text-white' : 'bg-muted text-text-tertiary'
+                                            }`}>
+                                                {result.type === 'module' && result.icon ? <result.icon className="w-3.5 h-3.5" /> : getIcon(result.type)}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium text-text-primary truncate">{result.label}</p>
+                                                {result.sublabel && (
+                                                    <p className="text-xs text-text-tertiary truncate">{result.sublabel}</p>
+                                                )}
+                                            </div>
+                                            <span className="text-[9px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-muted text-text-tertiary border border-border shrink-0">
+                                                {result.type}
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : !isLoading && (
+                                <div className="py-8 text-center">
+                                    <SearchX className="w-5 h-5 text-text-tertiary mx-auto mb-2" />
+                                    <p className="text-sm text-text-secondary">No results for &ldquo;{query}&rdquo;</p>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
                 )}
             </AnimatePresence>
-        </>
+        </div>
     );
 }

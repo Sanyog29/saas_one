@@ -40,6 +40,10 @@ export async function GET(request: NextRequest) {
     const assignedTo = searchParams.getAll('assigned_to');
     const properties = searchParams.getAll('property_interest');
     const sources = searchParams.getAll('lead_source');
+    const campaigns = searchParams.getAll('campaign');
+    const cities = searchParams.getAll('city');
+    const dateFrom = searchParams.get('date_from');
+    const dateTo = searchParams.get('date_to');
     const isArchived = searchParams.get('is_archived') === 'true';
     const sortByRaw = searchParams.get('sort_by') || 'created_at';
     const sortBy = SORTABLE.has(sortByRaw) ? sortByRaw : 'created_at';
@@ -58,6 +62,10 @@ export async function GET(request: NextRequest) {
     if (assignedTo.length) query = query.in('assigned_to', assignedTo);
     if (properties.length) query = query.in('property_interest', properties);
     if (sources.length) query = query.in('lead_source', sources);
+    if (campaigns.length) query = query.in('campaign', campaigns);
+    if (cities.length) query = query.in('city', cities);
+    if (dateFrom) query = query.gte('created_at', dateFrom);
+    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
     query = query.eq('is_archived', isArchived);
     query = query.order(sortBy, { ascending: sortOrder });
 
@@ -142,6 +150,7 @@ export async function POST(request: NextRequest) {
         company_name: body.company_name ?? null,
         contact_person: body.contact_person ?? null,
         contact_number: body.contact_number ?? null,
+        secondary_contact_number: body.secondary_contact_number ?? null,
         email: body.email ?? null,
         location: body.location ?? null,
         city: body.city ?? body.location ?? null,
@@ -152,6 +161,7 @@ export async function POST(request: NextRequest) {
         status: statusId,
         priority: body.priority || 'Medium',
         next_followup_date: body.next_followup_date ?? null,
+        followup_notes: body.followup_notes ?? null,
         remarks: body.remarks ?? null,
     };
 

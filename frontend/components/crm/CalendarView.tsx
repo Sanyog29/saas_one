@@ -169,7 +169,7 @@ export default function CalendarView({ onEventClick, onCreateEvent }: CalendarVi
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="flex bg-slate-100 rounded-lg p-1">
+                    <div className="flex bg-slate-100 rounded-lg p-1" data-tour="calendar-view-toggle">
                         {(['month', 'week', 'day'] as const).map(v => (
                             <button
                                 key={v}
@@ -197,7 +197,7 @@ export default function CalendarView({ onEventClick, onCreateEvent }: CalendarVi
             </div>
 
             {/* Calendar Grid */}
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden" data-tour="calendar-grid">
                 {/* Week Days Header */}
                 <div className="grid grid-cols-7 border-b border-slate-200">
                     {weekDays.map(day => (

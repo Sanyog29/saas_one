@@ -32,6 +32,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
         status: '',
         priority: 'Medium',
         next_followup_date: '',
+        followup_notes: '',
         remarks: '',
         assigned_to: ''
     });
@@ -53,6 +54,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     status: initialData.status || '',
                     priority: initialData.priority || 'Medium',
                     next_followup_date: initialData.next_followup_date?.split('T')[0] || '',
+                    followup_notes: (initialData as any).followup_notes || '',
                     remarks: initialData.remarks || '',
                     assigned_to: initialData.assigned_to || ''
                 });
@@ -70,6 +72,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     status: '',
                     priority: 'Medium',
                     next_followup_date: '',
+                    followup_notes: '',
                     remarks: '',
                     assigned_to: ''
                 });
@@ -132,10 +135,10 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.95, opacity: 0 }}
                     onClick={(e) => e.stopPropagation()}
-                    className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
+                    className="bg-surface rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col"
                 >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-border">
                         <h2 className="text-lg font-bold text-text-primary">
                             {mode === 'create' ? 'Add New Lead' : 'Edit Lead'}
                         </h2>
@@ -162,7 +165,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="text"
                                             value={formData.company_name}
                                             onChange={(e) => handleChange('company_name', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="Enter company name"
                                         />
                                     </div>
@@ -174,7 +177,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="text"
                                             value={formData.contact_person}
                                             onChange={(e) => handleChange('contact_person', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="Enter contact person name"
                                         />
                                     </div>
@@ -186,7 +189,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="tel"
                                             value={formData.contact_number}
                                             onChange={(e) => handleChange('contact_number', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="+91 98765 43210"
                                         />
                                     </div>
@@ -198,7 +201,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="email"
                                             value={formData.email}
                                             onChange={(e) => handleChange('email', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="contact@company.com"
                                         />
                                     </div>
@@ -210,7 +213,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="text"
                                             value={formData.location}
                                             onChange={(e) => handleChange('location', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="City, State"
                                         />
                                     </div>
@@ -229,7 +232,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="number"
                                             value={formData.deal_value}
                                             onChange={(e) => handleChange('deal_value', parseFloat(e.target.value) || 0)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="0"
                                         />
                                     </div>
@@ -240,7 +243,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <select
                                             value={formData.priority}
                                             onChange={(e) => handleChange('priority', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="Low">Low</option>
                                             <option value="Medium">Medium</option>
@@ -255,7 +258,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <select
                                             value={formData.property_interest || ''}
                                             onChange={(e) => handleChange('property_interest', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="">Select property</option>
                                             {properties.map(p => (
@@ -270,7 +273,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <select
                                             value={formData.lead_source || ''}
                                             onChange={(e) => handleChange('lead_source', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="">Select source</option>
                                             {sources.map(s => (
@@ -292,7 +295,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <select
                                             value={formData.status || ''}
                                             onChange={(e) => handleChange('status', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="">Select status</option>
                                             {statuses.map(s => (
@@ -307,7 +310,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <select
                                             value={formData.assigned_to || ''}
                                             onChange={(e) => handleChange('assigned_to', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="">Unassigned</option>
                                             {users.map(u => (
@@ -323,10 +326,24 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="date"
                                             value={formData.next_followup_date}
                                             onChange={(e) => handleChange('next_followup_date', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         />
                                     </div>
                                 </div>
+                                {formData.next_followup_date && (
+                                    <div className="mt-3">
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                                            Follow-up Notes
+                                        </label>
+                                        <textarea
+                                            value={(formData as any).followup_notes || ''}
+                                            onChange={(e) => handleChange('followup_notes' as any, e.target.value)}
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            rows={2}
+                                            placeholder="What to discuss in the follow-up..."
+                                        />
+                                    </div>
+                                )}
                             </div>
 
                             {/* Requirement & Remarks */}
@@ -340,7 +357,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <textarea
                                             value={formData.requirement}
                                             onChange={(e) => handleChange('requirement', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             rows={3}
                                             placeholder="Describe the lead's requirements..."
                                         />
@@ -352,7 +369,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         <textarea
                                             value={formData.remarks}
                                             onChange={(e) => handleChange('remarks', e.target.value)}
-                                            className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             rows={2}
                                             placeholder="Internal notes..."
                                         />
@@ -363,11 +380,11 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     </form>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+                    <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-surface-elevated">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="px-6 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-text-secondary hover:bg-white transition-colors"
+                            className="px-6 py-2.5 border border-border rounded-xl text-sm font-medium text-text-secondary hover:bg-white transition-colors"
                         >
                             Cancel
                         </button>

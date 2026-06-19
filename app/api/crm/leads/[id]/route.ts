@@ -13,9 +13,10 @@ const LEAD_SELECT = `
 
 // Fields any CRM user may edit on a lead they can access.
 const BASE_FIELDS = [
-    'company_name', 'contact_person', 'contact_number', 'email',
+    'company_name', 'contact_person', 'contact_number', 'secondary_contact_number', 'email',
     'location', 'city', 'requirement', 'property_interest', 'lead_source',
-    'status', 'priority', 'next_followup_date', 'remarks',
+    'status', 'priority', 'next_followup_date', 'followup_notes', 'remarks',
+    'lost_reason', 'lost_reason_notes',
 ];
 // Fields restricted to admins (reassignment / archival / commercial value).
 const ADMIN_FIELDS = ['assigned_to', 'is_archived', 'deal_value'];

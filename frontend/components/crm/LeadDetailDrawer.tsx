@@ -4,10 +4,15 @@ import React, { useState, useEffect } from 'react';
 import {
     X, Phone, Mail, MapPin, Building, Calendar, User, DollarSign,
     Edit, Trash2, PhoneCall, Video, Map, FileText, MessageSquare,
-    Clock, ChevronRight, Plus, CheckCircle
+    Clock, ChevronRight, Plus, CheckCircle, CalendarPlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CRMLead, CRMActivity, CRMNote, CRMEvent, TimelineItem } from '@/frontend/types/crm';
+import { CRMLead, CRMActivity, CRMNote, CRMEvent, TimelineItem, LeadStatusConfig, EventType } from '@/frontend/types/crm';
+import StagePipeline from '@/frontend/components/crm/StagePipeline';
+import AddEventModal from '@/frontend/components/crm/AddEventModal';
+import CallCoachPanel from '@/frontend/components/crm/CallCoachPanel';
+import { getStageVisual } from '@/frontend/lib/crm/stages';
+import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
 
 interface LeadDetailDrawerProps {
     leadId: string | null;
@@ -15,6 +20,13 @@ interface LeadDetailDrawerProps {
     onClose: () => void;
     onLeadUpdate?: (lead: CRMLead) => void;
 }
+
+const EVENT_TYPE_META: Record<string, { title: string; activityType: string }> = {
+    call: { title: 'Call', activityType: 'call' },
+    meeting: { title: 'Meeting', activityType: 'meeting' },
+    site_visit: { title: 'Site Visit', activityType: 'site_visit' },
+    followup: { title: 'Follow-up', activityType: 'followup_scheduled' },
+};
 
 const ACTIVITY_ICONS: Record<string, any> = {
     created: Plus,
@@ -32,17 +44,21 @@ const ACTIVITY_ICONS: Record<string, any> = {
     restored: CheckCircle
 };
 
-const STATUS_COLORS: Record<string, string> = {
-    'New Lead': '#3B82F6',
-    'Contacted': '#EAB308',
-    'Meeting Scheduled': '#F97316',
-    'Site Visit Scheduled': '#F97316',
-    'Proposal Shared': '#A855F7',
-    'Negotiation': '#14B8A6',
-    'Won': '#22C55E',
-    'Lost': '#EF4444',
-    'Dropped': '#6B7280',
-    'On Hold': '#374151'
+// Semantic dot colors for the tickets-style waterfall timeline.
+const ACTIVITY_DOT_COLORS: Record<string, string> = {
+    created: '#6B7280',          // gray
+    updated: '#6B7280',
+    call: '#06B6D4',             // cyan
+    meeting: '#8B5CF6',          // violet
+    site_visit: '#F59E0B',       // amber
+    proposal_sent: '#3B82F6',    // blue
+    followup_scheduled: '#F97316', // orange
+    status_changed: '#22C55E',   // green
+    assigned: '#0EA5E9',         // sky
+    note_added: '#64748B',       // slate
+    email_sent: '#A855F7',       // purple
+    archived: '#EF4444',         // red
+    restored: '#22C55E',
 };
 
 export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate }: LeadDetailDrawerProps) {
@@ -50,16 +66,38 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
     const [activities, setActivities] = useState<CRMActivity[]>([]);
     const [notes, setNotes] = useState<CRMNote[]>([]);
     const [events, setEvents] = useState<CRMEvent[]>([]);
+    const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'activities' | 'notes'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'calls' | 'notes'>('overview');
     const [newNote, setNewNote] = useState('');
     const [isAddingNote, setIsAddingNote] = useState(false);
+    const [isChangingStatus, setIsChangingStatus] = useState(false);
+    const [popupStage, setPopupStage] = useState<string | null>(null);
+    const [addEvent, setAddEvent] = useState<{ open: boolean; type: EventType; title?: string; requireFuture?: boolean }>(
+        { open: false, type: 'meeting' }
+    );
 
     useEffect(() => {
         if (leadId && isOpen) {
             fetchLeadDetails();
         }
     }, [leadId, isOpen]);
+
+    // Load the org's lifecycle stages once for the pipeline.
+    useEffect(() => {
+        if (!isOpen) return;
+        fetch('/api/crm/statuses?scope=org')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data?.statuses) setStatuses(data.statuses); })
+            .catch(() => {});
+    }, [isOpen]);
+
+    // Auto-dismiss the "status updated" icon popup.
+    useEffect(() => {
+        if (!popupStage) return;
+        const t = setTimeout(() => setPopupStage(null), 1800);
+        return () => clearTimeout(t);
+    }, [popupStage]);
 
     const fetchLeadDetails = async () => {
         if (!leadId) return;
@@ -111,6 +149,56 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         }
     };
 
+    const handleStageChange = async (statusId: string) => {
+        if (!leadId || !lead || statusId === lead.status || isChangingStatus) return;
+        const target = statuses.find(s => s.id === statusId);
+        if (!target) return;
+        setIsChangingStatus(true);
+        try {
+            const res = await fetch(`/api/crm/leads/${leadId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: statusId }),
+            });
+            if (!res.ok) return;
+            const updated: CRMLead = { ...lead, status: statusId, status_info: { ...(lead.status_info as any), ...target } };
+            setLead(updated);
+            onLeadUpdate?.(updated);
+            // Optimistic timeline entry (the DB trigger also records this).
+            setActivities(prev => [{
+                id: `temp-${Date.now()}`, lead_id: leadId, user_id: '',
+                activity_type: 'status_changed', description: `Status changed to ${target.name}`,
+                metadata: {}, created_at: new Date().toISOString(),
+                user_info: { id: '', full_name: 'You', email: '' },
+            } as CRMActivity, ...prev]);
+            // Show the icon popup.
+            setPopupStage(target.name);
+            // "Future" → prompt to put a reminder on the calendar.
+            if (/future/i.test(target.name)) {
+                setAddEvent({
+                    open: true, type: 'followup', requireFuture: true,
+                    title: `Future follow-up: ${lead.company_name || lead.contact_person || 'Lead'}`,
+                });
+            }
+        } catch (e) {
+            console.error('Failed to change stage:', e);
+        } finally {
+            setIsChangingStatus(false);
+        }
+    };
+
+    const handleEventCreated = (event: CRMEvent) => {
+        setEvents(prev => [event, ...prev]);
+        const meta = EVENT_TYPE_META[event.event_type];
+        setActivities(prev => [{
+            id: `temp-evt-${Date.now()}`, lead_id: leadId || '', user_id: '',
+            activity_type: (meta?.activityType || 'updated') as any,
+            description: `${meta?.title || 'Event'} scheduled: ${event.title}`,
+            metadata: {}, created_at: event.start_datetime,
+            user_info: { id: '', full_name: 'You', email: '' },
+        } as CRMActivity, ...prev]);
+    };
+
     const formatDate = (date: string) => {
         return new Date(date).toLocaleDateString('en-IN', {
             day: 'numeric',
@@ -129,28 +217,63 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         }).format(value);
     };
 
-    const buildTimeline = (): TimelineItem[] => {
-        const items: TimelineItem[] = [];
+    // Merge activities + notes (comments) into one chronological waterfall —
+    // mirrors how the tickets module shows a ticket's sequence of events.
+    const buildTimeline = (): (TimelineItem & { activityType: string })[] => {
+        const items: (TimelineItem & { activityType: string })[] = [];
 
         activities.forEach(activity => {
             const Icon = ACTIVITY_ICONS[activity.activity_type] || Edit;
             items.push({
-                id: activity.id,
+                id: `a-${activity.id}`,
                 type: 'activity',
                 timestamp: activity.created_at,
                 title: activity.activity_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: activity.description,
                 icon: Icon.name,
-                user: activity.user_info
+                user: activity.user_info,
+                activityType: activity.activity_type,
             });
         });
 
-        return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        notes.forEach(note => {
+            items.push({
+                id: `n-${note.id}`,
+                type: 'note',
+                timestamp: note.created_at,
+                title: 'Comment',
+                description: note.note,
+                icon: 'MessageSquare',
+                user: note.user_info,
+                activityType: 'note_added',
+            });
+        });
+
+        events.forEach(event => {
+            const meta = EVENT_TYPE_META[event.event_type] || { title: 'Event', activityType: 'updated' };
+            const Icon = ACTIVITY_ICONS[meta.activityType] || Calendar;
+            items.push({
+                id: `e-${event.id}`,
+                type: 'event',
+                timestamp: event.start_datetime,
+                title: `${meta.title}${event.status && event.status !== 'scheduled' ? ` · ${event.status}` : ''}`,
+                description: [event.title, event.description].filter(Boolean).join(' — '),
+                icon: Icon.name,
+                user: undefined,
+                activityType: meta.activityType,
+            });
+        });
+
+        // Oldest → newest, so the lead reads as a real interaction log top to bottom.
+        return items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     };
 
     if (!isOpen) return null;
 
+    const currentLeadName = lead?.company_name || lead?.contact_person || 'Lead';
+
     return (
+        <>
         <AnimatePresence>
             <motion.div
                 initial={{ opacity: 0 }}
@@ -164,45 +287,62 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 animate={{ x: 0 }}
                 exit={{ x: '100%' }}
                 transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className="fixed right-0 top-0 bottom-0 w-full max-w-2xl bg-white shadow-2xl z-50 flex flex-col"
+                className="fixed right-0 top-0 bottom-0 w-full max-w-2xl bg-surface shadow-2xl z-50 flex flex-col"
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
                     <div>
                         <h2 className="text-lg font-bold text-text-primary">
                             {lead?.company_name || lead?.contact_person || 'Lead Details'}
                         </h2>
-                        {lead?.status_info && (
-                            <div className="flex items-center gap-2 mt-1">
-                                <span
-                                    className="w-2 h-2 rounded-full"
-                                    style={{ backgroundColor: STATUS_COLORS[lead.status_info.name] || '#6B7280' }}
-                                />
-                                <span className="text-sm text-text-secondary">{lead.status_info.name}</span>
-                            </div>
-                        )}
+                        {lead?.status_info && (() => {
+                            const v = getStageVisual(lead.status_info.name);
+                            const Icon = v.icon;
+                            return (
+                                <div
+                                    className="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-0.5 rounded-full"
+                                    style={{ backgroundColor: `${v.color}1A`, color: v.color }}
+                                >
+                                    <Icon className="w-3.5 h-3.5" />
+                                    <span className="text-xs font-bold">{lead.status_info.name}</span>
+                                </div>
+                            );
+                        })()}
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                        aria-label="Close"
+                        className="p-2 hover:bg-muted rounded-xl transition-colors"
                     >
                         <X className="w-5 h-5 text-text-secondary" />
                     </button>
                 </div>
 
+                {/* Lifecycle pipeline (Amazon-style, click any stage to move the lead) */}
+                {lead && statuses.length > 0 && (
+                    <div className="px-5 py-3 border-b border-border bg-surface-elevated/60" data-tour="lead-pipeline">
+                        <StagePipeline
+                            statuses={statuses}
+                            currentStatusId={lead.status}
+                            onChange={handleStageChange}
+                            isUpdating={isChangingStatus}
+                        />
+                    </div>
+                )}
+
                 {/* Tabs */}
-                <div className="flex border-b border-slate-200">
-                    {['overview', 'timeline', 'activities', 'notes'].map(tab => (
+                <div className="flex border-b border-border" data-tour="lead-tabs">
+                    {(['overview', 'timeline', 'calls', 'notes'] as const).map(tab => (
                         <button
                             key={tab}
-                            onClick={() => setActiveTab(tab as any)}
+                            onClick={() => setActiveTab(tab)}
                             className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
                                 activeTab === tab
                                     ? 'text-primary border-b-2 border-primary'
                                     : 'text-text-secondary hover:text-text-primary'
                             }`}
                         >
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                            {tab === 'calls' ? 'Calls & Coaching' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                         </button>
                     ))}
                 </div>
@@ -210,37 +350,18 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-6">
                     {isLoading ? (
-                        <div className="space-y-4 animate-pulse">
-                            <div className="h-32 bg-slate-100 rounded-xl" />
-                            <div className="h-64 bg-slate-100 rounded-xl" />
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                            <TextShimmer duration={1.2} className="text-sm font-bold" baseColor="#64748b" gradientColor="#cbd5e1">
+                                Loading lead details…
+                            </TextShimmer>
                         </div>
                     ) : (
                         <>
                             {activeTab === 'overview' && lead && (
                                 <div className="space-y-6">
-                                    {/* Quick Actions */}
-                                    <div className="grid grid-cols-4 gap-3">
-                                        <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                                            <PhoneCall className="w-5 h-5 text-primary" />
-                                            <span className="text-xs font-medium text-text-secondary">Call</span>
-                                        </button>
-                                        <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                                            <Video className="w-5 h-5 text-primary" />
-                                            <span className="text-xs font-medium text-text-secondary">Meeting</span>
-                                        </button>
-                                        <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                                            <FileText className="w-5 h-5 text-primary" />
-                                            <span className="text-xs font-medium text-text-secondary">Proposal</span>
-                                        </button>
-                                        <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
-                                            <MessageSquare className="w-5 h-5 text-primary" />
-                                            <span className="text-xs font-medium text-text-secondary">Note</span>
-                                        </button>
-                                    </div>
-
                                     {/* Lead Info */}
-                                    <div className="bg-slate-50 rounded-xl p-4 space-y-4">
-                                        <h3 className="font-semibold text-text-primary">Contact Information</h3>
+                                    <div className="bg-surface-elevated rounded-xl p-4 space-y-4" data-tour="lead-contact-info">
+                                        <h3 className="font-bold text-text-primary">Contact Information</h3>
                                         <div className="grid grid-cols-2 gap-4">
                                             {lead.contact_person && (
                                                 <div className="flex items-center gap-3">
@@ -251,15 +372,20 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                     </div>
                                                 </div>
                                             )}
-                                            {lead.contact_number && (
-                                                <div className="flex items-center gap-3">
-                                                    <Phone className="w-4 h-4 text-text-tertiary" />
-                                                    <div>
-                                                        <p className="text-xs text-text-tertiary">Phone</p>
-                                                        <p className="text-sm font-medium text-text-primary">{lead.contact_number}</p>
-                                                    </div>
+                                            <div className="flex items-center gap-3">
+                                                <Phone className="w-4 h-4 text-text-tertiary" />
+                                                <div>
+                                                    <p className="text-xs text-text-tertiary">Primary Contact</p>
+                                                    <p className="text-sm font-medium text-text-primary">{lead.contact_number || '–'}</p>
                                                 </div>
-                                            )}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <Phone className="w-4 h-4 text-text-tertiary" />
+                                                <div>
+                                                    <p className="text-xs text-text-tertiary">Secondary Contact</p>
+                                                    <p className="text-sm font-medium text-text-primary">{lead.secondary_contact_number || '–'}</p>
+                                                </div>
+                                            </div>
                                             {lead.email && (
                                                 <div className="flex items-center gap-3">
                                                     <Mail className="w-4 h-4 text-text-tertiary" />
@@ -281,9 +407,64 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                         </div>
                                     </div>
 
+                                    {/* Follow-up */}
+                                    <div className="bg-surface-elevated rounded-xl p-4 space-y-3">
+                                        <h3 className="font-bold text-text-primary">Follow-up</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs text-text-tertiary block mb-1">Next Follow-up Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={lead.next_followup_date?.slice(0, 10) || ''}
+                                                    onChange={async (e) => {
+                                                        const val = e.target.value || null;
+                                                        try {
+                                                            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                method: 'PATCH',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ next_followup_date: val }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const updated = { ...lead, next_followup_date: val };
+                                                                setLead(updated);
+                                                                onLeadUpdate?.(updated);
+                                                            }
+                                                        } catch {}
+                                                    }}
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-text-tertiary block mb-1">Follow-up Notes</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Add notes..."
+                                                    defaultValue={lead.followup_notes || ''}
+                                                    onBlur={async (e) => {
+                                                        const val = e.target.value || null;
+                                                        if (val === (lead.followup_notes || null)) return;
+                                                        try {
+                                                            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                method: 'PATCH',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ followup_notes: val }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const updated = { ...lead, followup_notes: val };
+                                                                setLead(updated);
+                                                                onLeadUpdate?.(updated);
+                                                            }
+                                                        } catch {}
+                                                    }}
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     {/* Deal Info */}
-                                    <div className="bg-slate-50 rounded-xl p-4 space-y-4">
-                                        <h3 className="font-semibold text-text-primary">Deal Information</h3>
+                                    <div className="bg-surface-elevated rounded-xl p-4 space-y-4">
+                                        <h3 className="font-bold text-text-primary">Deal Information</h3>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <p className="text-xs text-text-tertiary">Deal Value</p>
@@ -314,8 +495,8 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
 
                                     {/* Assignment */}
                                     {lead.assigned_user && (
-                                        <div className="bg-slate-50 rounded-xl p-4">
-                                            <h3 className="font-semibold text-text-primary mb-3">Assigned To</h3>
+                                        <div className="bg-surface-elevated rounded-xl p-4">
+                                            <h3 className="font-bold text-text-primary mb-3">Assigned To</h3>
                                             <div className="flex items-center gap-3">
                                                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                                                     <User className="w-5 h-5 text-primary" />
@@ -330,97 +511,84 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
 
                                     {/* Requirement */}
                                     {lead.requirement && (
-                                        <div className="bg-slate-50 rounded-xl p-4">
-                                            <h3 className="font-semibold text-text-primary mb-2">Requirement</h3>
+                                        <div className="bg-surface-elevated rounded-xl p-4">
+                                            <h3 className="font-bold text-text-primary mb-2">Requirement</h3>
                                             <p className="text-sm text-text-secondary">{lead.requirement}</p>
                                         </div>
                                     )}
 
                                     {/* Remarks */}
                                     {lead.remarks && (
-                                        <div className="bg-slate-50 rounded-xl p-4">
-                                            <h3 className="font-semibold text-text-primary mb-2">Remarks</h3>
+                                        <div className="bg-surface-elevated rounded-xl p-4">
+                                            <h3 className="font-bold text-text-primary mb-2">Remarks</h3>
                                             <p className="text-sm text-text-secondary">{lead.remarks}</p>
                                         </div>
                                     )}
                                 </div>
                             )}
 
-                            {activeTab === 'timeline' && (
-                                <div className="space-y-4">
-                                    {buildTimeline().length === 0 ? (
+                            {activeTab === 'timeline' && (() => {
+                                const timeline = buildTimeline();
+                                // Tickets-style waterfall: one continuous vertical line, small
+                                // semantic-colored dots, actor + timestamp per entry (chronological).
+                                return (
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-bold text-text-primary">Activity Timeline</span>
+                                        <button
+                                            onClick={() => setAddEvent({ open: true, type: 'meeting' })}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90"
+                                        >
+                                            <CalendarPlus className="w-3.5 h-3.5" /> Add Event
+                                        </button>
+                                    </div>
+                                    {timeline.length === 0 ? (
                                         <div className="text-center py-12 text-text-secondary">
-                                            <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                                            <Clock className="w-12 h-12 mx-auto mb-3 text-text-tertiary" />
                                             <p>No activity yet</p>
                                         </div>
                                     ) : (
-                                        buildTimeline().map((item, index) => {
-                                            const Icon = ACTIVITY_ICONS[item.icon] || Edit;
-                                            return (
-                                                <div key={item.id} className="flex gap-4">
-                                                    <div className="flex flex-col items-center">
-                                                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                                                            {Icon && <Icon className="w-4 h-4 text-text-secondary" />}
+                                    <div className="relative pl-5">
+                                        <div className="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-border" />
+                                        <div className="space-y-5">
+                                            {timeline.map((item) => {
+                                                const Icon = ACTIVITY_ICONS[item.icon] || Edit;
+                                                const dot = ACTIVITY_DOT_COLORS[item.activityType] || '#64748B';
+                                                return (
+                                                    <div key={item.id} className="relative flex gap-4">
+                                                        <div
+                                                            className="absolute -left-5 top-1 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm z-10"
+                                                            style={{ backgroundColor: dot }}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="flex items-center gap-1.5 text-sm font-bold text-text-primary">
+                                                                    {Icon && <Icon className="w-3.5 h-3.5" style={{ color: dot }} />}
+                                                                    {item.title}
+                                                                </span>
+                                                                <span className="text-xs text-text-tertiary whitespace-nowrap flex-shrink-0">
+                                                                    {formatDate(item.timestamp)}
+                                                                </span>
+                                                            </div>
+                                                            {item.description && (
+                                                                <p className="text-sm text-text-secondary mt-1 whitespace-pre-wrap break-words">{item.description}</p>
+                                                            )}
+                                                            {item.user && (
+                                                                <p className="text-xs text-text-tertiary mt-1">by {item.user.full_name}</p>
+                                                            )}
                                                         </div>
-                                                        {index < buildTimeline().length - 1 && (
-                                                            <div className="w-px h-full bg-slate-200 mt-2" />
-                                                        )}
                                                     </div>
-                                                    <div className="flex-1 pb-4">
-                                                        <div className="flex items-center justify-between">
-                                                            <p className="font-medium text-text-primary text-sm">{item.title}</p>
-                                                            <span className="text-xs text-text-tertiary">
-                                                                {formatDate(item.timestamp)}
-                                                            </span>
-                                                        </div>
-                                                        {item.description && (
-                                                            <p className="text-sm text-text-secondary mt-1">{item.description}</p>
-                                                        )}
-                                                        {item.user && (
-                                                            <p className="text-xs text-text-tertiary mt-1">by {item.user.full_name}</p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            )}
-
-                            {activeTab === 'activities' && (
-                                <div className="space-y-4">
-                                    {activities.length === 0 ? (
-                                        <div className="text-center py-12 text-text-secondary">
-                                            <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                                            <p>No activities recorded</p>
+                                                );
+                                            })}
                                         </div>
-                                    ) : (
-                                        activities.map(activity => {
-                                            const Icon = ACTIVITY_ICONS[activity.activity_type] || Edit;
-                                            return (
-                                                <div key={activity.id} className="flex items-start gap-3 p-4 bg-slate-50 rounded-xl">
-                                                    <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center border border-slate-200">
-                                                        {Icon && <Icon className="w-5 h-5 text-primary" />}
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center justify-between">
-                                                            <p className="font-medium text-text-primary text-sm">
-                                                                {activity.activity_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                                                            </p>
-                                                            <span className="text-xs text-text-tertiary">{formatDate(activity.created_at)}</span>
-                                                        </div>
-                                                        {activity.description && (
-                                                            <p className="text-sm text-text-secondary mt-1">{activity.description}</p>
-                                                        )}
-                                                        {activity.user_info && (
-                                                            <p className="text-xs text-text-tertiary mt-1">by {activity.user_info.full_name}</p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
+                                    </div>
                                     )}
-                                </div>
+                                  </div>
+                                );
+                            })()}
+
+                            {activeTab === 'calls' && lead && (
+                                <CallCoachPanel leadId={lead.id} />
                             )}
 
                             {activeTab === 'notes' && (
@@ -431,7 +599,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                             value={newNote}
                                             onChange={(e) => setNewNote(e.target.value)}
                                             placeholder="Add a note..."
-                                            className="flex-1 border border-slate-200 rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            className="flex-1 border border-border rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             rows={3}
                                         />
                                         <button
@@ -446,12 +614,12 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                     {/* Notes List */}
                                     {notes.length === 0 ? (
                                         <div className="text-center py-12 text-text-secondary">
-                                            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                                            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-text-tertiary" />
                                             <p>No notes yet</p>
                                         </div>
                                     ) : (
                                         notes.map(note => (
-                                            <div key={note.id} className="p-4 bg-slate-50 rounded-xl">
+                                            <div key={note.id} className="p-4 bg-surface-elevated rounded-xl">
                                                 <p className="text-sm text-text-primary">{note.note}</p>
                                                 <div className="flex items-center justify-between mt-3">
                                                     <span className="text-xs text-text-tertiary">
@@ -469,5 +637,45 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 </div>
             </motion.div>
         </AnimatePresence>
+
+        {/* Status-updated icon popup */}
+        <AnimatePresence>
+            {popupStage && (() => {
+                const v = getStageVisual(popupStage);
+                const Icon = v.icon;
+                return (
+                    <motion.div
+                        key="stage-popup"
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="fixed left-1/2 -translate-x-1/2 bottom-10 z-[70] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl bg-surface border border-border"
+                    >
+                        <span className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${v.color}1A`, color: v.color }}>
+                            <Icon className="w-5 h-5" />
+                        </span>
+                        <div>
+                            <p className="text-xs text-text-tertiary">Status updated</p>
+                            <p className="text-sm font-bold" style={{ color: v.color }}>{popupStage}</p>
+                        </div>
+                    </motion.div>
+                );
+            })()}
+        </AnimatePresence>
+
+        {leadId && (
+            <AddEventModal
+                isOpen={addEvent.open}
+                leadId={leadId}
+                organizationId={lead?.organization_id}
+                leadName={currentLeadName}
+                defaultType={addEvent.type}
+                defaultTitle={addEvent.title}
+                requireFuture={addEvent.requireFuture}
+                onClose={() => setAddEvent(s => ({ ...s, open: false }))}
+                onCreated={handleEventCreated}
+            />
+        )}
+        </>
     );
 }

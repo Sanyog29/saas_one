@@ -1,15 +1,19 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { CRMDashboard } from '@/frontend/components/crm';
+import { CrmTour, dashboardSteps } from '@/frontend/components/crm/onboarding';
 
 export default function CRMPage() {
     const { membership } = useAuth();
     const [isAuthorized, setIsAuthorized] = useState(false);
+    const router = useRouter();
+    const params = useParams();
+    const orgId = params.orgId as string;
 
     useEffect(() => {
-        // Check if user has CRM access
         const role = membership?.org_role;
         if (role && ['bd_rep', 'bd_admin', 'org_admin', 'org_super_admin'].includes(role)) {
             setIsAuthorized(true);
@@ -29,5 +33,14 @@ export default function CRMPage() {
         );
     }
 
-    return <CRMDashboard />;
+    return (
+        <>
+            <CRMDashboard />
+            <CrmTour
+                tourId="crm-dashboard"
+                steps={dashboardSteps}
+                onComplete={() => router.push(`/${orgId}/crm/leads`)}
+            />
+        </>
+    );
 }

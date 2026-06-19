@@ -2,122 +2,236 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useParams, useRouter } from 'next/navigation';
 import {
-    Users, Phone, Calendar, FileText, TrendingUp, DollarSign,
-    Clock, Target, CheckCircle, ArrowRight, Plus, Bell
+    Users, Phone, Calendar, FileText, TrendingUp, ArrowRight, Plus, Bell,
+    Flame, XCircle, Briefcase, Zap, CheckCircle2, Clock, Home, MapPin, ChevronRight,
+    ClipboardList, MessageSquare
 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import KPICard from '@/frontend/components/dashboard/KPICard';
-import StatTile from '@/frontend/components/dashboard/StatTile';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
+import CrmStatTiles, { StatPeriod } from '@/frontend/components/crm/CrmStatTiles';
+import StatusInfoTooltip from '@/frontend/components/crm/StatusInfoTooltip';
+import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
+import BorderGlow from '@/frontend/components/ui/BorderGlow';
+
+interface CampaignNewLeads {
+    campaign: string;
+    count: number;
+}
+
+interface FollowupLead {
+    id: string;
+    full_name: string;
+    company_name: string;
+    next_followup_date: string;
+    followup_notes: string | null;
+}
 
 interface CRMDashboardStats {
-    assigned_leads: number;
-    open_followups: number;
+    total_leads: number;
+    hot_leads: number;
+    warm_leads: number;
+    lost_leads: number;
+    deals_open: number;
+    deals_in_progress: number;
+    deals_closed: number;
+    overdue_followups: number;
+    action_required: number;
     meetings_today: number;
-    proposals_pending: number;
-    won_this_month: number;
-    pipeline_value: number;
-    target_achievement_percent: number;
-    revenue_closed: number;
+    new_leads: number;
+    new_leads_by_campaign: CampaignNewLeads[];
+    followups_needed: number;
+    priority_leads: PriorityLead[];
+    action_leads: ActionLead[];
+    todays_followups?: FollowupLead[];
 }
 
-interface PerformanceStats {
-    leads_contacted: number;
-    calls_completed: number;
-    meetings_conducted: number;
-    site_visits: number;
-    proposals_sent: number;
-    closures: number;
-    win_ratio: number;
-}
-
-interface UpcomingTask {
+interface PriorityLead {
     id: string;
-    type: 'followup' | 'meeting' | 'call';
-    title: string;
-    lead_name: string;
-    datetime: string;
-    is_overdue: boolean;
+    full_name: string;
+    company_name: string;
+    location: string | null;
+    campaign: string | null;
+    status_name: string;
+    last_update: string | null;
+    next_followup_date: string | null;
+    poc?: string | null;
+}
+
+interface ActionLead {
+    id: string;
+    full_name: string;
+    company_name: string;
+    location: string | null;
+    status_name: string;
+    last_update: string | null;
+    next_followup_date: string | null;
+}
+
+function LeadRow({ lead, index, showCampaign = false }: { lead: PriorityLead | ActionLead; index: number; showCampaign?: boolean }) {
+    const [expanded, setExpanded] = useState(false);
+    const router = useRouter();
+    const params = useParams();
+    const orgId = params?.orgId as string;
+    const isHot = (lead as PriorityLead).status_name?.toLowerCase().includes('hot');
+    const warmName = (lead as PriorityLead).status_name?.toLowerCase() || '';
+    const isWarm = warmName.includes('warm') || warmName.includes('mql');
+
+    const formatDate = (d: string | null) => {
+        if (!d) return '—';
+        try { return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); }
+        catch { return d; }
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: index * 0.03 }}
+            className="border-b border-border last:border-0"
+        >
+            <button
+                onClick={() => setExpanded(v => !v)}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors text-left"
+            >
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isHot ? 'bg-rose-500' : isWarm ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-text-primary truncate">{lead.full_name}</span>
+                        {lead.company_name && (
+                            <span className="text-xs text-text-secondary truncate">· {lead.company_name}</span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {lead.location && (
+                            <span className="text-[10px] text-text-tertiary font-medium flex items-center gap-0.5">
+                                <MapPin className="w-2.5 h-2.5" /> {lead.location}
+                            </span>
+                        )}
+                        {showCampaign && (lead as PriorityLead).campaign && (
+                            <span className="text-[10px] text-indigo-500 font-medium">{(lead as PriorityLead).campaign}</span>
+                        )}
+                    </div>
+                </div>
+                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded-lg flex-shrink-0 flex items-center gap-1 ${
+                    isHot ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' : isWarm ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-surface-elevated text-text-secondary'
+                }`}>
+                    {lead.status_name}
+                    <StatusInfoTooltip statusName={lead.status_name} />
+                </span>
+                <div className="text-right flex-shrink-0 w-20">
+                    <span className="text-[10px] font-medium text-text-secondary">{formatDate(lead.last_update)}</span>
+                </div>
+                <ChevronRight className={`w-3.5 h-3.5 text-text-tertiary flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+            </button>
+
+            <AnimatePresence>
+                {expanded && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="overflow-hidden"
+                    >
+                        <div className="px-4 pb-3 pl-9 space-y-2">
+                            {(lead as PriorityLead).poc && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">POC:</span>
+                                    <span className="text-xs font-medium text-text-primary">{(lead as PriorityLead).poc}</span>
+                                </div>
+                            )}
+                            {lead.last_update && (
+                                <div className="flex items-start gap-2">
+                                    <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mt-0.5">Update:</span>
+                                    <span className="text-xs text-text-secondary leading-relaxed">{lead.last_update}</span>
+                                </div>
+                            )}
+                            {lead.next_followup_date && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Next:</span>
+                                    <span className="text-xs font-medium text-text-primary">{formatDate(lead.next_followup_date)}</span>
+                                </div>
+                            )}
+                            <button
+                                onClick={() => router.push(`/${orgId}/crm/leads?lead=${lead.id}`)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline mt-1"
+                            >
+                                View Lead <ArrowRight className="w-3 h-3" />
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
+    );
 }
 
 export default function CRMDashboard() {
     const { user } = useAuth();
+    const params = useParams();
+    const orgId = params?.orgId as string;
     const [stats, setStats] = useState<CRMDashboardStats | null>(null);
-    const [performance, setPerformance] = useState<PerformanceStats | null>(null);
-    const [tasks, setTasks] = useState<UpcomingTask[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [period, setPeriod] = useState<StatPeriod>('all');
 
     useEffect(() => {
-        fetchDashboardData();
-    }, []);
-
-    const fetchDashboardData = async () => {
-        try {
-            const [statsRes, tasksRes] = await Promise.all([
-                fetch('/api/crm/stats?type=rep'),
-                fetch('/api/crm/events?start_date=' + new Date().toISOString().split('T')[0])
-            ]);
-
-            if (statsRes.ok) {
-                const data = await statsRes.json();
-                setStats(data);
-            }
-
-            if (tasksRes.ok) {
-                const data = await tasksRes.json();
-                // Transform events to tasks
-                const upcomingTasks: UpcomingTask[] = (data.events || []).map((event: any) => ({
-                    id: event.id,
-                    type: event.event_type,
-                    title: event.title,
-                    lead_name: event.lead_info?.company_name || 'Unknown',
-                    datetime: event.start_datetime,
-                    is_overdue: new Date(event.start_datetime) < new Date()
-                }));
-                setTasks(upcomingTasks.slice(0, 5));
-            }
-        } catch (error) {
-            console.error('Failed to fetch dashboard data:', error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            maximumFractionDigits: 0
-        }).format(value);
-    };
+        setIsLoading(true);
+        fetch(`/api/crm/stats?type=rep&period=${period}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { setStats(data); setIsLoading(false); })
+            .catch(() => setIsLoading(false));
+    }, [period]);
 
     if (isLoading) {
         return (
-            <div className="animate-pulse space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[...Array(4)].map((_, i) => (
-                        <div key={i} className="h-32 bg-slate-200 rounded-xl" />
-                    ))}
+            <div className="flex flex-col items-center justify-center py-24 gap-3">
+                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center animate-pulse">
+                    <TrendingUp className="w-6 h-6 text-primary" />
                 </div>
+                <TextShimmer duration={1.2} className="text-sm font-bold" baseColor="#64748b" gradientColor="#cbd5e1">
+                    Loading CRM dashboard…
+                </TextShimmer>
             </div>
         );
     }
+
+    const s = stats || {
+        total_leads: 0, hot_leads: 0, warm_leads: 0, lost_leads: 0,
+        deals_open: 0, deals_in_progress: 0, deals_closed: 0,
+        overdue_followups: 0, action_required: 0, meetings_today: 0,
+        new_leads: 0, new_leads_by_campaign: [], followups_needed: 0,
+        priority_leads: [], action_leads: [], todays_followups: [],
+    };
+
+    const todaysFollowups = s.todays_followups || [];
 
     return (
         <div className="space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-text-primary">CRM Dashboard</h1>
+                    <div className="flex items-center gap-2 mb-1">
+                        <Link
+                            href={`/${orgId}/dashboard`}
+                            className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-text-tertiary hover:text-text-secondary transition-colors"
+                        >
+                            <Home className="w-3 h-3" />
+                            FMS
+                        </Link>
+                        <span className="text-text-tertiary text-xs">/</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary">CRM</span>
+                    </div>
+                    <h1 className="text-2xl font-black text-text-primary tracking-tight">CRM Dashboard</h1>
                     <p className="text-sm text-text-secondary mt-1">
-                        Welcome back! Here&apos;s your sales overview.
+                        {user?.user_metadata?.full_name || user?.email} · Performance Marketing
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Link
-                        href="/crm/leads"
-                        className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors font-medium text-sm"
+                        href={`/${orgId}/crm/leads`}
+                        data-tour="crm-add-lead"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors font-bold text-sm shadow-sm shadow-primary/20"
                     >
                         <Plus className="w-4 h-4" />
                         Add Lead
@@ -125,203 +239,180 @@ export default function CRMDashboard() {
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Link href="/crm/leads?filter=assigned">
-                    <KPICard
-                        title="Assigned Leads"
-                        value={stats?.assigned_leads || 0}
-                        icon={Users}
-                        onClick={() => {}}
-                    />
-                </Link>
-                <Link href="/crm/leads?filter=followups">
-                    <KPICard
-                        title="Open Follow-ups"
-                        value={stats?.open_followups || 0}
-                        icon={Bell}
-                        trend={(stats?.open_followups || 0) > 5 ? { value: 'Needs attention', direction: 'down' as const } : undefined}
-                        onClick={() => {}}
-                    />
-                </Link>
-                <Link href="/crm/calendar?view=today">
-                    <KPICard
-                        title="Meetings Today"
-                        value={stats?.meetings_today || 0}
-                        icon={Calendar}
-                        onClick={() => {}}
-                    />
-                </Link>
-                <Link href="/crm/leads?status=proposal">
-                    <KPICard
-                        title="Proposals Pending"
-                        value={stats?.proposals_pending || 0}
-                        icon={FileText}
-                        onClick={() => {}}
-                    />
-                </Link>
+            {/* 3-tile overview with Today / This Month / Total toggle */}
+            <div data-tour="crm-stat-tiles">
+            <CrmStatTiles
+                total={s.total_leads}
+                newLeads={s.new_leads}
+                newLeadsByCampaign={s.new_leads_by_campaign}
+                followups={s.followups_needed}
+                period={period}
+                onPeriodChange={setPeriod}
+                orgId={orgId}
+                loading={isLoading}
+            />
             </div>
 
-            {/* Pipeline & Performance Row */}
+            {/* Two list panels */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Pipeline Value */}
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-semibold text-text-primary">Pipeline Overview</h2>
-                        <Link href="/crm/reports" className="text-primary text-sm font-medium hover:underline flex items-center gap-1">
-                            View Reports <ArrowRight className="w-4 h-4" />
-                        </Link>
+                {/* Priority Target Leads (Hot + Warm) */}
+                <div data-tour="crm-priority-leads">
+                <BorderGlow
+                    backgroundColor="var(--surface)"
+                    glowColor="0 72 65"
+                    colors={['#EF4444', '#F59E0B', '#708F96']}
+                    fillOpacity={0.04}
+                    borderRadius={16}
+                    glowRadius={24}
+                    glowIntensity={0.7}
+                    coneSpread={30}
+                    edgeSensitivity={50}
+                >
+                    <div className="overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-gradient-to-r from-rose-50 to-amber-50 dark:from-rose-950/30 dark:to-amber-950/30">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-rose-100 dark:bg-rose-900/40 rounded-xl flex items-center justify-center">
+                                    <Flame className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-sm font-black text-text-primary">Priority Target Leads</h2>
+                                    <p className="text-[10px] text-text-secondary font-medium">Hot & MQL · {s.priority_leads.length} leads</p>
+                                </div>
+                            </div>
+                            <Link
+                                href={`/${orgId}/crm/leads?status=hot,mql`}
+                                className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                            >
+                                View All <ArrowRight className="w-3 h-3" />
+                            </Link>
+                        </div>
+
+                        {s.priority_leads.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <div className="w-12 h-12 bg-surface-elevated rounded-2xl flex items-center justify-center mb-3">
+                                    <Flame className="w-6 h-6 text-text-tertiary" />
+                                </div>
+                                <p className="text-sm font-bold text-text-secondary">No priority leads</p>
+                                <p className="text-xs text-text-tertiary mt-1">Hot & MQL leads will appear here</p>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-border max-h-[420px] overflow-y-auto">
+                                {s.priority_leads.map((lead, i) => (
+                                    <LeadRow key={lead.id} lead={lead} index={i} showCampaign />
+                                ))}
+                            </div>
+                        )}
                     </div>
-                    <div className="flex items-end gap-4 mb-6">
-                        <span className="text-4xl font-bold text-text-primary metric-number">
-                            {formatCurrency(stats?.pipeline_value || 0)}
-                        </span>
-                        <span className="text-sm text-text-secondary pb-2">Total Pipeline</span>
-                    </div>
-                    <div className="flex items-end gap-4">
-                        <span className="text-2xl font-bold text-success metric-number">
-                            {formatCurrency(stats?.revenue_closed || 0)}
-                        </span>
-                        <span className="text-sm text-text-secondary pb-1">Won This Month</span>
-                    </div>
+                </BorderGlow>
                 </div>
 
-                {/* Target Achievement */}
-                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-lg font-semibold text-text-primary">Target Achievement</h2>
-                        <Target className="w-5 h-5 text-text-secondary" />
-                    </div>
-                    <div className="flex items-center gap-6">
-                        <div className="relative w-24 h-24">
-                            <svg className="w-24 h-24 transform -rotate-90">
-                                <circle
-                                    cx="48"
-                                    cy="48"
-                                    r="40"
-                                    stroke="#E5E7EB"
-                                    strokeWidth="8"
-                                    fill="none"
-                                />
-                                <circle
-                                    cx="48"
-                                    cy="48"
-                                    r="40"
-                                    stroke={(stats?.target_achievement_percent || 0) >= 100 ? '#22C55E' : '#3B82F6'}
-                                    strokeWidth="8"
-                                    fill="none"
-                                    strokeDasharray={`${(stats?.target_achievement_percent || 0) * 2.51} 251`}
-                                    strokeLinecap="round"
-                                />
-                            </svg>
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="text-xl font-bold text-text-primary">
-                                    {stats?.target_achievement_percent || 0}%
-                                </span>
+                {/* Action Required (Hold + Missing Status) */}
+                <div data-tour="crm-action-leads">
+                <BorderGlow
+                    backgroundColor="var(--surface)"
+                    glowColor="35 92 55"
+                    colors={['#F59E0B', '#708F96', '#64748B']}
+                    fillOpacity={0.04}
+                    borderRadius={16}
+                    glowRadius={24}
+                    glowIntensity={0.7}
+                    coneSpread={30}
+                    edgeSensitivity={50}
+                >
+                    <div className="overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-gradient-to-r from-amber-50 to-slate-50 dark:from-amber-950/30 dark:to-slate-950/30">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/40 rounded-xl flex items-center justify-center">
+                                    <Bell className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-sm font-black text-text-primary">Action Required</h2>
+                                    <p className="text-[10px] text-text-secondary font-medium">Hold / Missing Status · {s.action_leads.length} leads</p>
+                                </div>
                             </div>
+                            <Link
+                                href={`/${orgId}/crm/leads?status=hold,no_status`}
+                                className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                            >
+                                View All <ArrowRight className="w-3 h-3" />
+                            </Link>
                         </div>
-                        <div className="flex-1">
-                            <div className="text-sm text-text-secondary mb-2">Monthly Target</div>
-                            <div className="flex items-baseline gap-2">
-                                <span className="text-2xl font-bold text-text-primary">
-                                    {formatCurrency(stats?.revenue_closed || 0)}
-                                </span>
-                                <span className="text-sm text-text-tertiary">/ {formatCurrency((stats?.pipeline_value || 0) * 1.2)}</span>
+
+                        {s.action_leads.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center mb-3">
+                                    <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                                </div>
+                                <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400">All clear!</p>
+                                <p className="text-xs text-text-tertiary mt-1">No leads need attention right now</p>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="divide-y divide-border max-h-[420px] overflow-y-auto">
+                                {s.action_leads.map((lead, i) => (
+                                    <LeadRow key={lead.id} lead={lead} index={i} />
+                                ))}
+                            </div>
+                        )}
                     </div>
+                </BorderGlow>
                 </div>
             </div>
 
-            {/* Performance Metrics */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                <h2 className="text-lg font-semibold text-text-primary mb-4">Performance This Month</h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    <StatTile
-                        label="Won Deals"
-                        value={stats?.won_this_month || 0}
-                        icon={CheckCircle}
-                    />
-                    <StatTile
-                        label="Pipeline Value"
-                        value={formatCurrency(stats?.pipeline_value || 0).replace('₹', '').replace(',00', '')}
-                        subtitle="Crores"
-                        icon={TrendingUp}
-                    />
-                    <StatTile
-                        label="Avg. Closure"
-                        value={Math.round((stats?.pipeline_value || 0) / Math.max(stats?.won_this_month || 1, 1))}
-                        subtitle="Days"
-                        icon={Clock}
-                    />
-                    <StatTile
-                        label="Win Rate"
-                        value={`${Math.round(((stats?.won_this_month || 0) / Math.max(stats?.assigned_leads || 1, 1)) * 100)}%`}
-                        icon={Target}
-                    />
-                    <StatTile
-                        label="Revenue"
-                        value={formatCurrency(stats?.revenue_closed || 0).replace('₹', '').replace(',00', '')}
-                        subtitle="This Month"
-                        icon={DollarSign}
-                    />
-                </div>
-            </div>
-
-            {/* Upcoming Tasks */}
-            <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-text-primary">My Tasks</h2>
-                    <Link href="/crm/calendar" className="text-primary text-sm font-medium hover:underline flex items-center gap-1">
-                        View Calendar <ArrowRight className="w-4 h-4" />
+            {/* Today's Follow-ups Notes */}
+            <div className="bg-surface rounded-2xl border border-border overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-surface-elevated">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-primary/10 rounded-xl flex items-center justify-center">
+                            <ClipboardList className="w-4 h-4 text-primary" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-black text-text-primary">Today's Follow-ups</h2>
+                            <p className="text-[10px] text-text-tertiary font-medium">
+                                Scheduled for {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · {todaysFollowups.length} planned
+                            </p>
+                        </div>
+                    </div>
+                    <Link
+                        href={`/${orgId}/crm/calendar`}
+                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                    >
+                        Calendar <ArrowRight className="w-3 h-3" />
                     </Link>
                 </div>
-                {tasks.length === 0 ? (
-                    <div className="text-center py-8 text-text-secondary">
-                        <Calendar className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                        <p>No upcoming tasks</p>
-                        <Link href="/crm/leads" className="text-primary text-sm font-medium hover:underline mt-2 inline-block">
-                            Add a follow-up
-                        </Link>
+
+                {todaysFollowups.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <div className="w-10 h-10 bg-surface-elevated rounded-xl flex items-center justify-center mb-2">
+                            <CheckCircle2 className="w-5 h-5 text-text-tertiary" />
+                        </div>
+                        <p className="text-sm font-bold text-text-secondary">No follow-ups today</p>
+                        <p className="text-xs text-text-tertiary mt-0.5">Schedule follow-ups from the lead detail view</p>
                     </div>
                 ) : (
-                    <div className="space-y-3">
-                        {tasks.map((task) => (
-                            <motion.div
-                                key={task.id}
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                className={`flex items-center gap-4 p-4 rounded-xl border ${
-                                    task.is_overdue
-                                        ? 'bg-red-50 border-red-200'
-                                        : 'bg-slate-50 border-slate-200'
-                                }`}
+                    <div className="divide-y divide-border">
+                        {todaysFollowups.map((fu) => (
+                            <Link
+                                key={fu.id}
+                                href={`/${orgId}/crm/leads?lead=${fu.id}`}
+                                className="flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors group"
                             >
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                                    task.is_overdue ? 'bg-red-100' : 'bg-blue-100'
-                                }`}>
-                                    {task.type === 'meeting' && <Calendar className={`w-5 h-5 ${task.is_overdue ? 'text-red-600' : 'text-blue-600'}`} />}
-                                    {task.type === 'call' && <Phone className={`w-5 h-5 ${task.is_overdue ? 'text-red-600' : 'text-blue-600'}`} />}
-                                    {task.type === 'followup' && <Bell className={`w-5 h-5 ${task.is_overdue ? 'text-red-600' : 'text-blue-600'}`} />}
-                                </div>
+                                <div className="w-2 h-2 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-text-primary truncate">{task.title}</p>
-                                    <p className="text-sm text-text-secondary truncate">{task.lead_name}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className={`text-sm font-medium ${task.is_overdue ? 'text-red-600' : 'text-text-primary'}`}>
-                                        {new Date(task.datetime).toLocaleDateString('en-IN', {
-                                            day: 'numeric',
-                                            month: 'short',
-                                            hour: '2-digit',
-                                            minute: '2-digit'
-                                        })}
-                                    </p>
-                                    {task.is_overdue && (
-                                        <p className="text-xs text-red-600 font-medium">Overdue</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold text-text-primary truncate">{fu.full_name}</span>
+                                        {fu.company_name && (
+                                            <span className="text-xs text-text-tertiary truncate">· {fu.company_name}</span>
+                                        )}
+                                    </div>
+                                    {fu.followup_notes && (
+                                        <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2 leading-relaxed">
+                                            <MessageSquare className="w-3 h-3 inline-block mr-1 text-text-tertiary -mt-0.5" />
+                                            {fu.followup_notes}
+                                        </p>
                                     )}
                                 </div>
-                            </motion.div>
+                                <ChevronRight className="w-3.5 h-3.5 text-text-tertiary group-hover:text-text-secondary flex-shrink-0 mt-1" />
+                            </Link>
                         ))}
                     </div>
                 )}

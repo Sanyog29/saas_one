@@ -26,8 +26,10 @@ export interface CrmAccess {
     isAdmin: boolean;
     /** roles the user holds in this org (deduped) */
     roles: string[];
-    /** cities this rep is allowed to see (empty for admins — they see all) */
+    /** cities this rep may see — whole-city territory grants (empty for admins) */
     territoryCities: string[];
+    /** campaigns this rep may see — campaign-scoped territory grants (empty for admins) */
+    territoryCampaigns: string[];
 }
 
 type Membership = { organization_id: string | null; role: string | null; is_active: boolean | null };
@@ -128,16 +130,23 @@ export async function resolveCrmAccess(
         isMasterAdmin || roles.some((r) => (CRM_ADMIN_ROLES as readonly string[]).includes(r));
 
     let territoryCities: string[] = [];
+    let territoryCampaigns: string[] = [];
     if (!isAdmin) {
         const { data: terr } = await supabaseAdmin
             .from('crm_territories')
-            .select('city')
+            .select('city, campaign')
             .eq('user_id', user.id)
             .eq('is_active', true);
-        territoryCities = (terr || []).map((t) => (t.city || '').trim()).filter(Boolean);
+        // A row with a campaign grants that campaign; otherwise it grants the whole city.
+        for (const t of terr || []) {
+            const campaign = (t.campaign || '').trim();
+            const city = (t.city || '').trim();
+            if (campaign) territoryCampaigns.push(campaign);
+            else if (city) territoryCities.push(city);
+        }
     }
 
-    return { user, isMasterAdmin, organizationId, isAdmin, roles, territoryCities };
+    return { user, isMasterAdmin, organizationId, isAdmin, roles, territoryCities, territoryCampaigns };
 }
 
 export function isCrmAccessError(x: CrmAccess | NextResponse): x is NextResponse {
@@ -158,12 +167,16 @@ export function scopeLeadsQuery(query: any, access: CrmAccess) {
         const list = access.territoryCities.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
         ors.push(`city.in.(${list})`);
     }
+    if (access.territoryCampaigns.length > 0) {
+        const list = access.territoryCampaigns.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
+        ors.push(`campaign.in.(${list})`);
+    }
     return query.or(ors.join(','));
 }
 
 /** True when this rep may act on a specific already-fetched lead row. */
 export function canAccessLead(
-    lead: { created_by?: string; assigned_to?: string | null; city?: string | null; organization_id?: string | null },
+    lead: { created_by?: string; assigned_to?: string | null; city?: string | null; campaign?: string | null; organization_id?: string | null },
     access: CrmAccess
 ): boolean {
     if (lead.organization_id && lead.organization_id !== access.organizationId) return false;
@@ -171,6 +184,7 @@ export function canAccessLead(
     if (lead.created_by === access.user.id) return true;
     if (lead.assigned_to === access.user.id) return true;
     if (lead.city && access.territoryCities.map((c) => c.toLowerCase()).includes(lead.city.toLowerCase())) return true;
+    if (lead.campaign && access.territoryCampaigns.map((c) => c.toLowerCase()).includes(lead.campaign.toLowerCase())) return true;
     return false;
 }
 
@@ -178,4 +192,30 @@ export function canAccessLead(
 export function sanitizeSearchTerm(term: string): string {
     // Strip the characters that have meaning in PostgREST filter strings.
     return term.replace(/[(),*"\\]/g, ' ').trim();
+}
+
+/**
+ * True when this rep may read/update a crm_calls row.
+ * A call is visible if:
+ *   - The rep is the bd_rep on the row, OR
+ *   - The rep is an admin of the row's organization.
+ */
+export function canAccessCall(
+    call: { bd_rep_id?: string; organization_id?: string | null },
+    access: CrmAccess
+): boolean {
+    if (call.organization_id && call.organization_id !== access.organizationId) return false;
+    if (access.isAdmin) return true;
+    if (call.bd_rep_id === access.user.id) return true;
+    return false;
+}
+
+/**
+ * Scope a crm_calls query to what the caller may see.
+ * Admins see all org calls; reps see their own.
+ */
+export function scopeCallsQuery(query: any, access: CrmAccess) {
+    query = query.eq('organization_id', access.organizationId);
+    if (access.isAdmin) return query;
+    return query.eq('bd_rep_id', access.user.id);
 }

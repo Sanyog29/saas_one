@@ -217,6 +217,41 @@ function AuthContent() {
                     (m) => ORG_LEVEL_ROLES.includes(m.role) && (m.is_active === true || m.is_active === null)
                 );
 
+                // ✅ CRM guard — single source of truth.
+                // Business-development (CRM) users must ALWAYS land on the CRM view and
+                // NEVER fall through to an FMS dashboard. We fetch property memberships
+                // early so we can detect any genuine FMS role that should outrank CRM.
+                // If the user has a CRM role and NO genuine FMS role, short-circuit to /{org}/crm.
+                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin'];
+                const FMS_ROLES = ['property_admin', 'tenant', 'security', 'staff', 'mst', 'vendor', 'org_admin', 'owner', 'admin', 'procurement', 'org_super_admin', 'super_tenant', 'maintenance_vendor'];
+
+                const { data: allPropMembershipsForGuard } = await supabase
+                    .from('property_memberships')
+                    .select('property_id, organization_id, role, is_active')
+                    .eq('user_id', userProfile.id)
+                    .order('created_at', { ascending: false });
+
+                const activePropForGuard = (allPropMembershipsForGuard || []).filter(
+                    (m) => m.is_active === true || m.is_active === null
+                );
+                const allActiveRoles = [
+                    ...activeOrgMemberships.map((m) => m.role),
+                    ...activePropForGuard.map((m) => m.role),
+                ];
+                const hasCrmRole = allActiveRoles.some((r) => CRM_ONLY_ROLES.includes(r));
+                const hasFmsRole = allActiveRoles.some((r) => FMS_ROLES.includes(r));
+
+                if (hasCrmRole && !hasFmsRole) {
+                    // Resolve the org id from whichever membership carries the CRM role.
+                    const crmOrgMembership = activeOrgMemberships.find((m) => CRM_ONLY_ROLES.includes(m.role));
+                    const crmPropMembership = activePropForGuard.find((m) => CRM_ONLY_ROLES.includes(m.role));
+                    const crmOrgId = crmOrgMembership?.organization_id || crmPropMembership?.organization_id;
+                    if (crmOrgId) {
+                        router.replace(`/${crmOrgId}/crm`);
+                        return;
+                    }
+                }
+
                 if (activeOrgMemberships.length > 0) {
                     // Pick best by priority (org_super_admin first, then super_tenant, then others)
                     const ORG_PRIORITY = ['org_super_admin', 'bd_admin', 'org_admin', 'super_tenant', 'owner', 'admin', 'member', 'bd_rep'];
@@ -230,12 +265,12 @@ function AuthContent() {
                         router.replace('/procurement');
                     } else if (best.role === 'bd_admin' || best.role === 'bd_rep') {
                         // CRM users route to CRM module
-                        router.replace(`/org/${best.organization_id}/crm`);
+                        router.replace(`/${best.organization_id}/crm`);
                     } else {
                         router.replace(
                             redirectPath && redirectPath !== '/'
                                 ? redirectPath
-                                : `/org/${best.organization_id}/dashboard`
+                                : `/${best.organization_id}/dashboard`
                         );
                     }
                     return;
@@ -281,7 +316,7 @@ function AuthContent() {
                         router.replace('/procurement');
                     } else if (role === 'bd_rep' || role === 'bd_admin') {
                         // CRM users route to org dashboard with CRM
-                        router.replace(`/org/${propMembership.organization_id}/crm`);
+                        router.replace(`/${propMembership.organization_id}/crm`);
                     } else {
                         router.replace(`/property/${pId}/dashboard`);
                     }

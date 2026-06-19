@@ -84,8 +84,14 @@ export interface LeadStatusConfig {
     color: string;
     sort_order: number;
     is_active: boolean;
-    created_at: string;
-    updated_at: string;
+    is_default?: boolean;
+    is_won?: boolean;
+    is_lost?: boolean;
+    is_terminal?: boolean;
+    icon?: string | null;
+    organization_id?: string | null;
+    created_at?: string;
+    updated_at?: string;
 }
 
 // Lead Source
@@ -94,6 +100,120 @@ export interface LeadSource {
     name: string;
     is_active: boolean;
     created_at: string;
+}
+
+// ===========================================
+// Enhanced Lead Data (Parsed from Excel/Import)
+// ===========================================
+
+export interface ParsedRequirement {
+    seats?: number;
+    seats_type?: 'open_workspace' | 'cabin' | 'meeting_room' | 'private_office';
+    budget_min?: number;
+    budget_max?: number;
+    budget_per_seat?: boolean;
+    timeline?: string;
+    location_preference?: string;
+    amenities?: string[];
+}
+
+export interface LeadJourneyStep {
+    date: string;
+    status: string;
+    activity_type: string;
+    description: string;
+}
+
+export interface LeadBriefingData {
+    lead_id: string;
+    company_name: string;
+    full_name: string;
+    recent_activity: string;
+    suggested_pitch_points: string[];
+    urgency_signals: string[];
+    next_action: string;
+    days_since_last_contact: number;
+}
+
+// ===========================================
+// Campaign Analytics
+// ===========================================
+
+export interface CampaignMetrics {
+    campaign_id: string;
+    campaign_name: string;
+    source: string;
+    territory: string;
+    total_leads: number;
+    hot_leads: number;
+    warm_leads: number;
+    cold_leads: number;
+    lost_leads: number;
+    conversion_rate: number;
+    avg_response_time_hours?: number;
+    total_pipeline_value?: number;
+}
+
+export interface RepPerformance {
+    user_id: string;
+    user_name: string;
+    total_assigned: number;
+    hot_leads: number;
+    conversion_rate: number;
+    avg_deal_value?: number;
+    avg_response_time_hours?: number;
+    activities_this_week: number;
+    activities_this_month: number;
+}
+
+// ===========================================
+// Funnel & Drop-off Analytics
+// ===========================================
+
+export interface FunnelStage {
+    status: string;
+    count: number;
+    percentage: number;
+    avg_days_in_stage: number;
+    drop_off_rate: number;
+}
+
+export interface DropOffAlert {
+    lead_id: string;
+    lead_name: string;
+    company_name: string;
+    days_inactive: number;
+    last_status: string;
+    assigned_to: string;
+    recommended_action: string;
+}
+
+// ===========================================
+// Import Types
+// ===========================================
+
+export interface ImportColumnMapping {
+    excelColumn: string;
+    crmField: string;
+}
+
+export interface ImportResult {
+    total_rows: number;
+    success_count: number;
+    error_count: number;
+    skipped_duplicates: number;
+    errors: Array<{
+        row: number;
+        field: string;
+        message: string;
+    }>;
+    imported_leads: string[];
+}
+
+export interface DuplicateCheckResult {
+    total_checked: number;
+    duplicate_count: number;
+    duplicate_indices: number[];
 }
 
 // Property Mapping
@@ -117,6 +237,7 @@ export interface CRMLead {
     company_name?: string;
     contact_person?: string;
     contact_number?: string;
+    secondary_contact_number?: string;
     email?: string;
     location?: string;
     requirement?: string;
@@ -126,6 +247,7 @@ export interface CRMLead {
     status: string;
     priority: LeadPriority;
     next_followup_date?: string;
+    followup_notes?: string;
     last_contacted?: string;
     remarks?: string;
     meta_lead_id?: string;
@@ -135,6 +257,11 @@ export interface CRMLead {
     meta_form_name?: string;
     is_archived: boolean;
     updated_at: string;
+    closed_at?: string | null;
+    organization_id?: string | null;
+    city?: string | null;
+    campaign?: string | null;
+    cohort?: string | null;
     // Joined data
     status_info?: LeadStatusConfig;
     source_info?: LeadSource;
@@ -234,6 +361,7 @@ export interface CreateLeadInput {
     company_name?: string;
     contact_person?: string;
     contact_number?: string;
+    secondary_contact_number?: string;
     email?: string;
     location?: string;
     requirement?: string;
@@ -243,6 +371,7 @@ export interface CreateLeadInput {
     status?: string;
     priority?: LeadPriority;
     next_followup_date?: string;
+    followup_notes?: string;
     remarks?: string;
     assigned_to?: string;
 }
@@ -402,6 +531,110 @@ export interface CalendarEvent {
 }
 
 // ===========================================
+// AI Call Coach Types
+// ===========================================
+
+export type CallStatus = 'uploaded' | 'transcribing' | 'scoring' | 'completed' | 'failed';
+
+export type CoachingLayerKey = 'opening' | 'rapport' | 'requirements' | 'core' | 'closing';
+
+export const COACHING_LAYER_KEYS: CoachingLayerKey[] = [
+    'opening',
+    'rapport',
+    'requirements',
+    'core',
+    'closing',
+];
+
+export const COACHING_LAYER_LABELS: Record<CoachingLayerKey, string> = {
+    opening: 'Opening',
+    rapport: 'Rapport',
+    requirements: 'Requirement Discovery',
+    core: 'Core Conversation',
+    closing: 'Closing',
+};
+
+export interface TranscriptSegment {
+    speaker: 'rep' | 'client' | 'unknown';
+    start: number;
+    end: number;
+    text: string;
+}
+
+export interface LayerScore {
+    score: number;            // 0..10
+    evidence: string;         // quoted phrase
+    tip: string;              // one action
+}
+
+export interface CoachingReport {
+    layers: Record<CoachingLayerKey, LayerScore>;
+    overall_score: number;
+    rep_talk_ratio: number;
+    avg_rep_talk_seconds: number;
+    did_right: string[];
+    missed: string[];
+    could_improve: string[];
+    next_call_focus: string;
+    summary: string;
+}
+
+export interface CrmCallSummary {
+    id: string;
+    status: CallStatus;
+    uploaded_at: string;
+    analyzed_at: string | null;
+    duration_seconds: number | null;
+    overall_score: number | null;
+    rep_talk_ratio: number | null;
+    summary: string | null;
+    error_message?: string | null;
+}
+
+export interface CrmCallDetail extends CrmCallSummary {
+    lead_id: string;
+    bd_rep_id: string;
+    rep?: { id: string; full_name: string; email: string } | null;
+    file_size_bytes: number | null;
+    mime_type: string | null;
+    transcript: TranscriptSegment[] | null;
+    coaching: CoachingReport | null;
+    lead_company_name: string | null;
+    lead_contact_person: string | null;
+    playback_url: string | null;
+}
+
+export interface RepCallPoint {
+    callId: string;
+    uploadedAt: string;
+    leadCompanyName: string | null;
+    overallScore: number;
+    repTalkRatio: number;
+    avgRepTalkSeconds: number;
+    layers: Record<CoachingLayerKey, number>;
+}
+
+export interface RepTrend {
+    bdRepId: string;
+    bdRepName: string;
+    callCount: number;
+    avgOverallScore: number;
+    avgRepTalkRatio: number;
+    avgLayers: Record<CoachingLayerKey, number>;
+    recentDelta: number | null;
+    direction: 'improving' | 'flat' | 'declining' | 'insufficient_data';
+    history: RepCallPoint[];
+    weakestLayer: CoachingLayerKey | null;
+}
+
+export interface CoachingOverview {
+    orgId: string;
+    windowSize: number;
+    totals: { callsAnalyzed: number; avgOrgScore: number };
+    reps: RepTrend[];
+}
+
+// ===========================================
 // Reports Types
 // ===========================================
 
@@ -418,5 +651,113 @@ export interface ReportFilters {
 export interface ReportData {
     type: 'user' | 'territory' | 'property' | 'source' | 'status' | 'revenue' | 'monthly_funnel' | 'quarterly_funnel';
     data: any;
+    generated_at: string;
+}
+
+// ===========================================
+// Decision-Maker Impact Report Types
+// ===========================================
+
+export interface ImpactReportKpis {
+    leads_received: number;
+    leads_connected: number;
+    active_pipeline_value: number;
+    won_revenue: number;
+    lost_revenue: number;
+    win_rate: number;
+    avg_deal_size: number;
+    avg_time_to_close_days: number | null;
+    total_spend: number;
+    cpl: number;
+    cpa: number;
+    roi: number;
+    stale_pipeline: { count: number; value: number; days: number };
+}
+
+export interface ImpactReportMonthly {
+    key: string;
+    label: string;
+    leads: number;
+    connected: number;
+    meetings: number;
+    won: number;
+    lost: number;
+    revenue: number;
+    lostRevenue: number;
+    topSource: string;
+    spend: number;
+}
+
+export interface ImpactReportCampaign {
+    id: string;
+    name: string;
+    leads: number;
+    connected: number;
+    won: number;
+    revenue: number;
+    spend: number;
+    roi: number | null;
+    cpl: number | null;
+    cpa: number | null;
+}
+
+export interface ImpactReportRep {
+    id: string;
+    name: string;
+    leads: number;
+    connected: number;
+    won: number;
+    lost: number;
+    pipeline: number;
+    revenue: number;
+    win_rate: number;
+    avg_days_to_close: number | null;
+    closeTimes: number[];
+}
+
+export interface ImpactReportStatusBucket {
+    id: string;
+    name: string;
+    color: string;
+    count: number;
+    value: number;
+    isWon: boolean;
+    isLost: boolean;
+}
+
+export interface ImpactReportSource {
+    id: string | null;
+    name: string;
+    count: number;
+    value: number;
+    won: number;
+    wonValue: number;
+}
+
+export interface ImpactReportLostReason {
+    reason: string;
+    count: number;
+    value: number;
+}
+
+export interface ImpactReportPayload {
+    period: { from: string; to: string; label: string; group_by: 'month' | 'week' };
+    kpis: ImpactReportKpis;
+    sparklines: { leads: number[]; won: number[]; lost: number[]; revenue: number[]; connected: number[] };
+    monthly_trend: ImpactReportMonthly[];
+    status_distribution: ImpactReportStatusBucket[];
+    source_breakdown: ImpactReportSource[];
+    campaign_breakdown: ImpactReportCampaign[];
+    rep_performance: ImpactReportRep[];
+    lost_reasons: ImpactReportLostReason[];
+    insights: {
+        top_campaign: ImpactReportCampaign | null;
+        underperformer: ImpactReportRep | null;
+    };
+    filters: {
+        campaigns: Array<{ id: string; name: string; channel: string | null; budget_total: number | null; budget_period: string | null; start_date: string | null; end_date: string | null }>;
+        properties: Array<{ id: string; name: string }>;
+    };
+    target_win_rate: number;
     generated_at: string;
 }

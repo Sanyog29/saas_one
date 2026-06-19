@@ -47,14 +47,44 @@ export default function Home() {
                     return;
                 }
 
-                // 2. Check Org Membership from context
+                // 2. CRM guard — single source of truth (mirrors the login handler).
+                // Business-development (CRM) users must ALWAYS land on the CRM view and
+                // NEVER fall through to an FMS dashboard. If the user has a CRM role and
+                // NO genuine FMS role, short-circuit to /{org}/crm.
+                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin'];
+                const FMS_ROLES = ['property_admin', 'tenant', 'security', 'staff', 'mst', 'vendor', 'org_admin', 'owner', 'admin', 'procurement', 'org_super_admin', 'super_tenant', 'maintenance_vendor'];
+
+                const crmOrgMemberships = (membership?.all_org_memberships || [])
+                    .filter((m) => CRM_ONLY_ROLES.includes(m.role));
+                const crmPropMemberships = (membership?.properties || [])
+                    .filter((p) => CRM_ONLY_ROLES.includes(p.role));
+                const allMembershipRoles = [
+                    ...(membership?.org_role ? [membership.org_role] : []),
+                    ...(membership?.all_org_memberships || []).map((m) => m.role),
+                    ...(membership?.properties || []).map((p) => p.role),
+                ];
+                const hasCrmRole = allMembershipRoles.some((r) => CRM_ONLY_ROLES.includes(r));
+                const hasFmsRole = allMembershipRoles.some((r) => FMS_ROLES.includes(r));
+
+                if (hasCrmRole && !hasFmsRole) {
+                    const crmOrgId =
+                        crmOrgMemberships[0]?.org_id ||
+                        crmPropMemberships[0]?.organization_id ||
+                        membership?.org_id;
+                    if (crmOrgId) {
+                        router.replace(`/${crmOrgId}/crm`);
+                        return;
+                    }
+                }
+
+                // 3. Check Org Membership from context
                 const ORG_ROUTED_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement'];
                 if (membership?.org_id && membership?.org_role && ORG_ROUTED_ROLES.includes(membership.org_role)) {
                     router.replace(`/org/${membership.org_id}/dashboard`);
                     return;
                 }
 
-                // 3. Check Property Memberships from context
+                // 4. Check Property Memberships from context
                 if (membership?.properties && membership.properties.length > 0) {
                     // Determine the best property/role to redirect to
                     // For now, take the first one
@@ -83,7 +113,7 @@ export default function Home() {
                     return;
                 }
 
-                // 4. NO MEMBERSHIP FOUND
+                // 5. NO MEMBERSHIP FOUND
                 // If the user already completed onboarding but has no active memberships, 
                 // send them to no access rather than forcing them to onboard again.
                 if (membership?.onboarding_completed) {

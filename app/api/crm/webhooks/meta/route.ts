@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { resolveDistributionAssignee } from '@/backend/lib/crm/distribution';
 
 /**
  * Meta Lead Ads webhook.
@@ -165,6 +166,14 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         const createdBy = await resolveSystemUser(config);
         if (!createdBy) throw new Error('No assignee/admin available to own the lead');
 
+        // Resolve campaign from the Meta form name or ad metadata, then
+        // check distribution rules for round-robin / exclusive assignment.
+        const campaignName = value.campaign_name || value.form_name || null;
+        const distributionAssignee = await resolveDistributionAssignee(
+            config.organization_id,
+            campaignName
+        );
+
         // Default status + lead source.
         const { data: def } = await supabaseAdmin
             .from('crm_lead_statuses').select('id').eq('is_default', true)
@@ -183,7 +192,7 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
             .insert({
                 organization_id: config.organization_id,
                 created_by: createdBy,
-                assigned_to: config.default_assignee ?? createdBy,
+                assigned_to: distributionAssignee ?? config.default_assignee ?? createdBy,
                 company_name: fullName || 'Meta Lead',
                 contact_person: fullName,
                 contact_number: phone,
@@ -194,6 +203,7 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
                 priority: 'Medium',
                 lead_source: sourceId,
                 property_interest: config.default_property ?? null,
+                campaign: campaignName,
                 meta_lead_id: leadgenId,
                 meta_campaign_id: value.campaign_id ?? null,
                 meta_adset_id: value.adgroup_id ?? value.adset_id ?? null,

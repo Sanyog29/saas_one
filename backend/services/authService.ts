@@ -26,15 +26,15 @@ export const authService = {
             .eq('is_active', true)
             .maybeSingle();
 
-        const roleKey = (propMembership?.role || 'staff') as RoleKey;
+        const roleKey = (propMembership?.role || authUser.user_metadata?.role || 'staff') as RoleKey;
         const propertyId = propMembership?.property_id || '';
 
-        // Determine role level based on role
         const roleLevelMap: Record<string, number> = {
             'super_admin': 0,
             'org_admin': 1,
             'property_admin': 2,
             'manager_executive': 3,
+            'bd_admin': 3, 'bd_rep': 4,
             'mst': 4, 'hk': 4, 'fe': 4, 'se': 4, 'technician': 4,
             'field_staff': 4, 'bms_operator': 4, 'staff': 4,
             'tenant_user': 4, 'vendor': 4
@@ -70,11 +70,12 @@ export const authService = {
             .eq('is_active', true)
             .maybeSingle();
 
-        const roleKey = (propMembership?.role || 'staff') as RoleKey;
+        const roleKey = (propMembership?.role || authUser.user_metadata?.role || 'staff') as RoleKey;
 
         const roleLevelMap: Record<string, number> = {
             'super_admin': 0, 'org_admin': 1, 'property_admin': 2,
-            'manager_executive': 3, 'mst': 4, 'staff': 4, 'tenant_user': 4
+            'manager_executive': 3, 'bd_admin': 3, 'bd_rep': 4,
+            'mst': 4, 'staff': 4, 'tenant_user': 4
         };
 
         return {
