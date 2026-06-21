@@ -4,14 +4,16 @@ import React, { useState, useEffect } from 'react';
 import {
     X, Phone, Mail, MapPin, Building, Calendar, User, DollarSign,
     Edit, Trash2, PhoneCall, Video, Map, FileText, MessageSquare,
-    Clock, ChevronRight, Plus, CheckCircle, CalendarPlus
+    Clock, ChevronRight, Plus, CheckCircle, CalendarPlus, Pencil, Save,
+    FileSignature, LayoutGrid, MapPin as MapPinIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CRMLead, CRMActivity, CRMNote, CRMEvent, TimelineItem, LeadStatusConfig, EventType } from '@/frontend/types/crm';
 import StagePipeline from '@/frontend/components/crm/StagePipeline';
 import AddEventModal from '@/frontend/components/crm/AddEventModal';
 import CallCoachPanel from '@/frontend/components/crm/CallCoachPanel';
-import { getStageVisual } from '@/frontend/lib/crm/stages';
+import { getStageVisual, COMMENT_REQUIRED_STAGES } from '@/frontend/lib/crm/stages';
+import { getSourceVisual } from '@/frontend/lib/crm/sourceIcons';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
 
 interface LeadDetailDrawerProps {
@@ -76,6 +78,14 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
     const [addEvent, setAddEvent] = useState<{ open: boolean; type: EventType; title?: string; requireFuture?: boolean }>(
         { open: false, type: 'meeting' }
     );
+    const [editingRequirement, setEditingRequirement] = useState(false);
+    const [editingRemarks, setEditingRemarks] = useState(false);
+    const [requirementDraft, setRequirementDraft] = useState('');
+    const [remarksDraft, setRemarksDraft] = useState('');
+    const [savingRequirement, setSavingRequirement] = useState(false);
+    const [savingRemarks, setSavingRemarks] = useState(false);
+    const [stageComment, setStageComment] = useState<{ open: boolean; statusId: string; statusName: string; comment: string }>({ open: false, statusId: '', statusName: '', comment: '' });
+    const [savingStageComment, setSavingStageComment] = useState(false);
 
     useEffect(() => {
         if (leadId && isOpen) {
@@ -153,6 +163,17 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         if (!leadId || !lead || statusId === lead.status || isChangingStatus) return;
         const target = statuses.find(s => s.id === statusId);
         if (!target) return;
+
+        if (COMMENT_REQUIRED_STAGES.includes(target.name.toLowerCase().trim())) {
+            setStageComment({ open: true, statusId, statusName: target.name, comment: '' });
+            return;
+        }
+
+        await executeStageChange(statusId, target);
+    };
+
+    const executeStageChange = async (statusId: string, target: LeadStatusConfig, comment?: string) => {
+        if (!leadId || !lead) return;
         setIsChangingStatus(true);
         try {
             const res = await fetch(`/api/crm/leads/${leadId}`, {
@@ -164,16 +185,25 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
             const updated: CRMLead = { ...lead, status: statusId, status_info: { ...(lead.status_info as any), ...target } };
             setLead(updated);
             onLeadUpdate?.(updated);
-            // Optimistic timeline entry (the DB trigger also records this).
+            const desc = comment
+                ? `Status changed to ${target.name} — ${comment}`
+                : `Status changed to ${target.name}`;
             setActivities(prev => [{
                 id: `temp-${Date.now()}`, lead_id: leadId, user_id: '',
-                activity_type: 'status_changed', description: `Status changed to ${target.name}`,
+                activity_type: 'status_changed', description: desc,
                 metadata: {}, created_at: new Date().toISOString(),
                 user_info: { id: '', full_name: 'You', email: '' },
             } as CRMActivity, ...prev]);
-            // Show the icon popup.
+            if (comment) {
+                try {
+                    await fetch('/api/crm/notes', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lead_id: leadId, note: `[${target.name}] ${comment}` }),
+                    });
+                } catch {}
+            }
             setPopupStage(target.name);
-            // "Future" → prompt to put a reminder on the calendar.
             if (/future/i.test(target.name)) {
                 setAddEvent({
                     open: true, type: 'followup', requireFuture: true,
@@ -185,6 +215,34 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         } finally {
             setIsChangingStatus(false);
         }
+    };
+
+    const handleStageCommentSubmit = async () => {
+        if (!stageComment.comment.trim()) return;
+        const target = statuses.find(s => s.id === stageComment.statusId);
+        if (!target) return;
+        setSavingStageComment(true);
+        await executeStageChange(stageComment.statusId, target, stageComment.comment.trim());
+        setSavingStageComment(false);
+        setStageComment({ open: false, statusId: '', statusName: '', comment: '' });
+    };
+
+    const handleLogTimelineAction = async (actionType: string, actionLabel: string) => {
+        if (!leadId || !lead) return;
+        try {
+            await fetch('/api/crm/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lead_id: leadId, note: `[${actionLabel}] logged` }),
+            });
+            setActivities(prev => [{
+                id: `temp-${Date.now()}`, lead_id: leadId, user_id: '',
+                activity_type: actionType as any,
+                description: `${actionLabel} logged`,
+                metadata: {}, created_at: new Date().toISOString(),
+                user_info: { id: '', full_name: 'You', email: '' },
+            } as CRMActivity, ...prev]);
+        } catch {}
     };
 
     const handleEventCreated = (event: CRMEvent) => {
@@ -205,7 +263,8 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
             month: 'short',
             year: 'numeric',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            hour12: true
         });
     };
 
@@ -484,12 +543,19 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                     <p className="text-sm font-medium text-text-primary">{lead.property_info.name}</p>
                                                 </div>
                                             )}
-                                            {lead.source_info && (
-                                                <div>
-                                                    <p className="text-xs text-text-tertiary">Lead Source</p>
-                                                    <p className="text-sm font-medium text-text-primary">{lead.source_info.name}</p>
-                                                </div>
-                                            )}
+                                            {lead.source_info && (() => {
+                                                const sv = getSourceVisual(lead.source_info.name);
+                                                const SourceIcon = sv.icon;
+                                                return (
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Lead Source</p>
+                                                        <p className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+                                                            <SourceIcon className="w-4 h-4" style={{ color: sv.color }} />
+                                                            {lead.source_info.name}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
 
@@ -510,20 +576,136 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                     )}
 
                                     {/* Requirement */}
-                                    {lead.requirement && (
-                                        <div className="bg-surface-elevated rounded-xl p-4">
-                                            <h3 className="font-bold text-text-primary mb-2">Requirement</h3>
-                                            <p className="text-sm text-text-secondary">{lead.requirement}</p>
+                                    <div className="bg-surface-elevated rounded-xl p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-bold text-text-primary">Requirement</h3>
+                                            {!editingRequirement && (
+                                                <button
+                                                    onClick={() => { setRequirementDraft(lead.requirement || ''); setEditingRequirement(true); }}
+                                                    className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                                                    title="Edit requirement"
+                                                >
+                                                    <Pencil className="w-4 h-4 text-text-tertiary" />
+                                                </button>
+                                            )}
                                         </div>
-                                    )}
+                                        {editingRequirement ? (
+                                            <div className="space-y-2">
+                                                <textarea
+                                                    value={requirementDraft}
+                                                    onChange={(e) => setRequirementDraft(e.target.value)}
+                                                    placeholder="Add requirement details..."
+                                                    rows={3}
+                                                    autoFocus
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                                <div className="flex items-center gap-2 justify-end">
+                                                    <button
+                                                        onClick={() => setEditingRequirement(false)}
+                                                        className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-muted rounded-lg transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        disabled={savingRequirement}
+                                                        onClick={async () => {
+                                                            const val = requirementDraft || null;
+                                                            if (val === (lead.requirement || null)) { setEditingRequirement(false); return; }
+                                                            setSavingRequirement(true);
+                                                            try {
+                                                                const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                    method: 'PATCH',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ requirement: val }),
+                                                                });
+                                                                if (res.ok) {
+                                                                    const updated: CRMLead = { ...lead, requirement: val || undefined };
+                                                                    setLead(updated);
+                                                                    onLeadUpdate?.(updated);
+                                                                }
+                                                            } catch {}
+                                                            setSavingRequirement(false);
+                                                            setEditingRequirement(false);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 disabled:opacity-50"
+                                                    >
+                                                        <Save className="w-3.5 h-3.5" />
+                                                        {savingRequirement ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-text-primary whitespace-pre-wrap">
+                                                {lead.requirement || <span className="text-text-tertiary">No requirement added</span>}
+                                            </p>
+                                        )}
+                                    </div>
 
                                     {/* Remarks */}
-                                    {lead.remarks && (
-                                        <div className="bg-surface-elevated rounded-xl p-4">
-                                            <h3 className="font-bold text-text-primary mb-2">Remarks</h3>
-                                            <p className="text-sm text-text-secondary">{lead.remarks}</p>
+                                    <div className="bg-surface-elevated rounded-xl p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-bold text-text-primary">Remarks</h3>
+                                            {!editingRemarks && (
+                                                <button
+                                                    onClick={() => { setRemarksDraft(lead.remarks || ''); setEditingRemarks(true); }}
+                                                    className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                                                    title="Edit remarks"
+                                                >
+                                                    <Pencil className="w-4 h-4 text-text-tertiary" />
+                                                </button>
+                                            )}
                                         </div>
-                                    )}
+                                        {editingRemarks ? (
+                                            <div className="space-y-2">
+                                                <textarea
+                                                    value={remarksDraft}
+                                                    onChange={(e) => setRemarksDraft(e.target.value)}
+                                                    placeholder="Add remarks..."
+                                                    rows={2}
+                                                    autoFocus
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                                <div className="flex items-center gap-2 justify-end">
+                                                    <button
+                                                        onClick={() => setEditingRemarks(false)}
+                                                        className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-muted rounded-lg transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        disabled={savingRemarks}
+                                                        onClick={async () => {
+                                                            const val = remarksDraft || null;
+                                                            if (val === (lead.remarks || null)) { setEditingRemarks(false); return; }
+                                                            setSavingRemarks(true);
+                                                            try {
+                                                                const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                    method: 'PATCH',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ remarks: val }),
+                                                                });
+                                                                if (res.ok) {
+                                                                    const updated: CRMLead = { ...lead, remarks: val || undefined };
+                                                                    setLead(updated);
+                                                                    onLeadUpdate?.(updated);
+                                                                }
+                                                            } catch {}
+                                                            setSavingRemarks(false);
+                                                            setEditingRemarks(false);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 disabled:opacity-50"
+                                                    >
+                                                        <Save className="w-3.5 h-3.5" />
+                                                        {savingRemarks ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-text-primary whitespace-pre-wrap">
+                                                {lead.remarks || <span className="text-text-tertiary">No remarks added</span>}
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -540,6 +722,26 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90"
                                         >
                                             <CalendarPlus className="w-3.5 h-3.5" /> Add Event
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            onClick={() => handleLogTimelineAction('site_visit', 'Site Visit')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs font-bold hover:bg-teal-100 transition-colors dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-800"
+                                        >
+                                            <MapPinIcon className="w-3.5 h-3.5" /> Site Visit
+                                        </button>
+                                        <button
+                                            onClick={() => handleLogTimelineAction('proposal_sent', 'LOI')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+                                        >
+                                            <FileSignature className="w-3.5 h-3.5" /> LOI
+                                        </button>
+                                        <button
+                                            onClick={() => handleLogTimelineAction('updated', 'Layout Shared')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold hover:bg-purple-100 transition-colors dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800"
+                                        >
+                                            <LayoutGrid className="w-3.5 h-3.5" /> Layout Shared
                                         </button>
                                     </div>
                                     {timeline.length === 0 ? (
@@ -676,6 +878,65 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 onCreated={handleEventCreated}
             />
         )}
+
+        {/* Comment required modal for Lost / Disqualified */}
+        <AnimatePresence>
+            {stageComment.open && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4"
+                    onClick={() => setStageComment(s => ({ ...s, open: false }))}
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.95, opacity: 0 }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                    >
+                        <div className="px-6 py-4 border-b border-border">
+                            <h3 className="text-base font-bold text-text-primary">
+                                Mark as {stageComment.statusName}
+                            </h3>
+                            <p className="text-xs text-text-secondary mt-1">
+                                {stageComment.statusName.toLowerCase() === 'lost'
+                                    ? 'Please provide a reason for marking this lead as lost.'
+                                    : 'Please provide a reason for disqualifying this lead.'}
+                            </p>
+                        </div>
+                        <div className="px-6 py-4">
+                            <textarea
+                                value={stageComment.comment}
+                                onChange={(e) => setStageComment(s => ({ ...s, comment: e.target.value }))}
+                                placeholder={stageComment.statusName.toLowerCase() === 'lost'
+                                    ? 'e.g. Signed with competitor, budget pulled...'
+                                    : 'e.g. Wrong number, spam enquiry, not relevant...'}
+                                rows={3}
+                                autoFocus
+                                className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-surface text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            />
+                        </div>
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-surface-elevated">
+                            <button
+                                onClick={() => setStageComment(s => ({ ...s, open: false }))}
+                                className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-muted rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleStageCommentSubmit}
+                                disabled={!stageComment.comment.trim() || savingStageComment}
+                                className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                            >
+                                {savingStageComment ? 'Saving...' : `Mark as ${stageComment.statusName}`}
+                            </button>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
         </>
     );
 }

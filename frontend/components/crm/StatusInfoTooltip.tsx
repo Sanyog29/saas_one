@@ -4,6 +4,42 @@ import React, { useState, useEffect } from 'react';
 import { Info } from 'lucide-react';
 
 const QUALIFICATION_INFO: Record<string, { label: string; color: string; criteria: string[] }> = {
+    mql: {
+        label: 'MQL',
+        color: '#F59E0B',
+        criteria: [
+            'Marketing Qualified Lead — entry stage',
+            'Lead came in via marketing channel (ads, website, referral)',
+            'Basic info captured, not yet contacted',
+        ],
+    },
+    active: {
+        label: 'ACTIVE',
+        color: '#3B82F6',
+        criteria: [
+            'Lead is being actively worked on',
+            'Ring 1-10 tracks successive call attempts',
+            'Move to Warm/Hot once qualified through conversation',
+        ],
+    },
+    ring: {
+        label: 'RING',
+        color: '#FB923C',
+        criteria: [
+            'Call attempt tracking (Ring 1-10) within Active stage',
+            'Each ring represents a successive call attempt to reach the prospect',
+            'Higher ring numbers indicate more follow-up attempts',
+        ],
+    },
+    warm: {
+        label: 'WARM',
+        color: '#F59E0B',
+        criteria: [
+            'Lead has shown interest after contact',
+            'Requirement identified but not fully committed',
+            'Needs further nurturing or follow-up',
+        ],
+    },
     hot: {
         label: 'HOT',
         color: '#EF4444',
@@ -12,18 +48,16 @@ const QUALIFICATION_INFO: Record<string, { label: string; color: string; criteri
             'Decision-maker engaged and responsive',
             'Budget / financing confirmed',
             'Timeline to decision within ~90 days',
-            'Active deal action: tour done, proposal exchanged, or LOI in play',
+            'High intent — ready for site visit, proposal, or negotiation',
         ],
     },
-    warm: {
-        label: 'WARM',
-        color: '#F59E0B',
+    future: {
+        label: 'FUTURE',
+        color: '#8B5CF6',
         criteria: [
-            'Defined requirement',
-            'Identified, responsive decision-maker',
-            'At least one meeting or tour held',
-            'Falls short of HOT on one axis (timeline 3–12mo or budget not proofed)',
-            'No LOI yet',
+            'Lead is real and reasonably qualified',
+            'Trigger event known but distant (e.g., lease expires in 18 months)',
+            'No current activity expected yet — park and revisit',
         ],
     },
     cold: {
@@ -33,35 +67,35 @@ const QUALIFICATION_INFO: Record<string, { label: string; color: string; criteri
             'Requirement vague or exploratory',
             'Timeline undefined or beyond 12 months',
             'Budget unknown',
-            'Inquiry-only or low responsiveness; no meeting held',
+            'Low responsiveness; may re-engage later',
         ],
     },
-    ring: {
-        label: 'RING',
-        color: '#FB923C',
-        criteria: [
-            'Call attempt tracking (Ring 1-10)',
-            'Each ring represents a successive call attempt to reach the prospect',
-            'Higher ring numbers indicate more follow-up attempts',
-            'If still unresponsive after several rings, consider marking Cold or Nurture',
-        ],
-    },
-    future: {
-        label: 'NURTURE / FUTURE',
-        color: '#8B5CF6',
-        criteria: [
-            'Lead is real and reasonably qualified',
-            'Trigger event known but distant (e.g., lease expires in 18 months)',
-            'No current activity expected yet',
-        ],
-    },
-    loss: {
+    lost: {
         label: 'LOST',
         color: '#64748B',
         criteria: [
-            'Reached real qualification but did not close',
+            'Reached qualification but did not close',
             'Signed elsewhere, requirement cancelled, or went dark',
-            'Must carry a reason code',
+            'Requires a comment/reason when marking',
+        ],
+    },
+    disqualified: {
+        label: 'DISQUALIFIED',
+        color: '#EF4444',
+        criteria: [
+            'Not a valid MQL lead',
+            'Wrong contact info, spam, or irrelevant enquiry',
+            'Does not meet minimum qualification criteria',
+            'Requires a comment/reason when marking',
+        ],
+    },
+    won: {
+        label: 'WON',
+        color: '#22C55E',
+        criteria: [
+            'Deal successfully closed',
+            'Agreement signed, payment initiated or completed',
+            'Lead exits the active pipeline',
         ],
     },
 };

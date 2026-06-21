@@ -170,9 +170,10 @@ function LeadRow({ lead, index, showCampaign = false }: { lead: PriorityLead | A
 const CITIES = ['Mumbai', 'Bangalore', 'Noida'];
 
 export default function CRMDashboard() {
-    const { user } = useAuth();
+    const { user, membership } = useAuth();
     const params = useParams();
     const orgId = params?.orgId as string;
+    const isBdRep = membership?.org_role === 'bd_rep';
     const [stats, setStats] = useState<CRMDashboardStats | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [period, setPeriod] = useState<StatPeriod>('all');
@@ -242,6 +243,7 @@ export default function CRMDashboard() {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
+                    {!isBdRep && (
                     <div ref={cityRef} className="relative">
                         <button
                             onClick={() => setIsCityOpen(!isCityOpen)}
@@ -281,6 +283,7 @@ export default function CRMDashboard() {
                             )}
                         </AnimatePresence>
                     </div>
+                    )}
                     <Link
                         href={`/${orgId}/crm/leads`}
                         data-tour="crm-add-lead"

@@ -20,7 +20,7 @@ export const dashboardSteps: Step[] = [
         target: '[data-tour="crm-priority-leads"]',
         placement: 'right',
         title: 'Priority Leads',
-        content: 'Hot and Warm leads that need your attention right now. These are your highest-chance closures. Click any lead to jump straight into their details.',
+        content: 'Hot and MQL leads that need your attention right now. These are your highest-chance closures. Click any lead to jump straight into their details.',
     },
     {
         target: '[data-tour="crm-action-leads"]',
@@ -32,7 +32,7 @@ export const dashboardSteps: Step[] = [
         target: '[data-tour="crm-add-lead"]',
         placement: 'bottom',
         title: 'Adding New Leads',
-        content: 'Click here to add a lead manually. For bulk imports, use the Import page from the sidebar. Every lead you add enters at the "Warm" stage by default.',
+        content: 'Click here to add a lead manually. For bulk imports, use the Import page from the sidebar. Every lead you add enters at the "MQL" stage by default.',
     },
     {
         target: 'body',
@@ -63,7 +63,7 @@ export const leadsTableSteps: Step[] = [
         target: '[data-tour="leads-filters"]',
         placement: 'bottom',
         title: 'Filter by Stage & Priority',
-        content: 'Click chips to filter leads by lifecycle stage (Warm, Hot, Cold, etc.) or priority level. Select multiple to combine. This is how you plan your day — filter to "Hot" leads and start calling.',
+        content: 'Click chips to filter leads by lifecycle stage (MQL, Hot, Cold, etc.) or priority level. Select multiple to combine. This is how you plan your day — filter to "Hot" leads and start calling.',
     },
     {
         target: '[data-tour="leads-table"]',
@@ -75,7 +75,7 @@ export const leadsTableSteps: Step[] = [
         target: '[data-tour="leads-add"]',
         placement: 'bottom',
         title: 'Create a Lead',
-        content: 'Click "Add Lead" to create a new one. Fill in company details, contact info, deal value, and assign a team member. The lead starts at "Warm" stage.',
+        content: 'Click "Add Lead" to create a new one. Fill in company details, contact info, deal value, and assign a team member. The lead starts at "MQL" stage.',
     },
     {
         target: 'body',
@@ -99,8 +99,8 @@ export const leadDetailSteps: Step[] = [
     {
         target: 'body',
         placement: 'center',
-        title: '🔥 Warm → Ring 1, 2, 3',
-        content: 'Every new lead starts at "Warm." You then make up to 3 call attempts — Ring 1, Ring 2, Ring 3. Each ring is logged so you know exactly where follow-up stands.',
+        title: '🔥 MQL → Ring 1, 2, 3',
+        content: 'Every new lead starts at "MQL." You then make up to 3 call attempts — Ring 1, Ring 2, Ring 3. Each ring is logged so you know exactly where follow-up stands.',
         skipBeacon: true,
     },
     {
@@ -120,22 +120,15 @@ export const leadDetailSteps: Step[] = [
     {
         target: 'body',
         placement: 'center',
-        title: '📍 Visit Pending → Visit Done',
-        content: '"Visit Pending" = site visit is scheduled. Once completed, move to "Visit Done." This tracks your field activity and shows managers which leads have had physical engagement.',
+        title: '🏆 Won, ❌ Lost & 🚫 Disqualified',
+        content: '"Won" = deal closed successfully. "Lost" = deal lost (requires a comment with the reason). "Disqualified" = not a valid MQL lead (also requires a comment). All three are terminal stages.',
         skipBeacon: true,
     },
     {
         target: 'body',
         placement: 'center',
-        title: '📐 Layout Shared → LOI',
-        content: '"Layout Shared" = you\'ve sent property layouts/plans. "LOI" (Letter of Intent) = the client has expressed formal buying intent. These are your late-stage, high-value deals.',
-        skipBeacon: true,
-    },
-    {
-        target: 'body',
-        placement: 'center',
-        title: '🏆 Close & ❌ Loss',
-        content: '"Close" = deal won, congratulations! "Loss" = deal lost. Both are terminal — the lead exits the active pipeline. Every other stage is open for movement.',
+        title: '📍 Site Visit, LOI & Layout',
+        content: 'Site visits, LOI (Letter of Intent), and Layout Shared are tracked as timeline activities — not pipeline stages. Use the buttons in the Timeline tab to log them with a comment.',
         skipBeacon: true,
     },
     {
@@ -149,7 +142,7 @@ export const leadDetailSteps: Step[] = [
         target: '[data-tour="lead-pipeline"]',
         placement: 'bottom',
         title: 'The Stage Pipeline',
-        content: 'Here it is — the visual pipeline. Big circles are major milestones (Warm, Cold, Hot, Layout, LOI, Close, Loss). Small circles are sub-steps (Rings, Future, Visits). Click any to change the stage.',
+        content: 'Here it is — the visual pipeline. MQL → Active (Ring 1-10) → Warm → Hot → Future → Cold → Lost / Disqualified / Won. Click any stage to move the lead there.',
     },
     {
         target: '[data-tour="lead-quick-actions"]',
@@ -173,7 +166,7 @@ export const leadDetailSteps: Step[] = [
         target: 'body',
         placement: 'center',
         title: 'Lead Management Mastered!',
-        content: 'You now know how to manage a lead from Warm to Close (or Loss). One more stop — the Calendar, where all your scheduled events live.',
+        content: 'You now know how to manage a lead from MQL to Close (or Loss). One more stop — the Calendar, where all your scheduled events live.',
         skipBeacon: true,
     },
 ];
@@ -204,7 +197,7 @@ export const calendarSteps: Step[] = [
         target: 'body',
         placement: 'center',
         title: 'You\'re All Set! 🎉',
-        content: 'Onboarding complete — you\'ve learned the dashboard, leads table, the 13-stage pipeline, and the calendar. The CRM is now fully unlocked. Go close some deals!',
+        content: 'Onboarding complete — you\'ve learned the dashboard, leads table, the pipeline stages, and the calendar. The CRM is now fully unlocked. Go close some deals!',
         skipBeacon: true,
     },
 ];

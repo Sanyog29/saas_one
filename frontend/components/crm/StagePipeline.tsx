@@ -160,7 +160,7 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
                                             <span
                                                 className={`text-[10px] leading-tight text-center ${isCurrentRing ? 'font-bold' : 'font-medium'}`}
                                                 style={{ color: isCurrentRing ? ringColor : 'var(--text-secondary)' }}
-                                            >{isCurrentRing ? `Ring ${currentRingNum}` : 'Ring'}</span>
+                                            >{isCurrentRing ? `Active R${currentRingNum}` : 'Active'}</span>
                                             <ChevronDown className={`w-3 h-3 transition-transform ${ringOpen ? 'rotate-180' : ''}`} style={{ color: 'var(--text-tertiary)' }} />
                                         </span>
                                     </button>

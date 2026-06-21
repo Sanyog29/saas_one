@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, Download, Plus, ChevronDown, MoreHorizontal, Phone, Mail, MapPin, Building, User, Calendar, ArrowUpDown } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Search, Filter, Download, Plus, ChevronDown, MoreHorizontal, Phone, Mail, MapPin, Building, User, Calendar, ArrowUpDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { CRMLead, LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
 import { getStageVisual } from '@/frontend/lib/crm/stages';
+import { getSourceVisual } from '@/frontend/lib/crm/sourceIcons';
 
 interface LeadsTableProps {
     onLeadSelect?: (lead: CRMLead) => void;
@@ -18,7 +19,8 @@ interface LeadsTableProps {
 }
 
 export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: LeadsTableProps) {
-    const { user } = useAuth();
+    const { user, membership } = useAuth();
+    const isBdRep = membership?.org_role === 'bd_rep';
     const [leads, setLeads] = useState<CRMLead[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -26,13 +28,20 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const [showFilters, setShowFilters] = useState(false);
-    const [selectedFilters, setSelectedFilters] = useState<{
+
+    // Staged filters (user picks, then clicks Apply)
+    const [stagedFilters, setStagedFilters] = useState<{
         status?: string[];
         campaign?: string[];
         city?: string[];
+        lead_source?: string[];
         date_from?: string;
         date_to?: string;
+        week?: 'this_week' | 'last_week';
     }>({});
+    // Applied filters (actually sent to API)
+    const [appliedFilters, setAppliedFilters] = useState<typeof stagedFilters>({});
+
     const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [sources, setSources] = useState<LeadSource[]>([]);
     const [campaigns, setCampaigns] = useState<string[]>([]);
@@ -41,8 +50,11 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
 
     useEffect(() => {
         fetchLeads();
+    }, [page, search, appliedFilters, sortBy, sortOrder]);
+
+    useEffect(() => {
         fetchConfigs();
-    }, [page, search, selectedFilters, sortBy, sortOrder]);
+    }, []);
 
     const fetchLeads = async () => {
         setIsLoading(true);
@@ -55,17 +67,44 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
             });
 
             if (search) params.set('search', search);
-            if (selectedFilters.status?.length) {
-                selectedFilters.status.forEach(s => params.append('status', s));
+            if (appliedFilters.status?.length) {
+                appliedFilters.status.forEach(s => params.append('status', s));
             }
-            if (selectedFilters.campaign?.length) {
-                selectedFilters.campaign.forEach(c => params.append('campaign', c));
+            if (appliedFilters.campaign?.length) {
+                appliedFilters.campaign.forEach(c => params.append('campaign', c));
             }
-            if (selectedFilters.city?.length) {
-                selectedFilters.city.forEach(c => params.append('city', c));
+            if (appliedFilters.city?.length) {
+                appliedFilters.city.forEach(c => params.append('city', c));
             }
-            if (selectedFilters.date_from) params.set('date_from', selectedFilters.date_from);
-            if (selectedFilters.date_to) params.set('date_to', selectedFilters.date_to);
+            if (appliedFilters.lead_source?.length) {
+                appliedFilters.lead_source.forEach(s => params.append('lead_source', s));
+            }
+            if (appliedFilters.date_from) params.set('date_from', appliedFilters.date_from);
+            if (appliedFilters.date_to) params.set('date_to', appliedFilters.date_to);
+
+            // Week quick filter
+            if (appliedFilters.week) {
+                const now = new Date();
+                const dayOfWeek = now.getDay();
+                const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+                const monday = new Date(now);
+                monday.setDate(now.getDate() + mondayOffset);
+                monday.setHours(0, 0, 0, 0);
+                const sunday = new Date(monday);
+                sunday.setDate(monday.getDate() + 6);
+
+                if (appliedFilters.week === 'last_week') {
+                    const lastMonday = new Date(monday);
+                    lastMonday.setDate(monday.getDate() - 7);
+                    const lastSunday = new Date(monday);
+                    lastSunday.setDate(monday.getDate() - 1);
+                    params.set('date_from', lastMonday.toISOString().split('T')[0]);
+                    params.set('date_to', lastSunday.toISOString().split('T')[0]);
+                } else {
+                    params.set('date_from', monday.toISOString().split('T')[0]);
+                    params.set('date_to', sunday.toISOString().split('T')[0]);
+                }
+            }
 
             const res = await fetch(`/api/crm/leads?${params}`);
             if (res.ok) {
@@ -100,6 +139,19 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
             console.error('Failed to fetch configs:', error);
         }
     };
+
+    const handleApplyFilters = () => {
+        setAppliedFilters({ ...stagedFilters });
+        setPage(1);
+    };
+
+    const handleClearFilters = () => {
+        setStagedFilters({});
+        setAppliedFilters({});
+        setPage(1);
+    };
+
+    const hasUnappliedChanges = JSON.stringify(stagedFilters) !== JSON.stringify(appliedFilters);
 
     const handleSort = (column: string) => {
         if (sortBy === column) {
@@ -145,7 +197,18 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     return (
         <div className="space-y-4">
             {/* Header */}
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center justify-between gap-3">
+                {/* Search */}
+                <div className="relative flex-1 max-w-sm" data-tour="leads-search">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                        placeholder="Search leads..."
+                        className="w-full pl-9 pr-4 py-2.5 border border-border rounded-xl text-sm bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    />
+                </div>
                 <div className="flex items-center gap-3">
                     <button
                         data-tour="leads-filters"
@@ -156,7 +219,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                     >
                         <Filter className="w-4 h-4" />
                         Filters
-                        {Object.values(selectedFilters).some(v => v && v.length > 0) && (
+                        {Object.values(appliedFilters).some(v => v && (Array.isArray(v) ? v.length > 0 : !!v)) && (
                             <span className="w-2 h-2 bg-primary rounded-full" />
                         )}
                     </button>
@@ -192,15 +255,14 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Status</label>
                                     <div className="flex flex-wrap gap-2">
                                         {statuses.map(s => {
-                                            const active = selectedFilters.status?.includes(s.id);
+                                            const active = stagedFilters.status?.includes(s.id);
                                             return (
                                                 <button
                                                     key={s.id}
                                                     onClick={() => {
-                                                        const current = selectedFilters.status || [];
+                                                        const current = stagedFilters.status || [];
                                                         const next = active ? current.filter(v => v !== s.id) : [...current, s.id];
-                                                        setSelectedFilters({ ...selectedFilters, status: next });
-                                                        setPage(1);
+                                                        setStagedFilters({ ...stagedFilters, status: next });
                                                     }}
                                                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
                                                         active
@@ -215,20 +277,83 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                         })}
                                     </div>
                                 </div>
+
+                                {/* Source Filter */}
+                                {sources.length > 0 && (
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Source</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {sources.map(s => {
+                                            const active = stagedFilters.lead_source?.includes(s.id);
+                                            const sv = getSourceVisual(s.name);
+                                            const SourceIcon = sv.icon;
+                                            return (
+                                                <button
+                                                    key={s.id}
+                                                    onClick={() => {
+                                                        const current = stagedFilters.lead_source || [];
+                                                        const next = active ? current.filter(v => v !== s.id) : [...current, s.id];
+                                                        setStagedFilters({ ...stagedFilters, lead_source: next });
+                                                    }}
+                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-primary text-white border-primary'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                    }`}
+                                                >
+                                                    <SourceIcon className="w-3.5 h-3.5" style={active ? {} : { color: sv.color }} />
+                                                    {active && <span>✓</span>}{s.name}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                )}
+
+                                {/* Week Quick Filter */}
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Week</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {([{ key: 'this_week', label: 'This Week' }, { key: 'last_week', label: 'Last Week' }] as const).map(w => {
+                                            const active = stagedFilters.week === w.key;
+                                            return (
+                                                <button
+                                                    key={w.key}
+                                                    onClick={() => {
+                                                        setStagedFilters({
+                                                            ...stagedFilters,
+                                                            week: active ? undefined : w.key,
+                                                            date_from: undefined,
+                                                            date_to: undefined,
+                                                        });
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-primary text-white border-primary'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                    }`}
+                                                >
+                                                    {active && <span className="mr-1">✓</span>}{w.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
                                 <div>
                                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Date Range</label>
                                     <div className="flex items-center gap-2">
                                         <input
                                             type="date"
-                                            value={selectedFilters.date_from || ''}
-                                            onChange={(e) => { setSelectedFilters({ ...selectedFilters, date_from: e.target.value || undefined }); setPage(1); }}
+                                            value={stagedFilters.date_from || ''}
+                                            onChange={(e) => { setStagedFilters({ ...stagedFilters, date_from: e.target.value || undefined, week: undefined }); }}
                                             className="px-3 py-1.5 rounded-xl text-xs font-bold border border-border bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         />
                                         <span className="text-xs text-text-tertiary">to</span>
                                         <input
                                             type="date"
-                                            value={selectedFilters.date_to || ''}
-                                            onChange={(e) => { setSelectedFilters({ ...selectedFilters, date_to: e.target.value || undefined }); setPage(1); }}
+                                            value={stagedFilters.date_to || ''}
+                                            onChange={(e) => { setStagedFilters({ ...stagedFilters, date_to: e.target.value || undefined, week: undefined }); }}
                                             className="px-3 py-1.5 rounded-xl text-xs font-bold border border-border bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                                         />
                                     </div>
@@ -238,15 +363,41 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Campaign</label>
                                     <div className="flex flex-wrap gap-2">
                                         {campaigns.map(c => {
-                                            const active = selectedFilters.campaign?.includes(c);
+                                            const active = stagedFilters.campaign?.includes(c);
                                             return (
                                                 <button
                                                     key={c}
                                                     onClick={() => {
-                                                        const current = selectedFilters.campaign || [];
+                                                        const current = stagedFilters.campaign || [];
                                                         const next = active ? current.filter(v => v !== c) : [...current, c];
-                                                        setSelectedFilters({ ...selectedFilters, campaign: next });
-                                                        setPage(1);
+                                                        setStagedFilters({ ...stagedFilters, campaign: next });
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                        active
+                                                            ? 'bg-primary text-white border-primary'
+                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                    }`}
+                                                >
+                                                    {active && <span className="mr-1">✓</span>}{c}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                )}
+                                {!isBdRep && (
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">City</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {['Mumbai', 'Bangalore', 'Noida'].map(c => {
+                                            const active = stagedFilters.city?.includes(c);
+                                            return (
+                                                <button
+                                                    key={c}
+                                                    onClick={() => {
+                                                        const current = stagedFilters.city || [];
+                                                        const next = active ? current.filter(v => v !== c) : [...current, c];
+                                                        setStagedFilters({ ...stagedFilters, city: next });
                                                     }}
                                                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
                                                         active
@@ -262,47 +413,20 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                 </div>
                                 )}
                                 <div>
-                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">City</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {['Mumbai', 'Bangalore', 'Noida'].map(c => {
-                                            const active = selectedFilters.city?.includes(c);
-                                            return (
-                                                <button
-                                                    key={c}
-                                                    onClick={() => {
-                                                        const current = selectedFilters.city || [];
-                                                        const next = active ? current.filter(v => v !== c) : [...current, c];
-                                                        setSelectedFilters({ ...selectedFilters, city: next });
-                                                        setPage(1);
-                                                    }}
-                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
-                                                        active
-                                                            ? 'bg-primary text-white border-primary'
-                                                            : 'bg-surface text-text-secondary border-border hover:border-primary/40'
-                                                    }`}
-                                                >
-                                                    {active && <span className="mr-1">✓</span>}{c}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Ring</label>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Active (Ring)</label>
                                     <div className="flex flex-wrap gap-2">
                                         {Array.from({ length: 10 }, (_, i) => i + 1).map(r => {
                                             const ringStatusIds = statuses.filter(s => s.name.toLowerCase() === `ring ${r}`).map(s => s.id);
-                                            const active = ringStatusIds.some(id => selectedFilters.status?.includes(id));
+                                            const active = ringStatusIds.some(id => stagedFilters.status?.includes(id));
                                             return (
                                                 <button
                                                     key={r}
                                                     onClick={() => {
-                                                        const current = selectedFilters.status || [];
+                                                        const current = stagedFilters.status || [];
                                                         const next = active
                                                             ? current.filter(v => !ringStatusIds.includes(v))
                                                             : [...current, ...ringStatusIds];
-                                                        setSelectedFilters({ ...selectedFilters, status: next });
-                                                        setPage(1);
+                                                        setStagedFilters({ ...stagedFilters, status: next });
                                                     }}
                                                     className={`w-9 h-9 rounded-xl text-xs font-bold border transition-colors ${
                                                         active
@@ -316,15 +440,24 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                         })}
                                     </div>
                                 </div>
-                                <div className="flex justify-end">
+                                {/* Apply / Clear buttons */}
+                                <div className="flex justify-end gap-3 pt-2 border-t border-border">
                                     <button
-                                        onClick={() => {
-                                            setSelectedFilters({});
-                                            setPage(1);
-                                        }}
+                                        onClick={handleClearFilters}
                                         className="px-4 py-2 text-xs font-bold text-text-secondary hover:text-text-primary transition-colors"
                                     >
                                         Clear All
+                                    </button>
+                                    <button
+                                        onClick={handleApplyFilters}
+                                        className={`flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                                            hasUnappliedChanges
+                                                ? 'bg-primary text-white hover:bg-primary/90 shadow-sm'
+                                                : 'bg-primary/60 text-white cursor-default'
+                                        }`}
+                                    >
+                                        <Check className="w-3.5 h-3.5" />
+                                        Apply Filters
                                     </button>
                                 </div>
                             </div>

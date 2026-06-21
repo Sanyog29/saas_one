@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter, useParams, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Lock, ArrowRight, Sparkles } from 'lucide-react';
@@ -13,12 +13,29 @@ const TOUR_ROUTES: Record<TourId, string> = {
     'crm-calendar': '/crm/calendar',
 };
 
+/**
+ * The route each tour expects to mount on. If the user is already on the
+ * route that hosts the next tour, we must release the gate immediately so the
+ * underlying page can mount and auto-start its own tour. Otherwise the gate
+ * would block the only place where the tour can actually run.
+ */
+function tourOwningRoute(tourId: TourId): string {
+    return TOUR_ROUTES[tourId];
+}
+
 export default function CrmOnboardingGate({ children }: { children: React.ReactNode }) {
     const { isLoaded, allCompleted, completedCount, totalCount, nextTourId, completedTours } = useCrmOnboarding();
     const router = useRouter();
     const params = useParams();
     const pathname = usePathname();
     const orgId = params.orgId as string;
+
+    // If the user clicks "Start" while already on the route hosting the next
+    // tour, the gate has nothing to navigate to. Mark the gate "released" so
+    // we render the children — the destination page will auto-start its own
+    // CrmTour. Reset on full resetAll().
+    const [released, setReleased] = useState(false);
+    useEffect(() => { setReleased(false); }, [completedCount === 0]);
 
     if (!isLoaded) {
         return (
@@ -28,9 +45,36 @@ export default function CrmOnboardingGate({ children }: { children: React.ReactN
         );
     }
 
+    // Once any tour is done, free passage — the gate's job is to gate the
+    // very first tour, not to babysit subsequent ones.
     if (allCompleted || completedCount > 0) return <>{children}</>;
 
+    // The user is sitting on the route that hosts the next tour. Release the
+    // gate so the underlying page can mount and auto-start its own tour.
+    if (released && nextTourId) {
+        const target = tourOwningRoute(nextTourId);
+        if (pathname?.endsWith(target) || pathname === `/${orgId}${target}`) {
+            return <>{children}</>;
+        }
+    }
+
     const progress = (completedCount / totalCount) * 100;
+
+    // Helper: navigate to the next tour's route, releasing the gate if we
+    // can't actually navigate (i.e. we're already on that route).
+    const startNextTour = () => {
+        if (!nextTourId) return;
+        const target = `/${orgId}${tourOwningRoute(nextTourId)}`;
+        const alreadyHere = pathname === target || pathname?.endsWith(tourOwningRoute(nextTourId));
+        if (alreadyHere) {
+            // Same-page mount: release the gate so children render, then
+            // notify the page's tour to start immediately.
+            setReleased(true);
+            window.dispatchEvent(new CustomEvent('crm-tour-start', { detail: { tourId: nextTourId } }));
+        } else {
+            router.push(target);
+        }
+    };
 
     return (
         <div className="min-h-[80vh] flex items-center justify-center p-6">
@@ -90,9 +134,7 @@ export default function CrmOnboardingGate({ children }: { children: React.ReactN
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.1 * idx }}
                                     onClick={() => {
-                                        if (isNext) {
-                                            router.push(`/${orgId}${TOUR_ROUTES[tourId]}`);
-                                        }
+                                        if (isNext) startNextTour();
                                     }}
                                     disabled={isLocked || isComplete}
                                     className={`
@@ -136,7 +178,7 @@ export default function CrmOnboardingGate({ children }: { children: React.ReactN
                             className="mt-6 text-center"
                         >
                             <button
-                                onClick={() => router.push(`/${orgId}${TOUR_ROUTES[nextTourId]}`)}
+                                onClick={startNextTour}
                                 className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 transition-colors shadow-md shadow-primary/20"
                             >
                                 Start: {TOUR_LABELS[nextTourId]}

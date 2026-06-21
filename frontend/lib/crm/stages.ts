@@ -6,8 +6,8 @@
  */
 import type React from 'react';
 import {
-    PhoneCall, CalendarClock, MapPin, MapPinCheck, LayoutGrid,
-    FileSignature, Trophy, XCircle, Circle,
+    PhoneCall, CalendarClock, Trophy, XCircle, Circle,
+    Ban, Zap,
 } from 'lucide-react';
 import { WarmFlameIcon, ColdFaceIcon, HotFaceIcon } from '@/frontend/components/crm/icons/StageFaceIcons';
 
@@ -23,7 +23,8 @@ export interface StageVisual {
 }
 
 const MAP: Record<string, StageVisual> = {
-    'warm':          { icon: WarmFlameIcon, color: '#F59E0B', size: 'lg', group: 'attempt' },
+    'mql':           { icon: WarmFlameIcon, color: '#F59E0B', size: 'lg', group: 'attempt' },
+    'active':        { icon: Zap,          color: '#3B82F6', size: 'lg', group: 'attempt' },
     'ring':          { icon: PhoneCall,     color: '#FB923C', size: 'sm', group: 'attempt' },
     'ring 1':        { icon: PhoneCall,     color: '#FB923C', size: 'sm', group: 'attempt', ring: 1 },
     'ring 2':        { icon: PhoneCall,     color: '#FB923C', size: 'sm', group: 'attempt', ring: 2 },
@@ -35,13 +36,14 @@ const MAP: Record<string, StageVisual> = {
     'ring 8':        { icon: PhoneCall,     color: '#FB923C', size: 'sm', group: 'attempt', ring: 8 },
     'ring 9':        { icon: PhoneCall,     color: '#FB923C', size: 'sm', group: 'attempt', ring: 9 },
     'ring 10':       { icon: PhoneCall,     color: '#FB923C', size: 'sm', group: 'attempt', ring: 10 },
-    'cold':          { icon: ColdFaceIcon,  color: '#38BDF8', size: 'lg', group: 'attempt' },
-    'hot':           { icon: HotFaceIcon,   color: '#EF4444', size: 'lg', group: 'attempt' },
-    'future':        { icon: CalendarClock, color: '#8B5CF6', size: 'sm', group: 'visit' },
-    'visit pending': { icon: MapPin,        color: '#0EA5E9', size: 'sm', group: 'visit' },
-    'visit done':    { icon: MapPinCheck,   color: '#14B8A6', size: 'sm', group: 'visit' },
-    'layout shared': { icon: LayoutGrid,    color: '#A855F7', size: 'lg', group: 'deal' },
-    'loi':           { icon: FileSignature, color: '#6366F1', size: 'lg', group: 'deal' },
+    'warm':          { icon: WarmFlameIcon, color: '#F59E0B', size: 'lg', group: 'visit' },
+    'hot':           { icon: HotFaceIcon,   color: '#EF4444', size: 'lg', group: 'visit' },
+    'future':        { icon: CalendarClock, color: '#8B5CF6', size: 'lg', group: 'visit' },
+    'cold':          { icon: ColdFaceIcon,  color: '#38BDF8', size: 'lg', group: 'visit' },
+    'lost':          { icon: XCircle,       color: '#64748B', size: 'lg', group: 'terminal' },
+    'disqualified':  { icon: Ban,           color: '#EF4444', size: 'lg', group: 'terminal' },
+    'won':           { icon: Trophy,        color: '#22C55E', size: 'lg', group: 'terminal' },
+    // Legacy compat
     'close':         { icon: Trophy,        color: '#22C55E', size: 'lg', group: 'terminal' },
     'loss':          { icon: XCircle,       color: '#64748B', size: 'lg', group: 'terminal' },
 };
@@ -52,3 +54,5 @@ export function getStageVisual(nameOrKey?: string | null): StageVisual {
     if (!nameOrKey) return FALLBACK;
     return MAP[nameOrKey.toLowerCase().trim()] || FALLBACK;
 }
+
+export const COMMENT_REQUIRED_STAGES = ['lost', 'disqualified'];

@@ -23,6 +23,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
         company_name: '',
         contact_person: '',
         contact_number: '',
+        secondary_contact_number: '',
         email: '',
         location: '',
         requirement: '',
@@ -45,6 +46,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     company_name: initialData.company_name || '',
                     contact_person: initialData.contact_person || '',
                     contact_number: initialData.contact_number || '',
+                    secondary_contact_number: initialData.secondary_contact_number || '',
                     email: initialData.email || '',
                     location: initialData.location || '',
                     requirement: initialData.requirement || '',
@@ -82,7 +84,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
 
     const fetchConfigs = async () => {
         try {
-            const res = await fetch('/api/crm/settings?type=all');
+            const res = await fetch('/api/crm/settings?type=all&scope=bd');
             if (res.ok) {
                 const data = await res.json();
                 setStatuses(data.statuses || []);
@@ -189,6 +191,18 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                             type="tel"
                                             value={formData.contact_number}
                                             onChange={(e) => handleChange('contact_number', e.target.value)}
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            placeholder="+91 98765 43210"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                                            Secondary Contact Number
+                                        </label>
+                                        <input
+                                            type="tel"
+                                            value={formData.secondary_contact_number || ''}
+                                            onChange={(e) => handleChange('secondary_contact_number', e.target.value)}
                                             className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                             placeholder="+91 98765 43210"
                                         />

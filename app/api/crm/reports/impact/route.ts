@@ -168,6 +168,18 @@ export async function GET(request: NextRequest) {
             .lte('spend_date', to)
         : { data: [] };
 
+    // Performance metrics (Meta / Google API): impressions, clicks, CTR, CPC, CPM.
+    // Pulled in parallel — they live in a separate table.
+    const { data: metricsRows } = campaignIdFilter.length > 0
+        ? await supabaseAdmin
+            .from('crm_campaign_metrics')
+            .select('campaign_id, metric_date, impressions, clicks, ctr, cpc, cpm')
+            .eq('organization_id', access.organizationId)
+            .in('campaign_id', campaignIdFilter)
+            .gte('metric_date', from)
+            .lte('metric_date', to)
+        : { data: [] };
+
     // If no granular spend entries exist, derive from crm_campaigns.budget_total
     // proportional to days overlapping the period. Use the orgCampaigns list
     // already loaded.
@@ -185,6 +197,7 @@ export async function GET(request: NextRequest) {
         wonIds,
         lostIds,
         spendRows: spendRows || [],
+        metricsRows: metricsRows || [],
         totalSpend,
         fromMs,
         toMs,
@@ -241,6 +254,7 @@ interface AggInput {
     wonIds: Set<string>;
     lostIds: Set<string>;
     spendRows: any[];
+    metricsRows: any[];
     totalSpend: number;
     fromMs: number;
     toMs: number;
@@ -511,6 +525,33 @@ function aggregate(input: AggInput) {
         }
     }
 
+    // Aggregate Meta/Google performance metrics per campaign. CTR / CPC / CPM
+    // are simple averages across days (weighted averages would over-weight low-volume
+    // days; this matches what Meta Business Manager shows at the campaign level).
+    // CPM (cost-per-mille) and CTR are also computable from totals for accuracy.
+    const metricsAgg: Record<string, {
+        impressions: number;
+        clicks: number;
+        ctr_sum: number;
+        ctr_n: number;
+        cpc_sum: number;
+        cpc_n: number;
+        cpm_sum: number;
+        cpm_n: number;
+    }> = {};
+    for (const r of (input as any).metricsRows || []) {
+        const cid = r.campaign_id;
+        if (!metricsAgg[cid]) {
+            metricsAgg[cid] = { impressions: 0, clicks: 0, ctr_sum: 0, ctr_n: 0, cpc_sum: 0, cpc_n: 0, cpm_sum: 0, cpm_n: 0 };
+        }
+        const m = metricsAgg[cid];
+        m.impressions += Number(r.impressions || 0);
+        m.clicks += Number(r.clicks || 0);
+        if (r.ctr != null) { m.ctr_sum += Number(r.ctr); m.ctr_n++; }
+        if (r.cpc != null) { m.cpc_sum += Number(r.cpc); m.cpc_n++; }
+        if (r.cpm != null) { m.cpm_sum += Number(r.cpm); m.cpm_n++; }
+    }
+
     // Status list, sorted by sort_order
     const statusDistribution = Object.values(statusAgg).sort((a, b) => b.count - a.count);
 
@@ -519,13 +560,25 @@ function aggregate(input: AggInput) {
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
     const campaignBreakdown = Object.values(campaignAgg)
-        .map((c) => ({
-            ...c,
-            spend: c.spend,
-            roi: c.spend > 0 ? ((c.revenue - c.spend) / c.spend) * 100 : null,
-            cpl: c.leads > 0 ? c.spend / c.leads : null,
-            cpa: c.won > 0 ? c.spend / c.won : null,
-        }))
+        .map((c: any) => {
+            const m = metricsAgg[c.id];
+            // Use totals to recompute CTR accurately (clicks/impressions)
+            // instead of averaging daily CTR (which is what Meta's API returns
+            // when called with time_increment=1 — it's the day's CTR).
+            const ctr = m && m.impressions > 0 ? (m.clicks / m.impressions) * 100 : (m && m.ctr_n > 0 ? m.ctr_sum / m.ctr_n : null);
+            return {
+                ...c,
+                spend: c.spend,
+                roi: c.spend > 0 ? ((c.revenue - c.spend) / c.spend) * 100 : null,
+                cpl: c.leads > 0 ? c.spend / c.leads : null,
+                cpa: c.won > 0 ? c.spend / c.won : null,
+                impressions: m?.impressions || 0,
+                clicks: m?.clicks || 0,
+                ctr,
+                cpc: m && m.cpc_n > 0 ? m.cpc_sum / m.cpc_n : null,
+                cpm: m && m.cpm_n > 0 ? m.cpm_sum / m.cpm_n : null,
+            };
+        })
         .sort((a, b) => b.leads - a.leads)
         .slice(0, 10);
     const repPerformance = Object.values(repAgg)
@@ -566,6 +619,14 @@ function aggregate(input: AggInput) {
             cpa: totalWon > 0 ? totalSpend / totalWon : 0,
             roi: totalSpend > 0 ? ((totalRevenue - totalSpend) / totalSpend) * 100 : 0,
             stale_pipeline: { count: staleCount, value: staleValue, days: staleDays },
+            // Meta/Google ad performance totals for the period.
+            impressions: Object.values(metricsAgg).reduce((s, m) => s + (m?.impressions || 0), 0),
+            clicks: Object.values(metricsAgg).reduce((s, m) => s + (m?.clicks || 0), 0),
+            ctr: (() => {
+                const totalImpr = Object.values(metricsAgg).reduce((s, m) => s + (m?.impressions || 0), 0);
+                const totalClicks = Object.values(metricsAgg).reduce((s, m) => s + (m?.clicks || 0), 0);
+                return totalImpr > 0 ? (totalClicks / totalImpr) * 100 : 0;
+            })(),
         },
         sparklines,
         monthlyTrend: monthly,

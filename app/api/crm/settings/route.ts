@@ -58,6 +58,7 @@ export async function GET(request: NextRequest) {
                   ...data,
                   app_secret: data.app_secret ? '••••••••' : null,
                   page_access_token: data.page_access_token ? '••••••••' : null,
+                  meta_user_access_token: data.meta_user_access_token ? '••••••••' : null,
               }
             : null;
         return NextResponse.json({ meta: safe });
@@ -184,6 +185,12 @@ export async function POST(request: NextRequest) {
             };
             if (d.app_secret && d.app_secret !== '••••••••') upd.app_secret = d.app_secret;
             if (d.page_access_token && d.page_access_token !== '••••••••') upd.page_access_token = d.page_access_token;
+            // Marketing API access (drives the hourly insights sync).
+            if (d.meta_ad_account_id !== undefined) upd.meta_ad_account_id = d.meta_ad_account_id || null;
+            if (d.meta_app_id !== undefined) upd.meta_app_id = d.meta_app_id || null;
+            if (d.meta_user_access_token && d.meta_user_access_token !== '••••••••') {
+                upd.meta_user_access_token = d.meta_user_access_token;
+            }
             const res = await supabaseAdmin
                 .from('crm_meta_config').upsert(upd, { onConflict: 'organization_id' }).select().single();
             if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
