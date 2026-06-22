@@ -10,7 +10,9 @@ export type RoleKey =
     | 'mst' | 'hk' | 'fe' | 'se' | 'technician' | 'field_staff' | 'bms_operator' | 'staff'
     | 'soft_service_staff' | 'soft_service_supervisor' | 'soft_service_manager'
     | 'tenant_user' | 'vendor'
-    | 'super_tenant';
+    | 'super_tenant'
+    | 'bd_rep'
+    | 'bd_admin';
 
 export type CapabilityDomain =
     | 'users'
@@ -23,7 +25,8 @@ export type CapabilityDomain =
     | 'dashboards'
     | 'reports'
     | 'vendors'
-    | 'stock';
+    | 'stock'
+    | 'crm';
 
 export type CapabilityAction = 'view' | 'create' | 'update' | 'approve' | 'assign' | 'delete' | 'suspend';
 

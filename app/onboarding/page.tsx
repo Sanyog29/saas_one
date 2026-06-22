@@ -28,6 +28,8 @@ const AVAILABLE_ROLES = [
     { id: 'tenant', label: 'Client', desc: 'Raise requests & view updates', icon: '🏠' },
     { id: 'vendor', label: 'Vendor', desc: 'Manage shop revenue & orders', icon: '🍔' },
     { id: 'procurement', label: 'Procurement', desc: 'Manage material requests & orders', icon: '📦' },
+    { id: 'bd_rep', label: 'BD Representative', desc: 'Sales rep — manage assigned leads & follow-ups', icon: '📈' },
+    { id: 'bd_admin', label: 'BD Admin', desc: 'Manage all leads, team & CRM settings', icon: '🎯' },
 ];
 
 const SKILL_OPTIONS: Record<string, { code: string; label: string; icon: any }[]> = {
@@ -263,7 +265,12 @@ export default function OnboardingPage() {
             if (membershipError) {
                 // Ignore duplicate key errors, throw others
                 if (!membershipError.message.toLowerCase().includes('duplicate key')) {
-                    console.error('Membership insert failed:', membershipError);
+                    console.error('Membership insert failed:', {
+                        message: membershipError.message,
+                        code: (membershipError as any).code,
+                        details: (membershipError as any).details,
+                        hint: (membershipError as any).hint,
+                    });
                     throw membershipError;
                 }
             }
@@ -280,6 +287,22 @@ export default function OnboardingPage() {
 
                 if (orgMemError && !orgMemError.message.toLowerCase().includes('duplicate key')) {
                     console.error('Org-level membership failed for procurement:', orgMemError);
+                }
+            }
+
+            // 1.3️⃣ BD (CRM) roles are organization-scoped — also grant org-level
+            //       membership so CRM access resolves by organization, not property.
+            if (selectedRole === 'bd_rep' || selectedRole === 'bd_admin') {
+                const { error: bdOrgErr } = await supabase
+                    .from('organization_memberships')
+                    .insert({
+                        user_id: authUser.id,
+                        organization_id: targetOrgId,
+                        role: selectedRole,
+                        is_active: true
+                    });
+                if (bdOrgErr && !bdOrgErr.message.toLowerCase().includes('duplicate key')) {
+                    console.error('Org-level membership failed for BD role:', bdOrgErr);
                 }
             }
 

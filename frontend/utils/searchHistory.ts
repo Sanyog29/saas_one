@@ -7,7 +7,7 @@ const MAX_RECENT_SEARCHES = 5;
 
 export interface RecentItem {
     id: string;
-    type: 'ticket' | 'user' | 'property' | 'organization' | 'module';
+    type: 'ticket' | 'user' | 'property' | 'organization' | 'module' | 'lead';
     label: string;
     sublabel?: string;
     route?: string;

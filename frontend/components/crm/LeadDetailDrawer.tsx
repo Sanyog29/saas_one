@@ -1,0 +1,942 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import {
+    X, Phone, Mail, MapPin, Building, Calendar, User, DollarSign,
+    Edit, Trash2, PhoneCall, Video, Map, FileText, MessageSquare,
+    Clock, ChevronRight, Plus, CheckCircle, CalendarPlus, Pencil, Save,
+    FileSignature, LayoutGrid, MapPin as MapPinIcon
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CRMLead, CRMActivity, CRMNote, CRMEvent, TimelineItem, LeadStatusConfig, EventType } from '@/frontend/types/crm';
+import StagePipeline from '@/frontend/components/crm/StagePipeline';
+import AddEventModal from '@/frontend/components/crm/AddEventModal';
+import CallCoachPanel from '@/frontend/components/crm/CallCoachPanel';
+import { getStageVisual, COMMENT_REQUIRED_STAGES } from '@/frontend/lib/crm/stages';
+import { getSourceVisual } from '@/frontend/lib/crm/sourceIcons';
+import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
+
+interface LeadDetailDrawerProps {
+    leadId: string | null;
+    isOpen: boolean;
+    onClose: () => void;
+    onLeadUpdate?: (lead: CRMLead) => void;
+}
+
+const EVENT_TYPE_META: Record<string, { title: string; activityType: string }> = {
+    call: { title: 'Call', activityType: 'call' },
+    meeting: { title: 'Meeting', activityType: 'meeting' },
+    site_visit: { title: 'Site Visit', activityType: 'site_visit' },
+    followup: { title: 'Follow-up', activityType: 'followup_scheduled' },
+};
+
+const ACTIVITY_ICONS: Record<string, any> = {
+    created: Plus,
+    updated: Edit,
+    call: PhoneCall,
+    meeting: Video,
+    site_visit: Map,
+    proposal_sent: FileText,
+    followup_scheduled: Calendar,
+    status_changed: CheckCircle,
+    assigned: User,
+    note_added: MessageSquare,
+    email_sent: Mail,
+    archived: Trash2,
+    restored: CheckCircle
+};
+
+// Semantic dot colors for the tickets-style waterfall timeline.
+const ACTIVITY_DOT_COLORS: Record<string, string> = {
+    created: '#6B7280',          // gray
+    updated: '#6B7280',
+    call: '#06B6D4',             // cyan
+    meeting: '#8B5CF6',          // violet
+    site_visit: '#F59E0B',       // amber
+    proposal_sent: '#3B82F6',    // blue
+    followup_scheduled: '#F97316', // orange
+    status_changed: '#22C55E',   // green
+    assigned: '#0EA5E9',         // sky
+    note_added: '#64748B',       // slate
+    email_sent: '#A855F7',       // purple
+    archived: '#EF4444',         // red
+    restored: '#22C55E',
+};
+
+export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate }: LeadDetailDrawerProps) {
+    const [lead, setLead] = useState<CRMLead | null>(null);
+    const [activities, setActivities] = useState<CRMActivity[]>([]);
+    const [notes, setNotes] = useState<CRMNote[]>([]);
+    const [events, setEvents] = useState<CRMEvent[]>([]);
+    const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<'overview' | 'timeline' | 'calls' | 'notes'>('overview');
+    const [newNote, setNewNote] = useState('');
+    const [isAddingNote, setIsAddingNote] = useState(false);
+    const [isChangingStatus, setIsChangingStatus] = useState(false);
+    const [popupStage, setPopupStage] = useState<string | null>(null);
+    const [addEvent, setAddEvent] = useState<{ open: boolean; type: EventType; title?: string; requireFuture?: boolean }>(
+        { open: false, type: 'meeting' }
+    );
+    const [editingRequirement, setEditingRequirement] = useState(false);
+    const [editingRemarks, setEditingRemarks] = useState(false);
+    const [requirementDraft, setRequirementDraft] = useState('');
+    const [remarksDraft, setRemarksDraft] = useState('');
+    const [savingRequirement, setSavingRequirement] = useState(false);
+    const [savingRemarks, setSavingRemarks] = useState(false);
+    const [stageComment, setStageComment] = useState<{ open: boolean; statusId: string; statusName: string; comment: string }>({ open: false, statusId: '', statusName: '', comment: '' });
+    const [savingStageComment, setSavingStageComment] = useState(false);
+
+    useEffect(() => {
+        if (leadId && isOpen) {
+            fetchLeadDetails();
+        }
+    }, [leadId, isOpen]);
+
+    // Load the org's lifecycle stages once for the pipeline.
+    useEffect(() => {
+        if (!isOpen) return;
+        fetch('/api/crm/statuses?scope=org')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data?.statuses) setStatuses(data.statuses); })
+            .catch(() => {});
+    }, [isOpen]);
+
+    // Auto-dismiss the "status updated" icon popup.
+    useEffect(() => {
+        if (!popupStage) return;
+        const t = setTimeout(() => setPopupStage(null), 1800);
+        return () => clearTimeout(t);
+    }, [popupStage]);
+
+    const fetchLeadDetails = async () => {
+        if (!leadId) return;
+        setIsLoading(true);
+        try {
+            const res = await fetch(`/api/crm/leads/${leadId}`);
+            if (res.ok) {
+                const data = await res.json();
+                setLead(data.lead);
+                setActivities(data.activities || []);
+                setNotes(data.notes || []);
+                setEvents(data.events || []);
+            }
+        } catch (error) {
+            console.error('Failed to fetch lead details:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleAddNote = async () => {
+        if (!leadId || !newNote.trim()) return;
+        setIsAddingNote(true);
+        try {
+            const res = await fetch('/api/crm/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lead_id: leadId, note: newNote })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setNotes(prev => [data.note, ...prev]);
+                setActivities(prev => [{
+                    id: `temp-${Date.now()}`,
+                    lead_id: leadId,
+                    user_id: '',
+                    activity_type: 'note_added',
+                    description: 'Note added',
+                    metadata: {},
+                    created_at: new Date().toISOString(),
+                    user_info: { id: '', full_name: 'You', email: '' }
+                } as CRMActivity, ...prev]);
+                setNewNote('');
+            }
+        } catch (error) {
+            console.error('Failed to add note:', error);
+        } finally {
+            setIsAddingNote(false);
+        }
+    };
+
+    const handleStageChange = async (statusId: string) => {
+        if (!leadId || !lead || statusId === lead.status || isChangingStatus) return;
+        const target = statuses.find(s => s.id === statusId);
+        if (!target) return;
+
+        if (COMMENT_REQUIRED_STAGES.includes(target.name.toLowerCase().trim())) {
+            setStageComment({ open: true, statusId, statusName: target.name, comment: '' });
+            return;
+        }
+
+        await executeStageChange(statusId, target);
+    };
+
+    const executeStageChange = async (statusId: string, target: LeadStatusConfig, comment?: string) => {
+        if (!leadId || !lead) return;
+        setIsChangingStatus(true);
+        try {
+            const res = await fetch(`/api/crm/leads/${leadId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: statusId }),
+            });
+            if (!res.ok) return;
+            const updated: CRMLead = { ...lead, status: statusId, status_info: { ...(lead.status_info as any), ...target } };
+            setLead(updated);
+            onLeadUpdate?.(updated);
+            const desc = comment
+                ? `Status changed to ${target.name} — ${comment}`
+                : `Status changed to ${target.name}`;
+            setActivities(prev => [{
+                id: `temp-${Date.now()}`, lead_id: leadId, user_id: '',
+                activity_type: 'status_changed', description: desc,
+                metadata: {}, created_at: new Date().toISOString(),
+                user_info: { id: '', full_name: 'You', email: '' },
+            } as CRMActivity, ...prev]);
+            if (comment) {
+                try {
+                    await fetch('/api/crm/notes', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lead_id: leadId, note: `[${target.name}] ${comment}` }),
+                    });
+                } catch {}
+            }
+            setPopupStage(target.name);
+            if (/future/i.test(target.name)) {
+                setAddEvent({
+                    open: true, type: 'followup', requireFuture: true,
+                    title: `Future follow-up: ${lead.company_name || lead.contact_person || 'Lead'}`,
+                });
+            }
+        } catch (e) {
+            console.error('Failed to change stage:', e);
+        } finally {
+            setIsChangingStatus(false);
+        }
+    };
+
+    const handleStageCommentSubmit = async () => {
+        if (!stageComment.comment.trim()) return;
+        const target = statuses.find(s => s.id === stageComment.statusId);
+        if (!target) return;
+        setSavingStageComment(true);
+        await executeStageChange(stageComment.statusId, target, stageComment.comment.trim());
+        setSavingStageComment(false);
+        setStageComment({ open: false, statusId: '', statusName: '', comment: '' });
+    };
+
+    const handleLogTimelineAction = async (actionType: string, actionLabel: string) => {
+        if (!leadId || !lead) return;
+        try {
+            await fetch('/api/crm/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lead_id: leadId, note: `[${actionLabel}] logged` }),
+            });
+            setActivities(prev => [{
+                id: `temp-${Date.now()}`, lead_id: leadId, user_id: '',
+                activity_type: actionType as any,
+                description: `${actionLabel} logged`,
+                metadata: {}, created_at: new Date().toISOString(),
+                user_info: { id: '', full_name: 'You', email: '' },
+            } as CRMActivity, ...prev]);
+        } catch {}
+    };
+
+    const handleEventCreated = (event: CRMEvent) => {
+        setEvents(prev => [event, ...prev]);
+        const meta = EVENT_TYPE_META[event.event_type];
+        setActivities(prev => [{
+            id: `temp-evt-${Date.now()}`, lead_id: leadId || '', user_id: '',
+            activity_type: (meta?.activityType || 'updated') as any,
+            description: `${meta?.title || 'Event'} scheduled: ${event.title}`,
+            metadata: {}, created_at: event.start_datetime,
+            user_info: { id: '', full_name: 'You', email: '' },
+        } as CRMActivity, ...prev]);
+    };
+
+    const formatDate = (date: string) => {
+        return new Date(date).toLocaleDateString('en-IN', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
+
+    const formatCurrency = (value: number) => {
+        return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            maximumFractionDigits: 0
+        }).format(value);
+    };
+
+    // Merge activities + notes (comments) into one chronological waterfall —
+    // mirrors how the tickets module shows a ticket's sequence of events.
+    const buildTimeline = (): (TimelineItem & { activityType: string })[] => {
+        const items: (TimelineItem & { activityType: string })[] = [];
+
+        activities.forEach(activity => {
+            const Icon = ACTIVITY_ICONS[activity.activity_type] || Edit;
+            items.push({
+                id: `a-${activity.id}`,
+                type: 'activity',
+                timestamp: activity.created_at,
+                title: activity.activity_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                description: activity.description,
+                icon: Icon.name,
+                user: activity.user_info,
+                activityType: activity.activity_type,
+            });
+        });
+
+        notes.forEach(note => {
+            items.push({
+                id: `n-${note.id}`,
+                type: 'note',
+                timestamp: note.created_at,
+                title: 'Comment',
+                description: note.note,
+                icon: 'MessageSquare',
+                user: note.user_info,
+                activityType: 'note_added',
+            });
+        });
+
+        events.forEach(event => {
+            const meta = EVENT_TYPE_META[event.event_type] || { title: 'Event', activityType: 'updated' };
+            const Icon = ACTIVITY_ICONS[meta.activityType] || Calendar;
+            items.push({
+                id: `e-${event.id}`,
+                type: 'event',
+                timestamp: event.start_datetime,
+                title: `${meta.title}${event.status && event.status !== 'scheduled' ? ` · ${event.status}` : ''}`,
+                description: [event.title, event.description].filter(Boolean).join(' — '),
+                icon: Icon.name,
+                user: undefined,
+                activityType: meta.activityType,
+            });
+        });
+
+        // Oldest → newest, so the lead reads as a real interaction log top to bottom.
+        return items.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    };
+
+    if (!isOpen) return null;
+
+    const currentLeadName = lead?.company_name || lead?.contact_person || 'Lead';
+
+    return (
+        <>
+        <AnimatePresence>
+            <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/50 z-50"
+                onClick={onClose}
+            />
+            <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className="fixed right-0 top-0 bottom-0 w-full max-w-2xl bg-surface shadow-2xl z-50 flex flex-col"
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                    <div>
+                        <h2 className="text-lg font-bold text-text-primary">
+                            {lead?.company_name || lead?.contact_person || 'Lead Details'}
+                        </h2>
+                        {lead?.status_info && (() => {
+                            const v = getStageVisual(lead.status_info.name);
+                            const Icon = v.icon;
+                            return (
+                                <div
+                                    className="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-0.5 rounded-full"
+                                    style={{ backgroundColor: `${v.color}1A`, color: v.color }}
+                                >
+                                    <Icon className="w-3.5 h-3.5" />
+                                    <span className="text-xs font-bold">{lead.status_info.name}</span>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                    <button
+                        onClick={onClose}
+                        aria-label="Close"
+                        className="p-2 hover:bg-muted rounded-xl transition-colors"
+                    >
+                        <X className="w-5 h-5 text-text-secondary" />
+                    </button>
+                </div>
+
+                {/* Lifecycle pipeline (Amazon-style, click any stage to move the lead) */}
+                {lead && statuses.length > 0 && (
+                    <div className="px-5 py-3 border-b border-border bg-surface-elevated/60" data-tour="lead-pipeline">
+                        <StagePipeline
+                            statuses={statuses}
+                            currentStatusId={lead.status}
+                            onChange={handleStageChange}
+                            isUpdating={isChangingStatus}
+                        />
+                    </div>
+                )}
+
+                {/* Tabs */}
+                <div className="flex border-b border-border" data-tour="lead-tabs">
+                    {(['overview', 'timeline', 'calls', 'notes'] as const).map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                                activeTab === tab
+                                    ? 'text-primary border-b-2 border-primary'
+                                    : 'text-text-secondary hover:text-text-primary'
+                            }`}
+                        >
+                            {tab === 'calls' ? 'Calls & Coaching' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    {isLoading ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                            <TextShimmer duration={1.2} className="text-sm font-bold" baseColor="#64748b" gradientColor="#cbd5e1">
+                                Loading lead details…
+                            </TextShimmer>
+                        </div>
+                    ) : (
+                        <>
+                            {activeTab === 'overview' && lead && (
+                                <div className="space-y-6">
+                                    {/* Lead Info */}
+                                    <div className="bg-surface-elevated rounded-xl p-4 space-y-4" data-tour="lead-contact-info">
+                                        <h3 className="font-bold text-text-primary">Contact Information</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {lead.contact_person && (
+                                                <div className="flex items-center gap-3">
+                                                    <User className="w-4 h-4 text-text-tertiary" />
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Contact Person</p>
+                                                        <p className="text-sm font-medium text-text-primary">{lead.contact_person}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div className="flex items-center gap-3">
+                                                <Phone className="w-4 h-4 text-text-tertiary" />
+                                                <div>
+                                                    <p className="text-xs text-text-tertiary">Primary Contact</p>
+                                                    <p className="text-sm font-medium text-text-primary">{lead.contact_number || '–'}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <Phone className="w-4 h-4 text-text-tertiary" />
+                                                <div>
+                                                    <p className="text-xs text-text-tertiary">Secondary Contact</p>
+                                                    <p className="text-sm font-medium text-text-primary">{lead.secondary_contact_number || '–'}</p>
+                                                </div>
+                                            </div>
+                                            {lead.email && (
+                                                <div className="flex items-center gap-3">
+                                                    <Mail className="w-4 h-4 text-text-tertiary" />
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Email</p>
+                                                        <p className="text-sm font-medium text-text-primary">{lead.email}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {lead.location && (
+                                                <div className="flex items-center gap-3">
+                                                    <MapPin className="w-4 h-4 text-text-tertiary" />
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Location</p>
+                                                        <p className="text-sm font-medium text-text-primary">{lead.location}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Follow-up */}
+                                    <div className="bg-surface-elevated rounded-xl p-4 space-y-3">
+                                        <h3 className="font-bold text-text-primary">Follow-up</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs text-text-tertiary block mb-1">Next Follow-up Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={lead.next_followup_date?.slice(0, 10) || ''}
+                                                    onChange={async (e) => {
+                                                        const val = e.target.value || null;
+                                                        try {
+                                                            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                method: 'PATCH',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ next_followup_date: val }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const updated: CRMLead = { ...lead, next_followup_date: val || undefined };
+                                                                setLead(updated);
+                                                                onLeadUpdate?.(updated);
+                                                            }
+                                                        } catch {}
+                                                    }}
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-text-tertiary block mb-1">Follow-up Notes</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Add notes..."
+                                                    defaultValue={lead.followup_notes || ''}
+                                                    onBlur={async (e) => {
+                                                        const val = e.target.value || null;
+                                                        if (val === (lead.followup_notes || null)) return;
+                                                        try {
+                                                            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                method: 'PATCH',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ followup_notes: val }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const updated: CRMLead = { ...lead, followup_notes: val || undefined };
+                                                                setLead(updated);
+                                                                onLeadUpdate?.(updated);
+                                                            }
+                                                        } catch {}
+                                                    }}
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Deal Info */}
+                                    <div className="bg-surface-elevated rounded-xl p-4 space-y-4">
+                                        <h3 className="font-bold text-text-primary">Deal Information</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <p className="text-xs text-text-tertiary">Deal Value</p>
+                                                <p className="text-xl font-bold text-text-primary">{formatCurrency(lead.deal_value)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-text-tertiary">Priority</p>
+                                                <p className={`text-sm font-medium ${
+                                                    lead.priority === 'Urgent' ? 'text-red-600' :
+                                                    lead.priority === 'High' ? 'text-orange-600' :
+                                                    'text-text-primary'
+                                                }`}>{lead.priority}</p>
+                                            </div>
+                                            {lead.property_info && (
+                                                <div>
+                                                    <p className="text-xs text-text-tertiary">Property Interest</p>
+                                                    <p className="text-sm font-medium text-text-primary">{lead.property_info.name}</p>
+                                                </div>
+                                            )}
+                                            {lead.source_info && (() => {
+                                                const sv = getSourceVisual(lead.source_info.name);
+                                                const SourceIcon = sv.icon;
+                                                return (
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Lead Source</p>
+                                                        <p className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+                                                            <SourceIcon className="w-4 h-4" style={{ color: sv.color }} />
+                                                            {lead.source_info.name}
+                                                        </p>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                    </div>
+
+                                    {/* Assignment */}
+                                    {lead.assigned_user && (
+                                        <div className="bg-surface-elevated rounded-xl p-4">
+                                            <h3 className="font-bold text-text-primary mb-3">Assigned To</h3>
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                                    <User className="w-5 h-5 text-primary" />
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-text-primary">{lead.assigned_user.full_name}</p>
+                                                    <p className="text-xs text-text-secondary">{lead.assigned_user.email}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Requirement */}
+                                    <div className="bg-surface-elevated rounded-xl p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-bold text-text-primary">Requirement</h3>
+                                            {!editingRequirement && (
+                                                <button
+                                                    onClick={() => { setRequirementDraft(lead.requirement || ''); setEditingRequirement(true); }}
+                                                    className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                                                    title="Edit requirement"
+                                                >
+                                                    <Pencil className="w-4 h-4 text-text-tertiary" />
+                                                </button>
+                                            )}
+                                        </div>
+                                        {editingRequirement ? (
+                                            <div className="space-y-2">
+                                                <textarea
+                                                    value={requirementDraft}
+                                                    onChange={(e) => setRequirementDraft(e.target.value)}
+                                                    placeholder="Add requirement details..."
+                                                    rows={3}
+                                                    autoFocus
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                                <div className="flex items-center gap-2 justify-end">
+                                                    <button
+                                                        onClick={() => setEditingRequirement(false)}
+                                                        className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-muted rounded-lg transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        disabled={savingRequirement}
+                                                        onClick={async () => {
+                                                            const val = requirementDraft || null;
+                                                            if (val === (lead.requirement || null)) { setEditingRequirement(false); return; }
+                                                            setSavingRequirement(true);
+                                                            try {
+                                                                const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                    method: 'PATCH',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ requirement: val }),
+                                                                });
+                                                                if (res.ok) {
+                                                                    const updated: CRMLead = { ...lead, requirement: val || undefined };
+                                                                    setLead(updated);
+                                                                    onLeadUpdate?.(updated);
+                                                                }
+                                                            } catch {}
+                                                            setSavingRequirement(false);
+                                                            setEditingRequirement(false);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 disabled:opacity-50"
+                                                    >
+                                                        <Save className="w-3.5 h-3.5" />
+                                                        {savingRequirement ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-text-primary whitespace-pre-wrap">
+                                                {lead.requirement || <span className="text-text-tertiary">No requirement added</span>}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Remarks */}
+                                    <div className="bg-surface-elevated rounded-xl p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="font-bold text-text-primary">Remarks</h3>
+                                            {!editingRemarks && (
+                                                <button
+                                                    onClick={() => { setRemarksDraft(lead.remarks || ''); setEditingRemarks(true); }}
+                                                    className="p-1.5 hover:bg-muted rounded-lg transition-colors"
+                                                    title="Edit remarks"
+                                                >
+                                                    <Pencil className="w-4 h-4 text-text-tertiary" />
+                                                </button>
+                                            )}
+                                        </div>
+                                        {editingRemarks ? (
+                                            <div className="space-y-2">
+                                                <textarea
+                                                    value={remarksDraft}
+                                                    onChange={(e) => setRemarksDraft(e.target.value)}
+                                                    placeholder="Add remarks..."
+                                                    rows={2}
+                                                    autoFocus
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                />
+                                                <div className="flex items-center gap-2 justify-end">
+                                                    <button
+                                                        onClick={() => setEditingRemarks(false)}
+                                                        className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-muted rounded-lg transition-colors"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        disabled={savingRemarks}
+                                                        onClick={async () => {
+                                                            const val = remarksDraft || null;
+                                                            if (val === (lead.remarks || null)) { setEditingRemarks(false); return; }
+                                                            setSavingRemarks(true);
+                                                            try {
+                                                                const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                    method: 'PATCH',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify({ remarks: val }),
+                                                                });
+                                                                if (res.ok) {
+                                                                    const updated: CRMLead = { ...lead, remarks: val || undefined };
+                                                                    setLead(updated);
+                                                                    onLeadUpdate?.(updated);
+                                                                }
+                                                            } catch {}
+                                                            setSavingRemarks(false);
+                                                            setEditingRemarks(false);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90 disabled:opacity-50"
+                                                    >
+                                                        <Save className="w-3.5 h-3.5" />
+                                                        {savingRemarks ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-text-primary whitespace-pre-wrap">
+                                                {lead.remarks || <span className="text-text-tertiary">No remarks added</span>}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'timeline' && (() => {
+                                const timeline = buildTimeline();
+                                // Tickets-style waterfall: one continuous vertical line, small
+                                // semantic-colored dots, actor + timestamp per entry (chronological).
+                                return (
+                                  <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-bold text-text-primary">Activity Timeline</span>
+                                        <button
+                                            onClick={() => setAddEvent({ open: true, type: 'meeting' })}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary/90"
+                                        >
+                                            <CalendarPlus className="w-3.5 h-3.5" /> Add Event
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button
+                                            onClick={() => handleLogTimelineAction('site_visit', 'Site Visit')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs font-bold hover:bg-teal-100 transition-colors dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-800"
+                                        >
+                                            <MapPinIcon className="w-3.5 h-3.5" /> Site Visit
+                                        </button>
+                                        <button
+                                            onClick={() => handleLogTimelineAction('proposal_sent', 'LOI')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+                                        >
+                                            <FileSignature className="w-3.5 h-3.5" /> LOI
+                                        </button>
+                                        <button
+                                            onClick={() => handleLogTimelineAction('updated', 'Layout Shared')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold hover:bg-purple-100 transition-colors dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800"
+                                        >
+                                            <LayoutGrid className="w-3.5 h-3.5" /> Layout Shared
+                                        </button>
+                                    </div>
+                                    {timeline.length === 0 ? (
+                                        <div className="text-center py-12 text-text-secondary">
+                                            <Clock className="w-12 h-12 mx-auto mb-3 text-text-tertiary" />
+                                            <p>No activity yet</p>
+                                        </div>
+                                    ) : (
+                                    <div className="relative pl-5">
+                                        <div className="absolute left-[7px] top-1.5 bottom-1.5 w-px bg-border" />
+                                        <div className="space-y-5">
+                                            {timeline.map((item) => {
+                                                const Icon = ACTIVITY_ICONS[item.icon] || Edit;
+                                                const dot = ACTIVITY_DOT_COLORS[item.activityType] || '#64748B';
+                                                return (
+                                                    <div key={item.id} className="relative flex gap-4">
+                                                        <div
+                                                            className="absolute -left-5 top-1 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm z-10"
+                                                            style={{ backgroundColor: dot }}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="flex items-center gap-1.5 text-sm font-bold text-text-primary">
+                                                                    {Icon && <Icon className="w-3.5 h-3.5" style={{ color: dot }} />}
+                                                                    {item.title}
+                                                                </span>
+                                                                <span className="text-xs text-text-tertiary whitespace-nowrap flex-shrink-0">
+                                                                    {formatDate(item.timestamp)}
+                                                                </span>
+                                                            </div>
+                                                            {item.description && (
+                                                                <p className="text-sm text-text-secondary mt-1 whitespace-pre-wrap break-words">{item.description}</p>
+                                                            )}
+                                                            {item.user && (
+                                                                <p className="text-xs text-text-tertiary mt-1">by {item.user.full_name}</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    )}
+                                  </div>
+                                );
+                            })()}
+
+                            {activeTab === 'calls' && lead && (
+                                <CallCoachPanel leadId={lead.id} />
+                            )}
+
+                            {activeTab === 'notes' && (
+                                <div className="space-y-4">
+                                    {/* Add Note */}
+                                    <div className="flex gap-3">
+                                        <textarea
+                                            value={newNote}
+                                            onChange={(e) => setNewNote(e.target.value)}
+                                            placeholder="Add a note..."
+                                            className="flex-1 border border-border rounded-xl p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            rows={3}
+                                        />
+                                        <button
+                                            onClick={handleAddNote}
+                                            disabled={!newNote.trim() || isAddingNote}
+                                            className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium disabled:opacity-50 hover:bg-primary/90 transition-colors self-end"
+                                        >
+                                            {isAddingNote ? 'Adding...' : 'Add'}
+                                        </button>
+                                    </div>
+
+                                    {/* Notes List */}
+                                    {notes.length === 0 ? (
+                                        <div className="text-center py-12 text-text-secondary">
+                                            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-text-tertiary" />
+                                            <p>No notes yet</p>
+                                        </div>
+                                    ) : (
+                                        notes.map(note => (
+                                            <div key={note.id} className="p-4 bg-surface-elevated rounded-xl">
+                                                <p className="text-sm text-text-primary">{note.note}</p>
+                                                <div className="flex items-center justify-between mt-3">
+                                                    <span className="text-xs text-text-tertiary">
+                                                        {note.user_info?.full_name || 'Unknown'}
+                                                    </span>
+                                                    <span className="text-xs text-text-tertiary">{formatDate(note.created_at)}</span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            </motion.div>
+        </AnimatePresence>
+
+        {/* Status-updated icon popup */}
+        <AnimatePresence>
+            {popupStage && (() => {
+                const v = getStageVisual(popupStage);
+                const Icon = v.icon;
+                return (
+                    <motion.div
+                        key="stage-popup"
+                        initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="fixed left-1/2 -translate-x-1/2 bottom-10 z-[70] flex items-center gap-3 px-5 py-3 rounded-2xl shadow-2xl bg-surface border border-border"
+                    >
+                        <span className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${v.color}1A`, color: v.color }}>
+                            <Icon className="w-5 h-5" />
+                        </span>
+                        <div>
+                            <p className="text-xs text-text-tertiary">Status updated</p>
+                            <p className="text-sm font-bold" style={{ color: v.color }}>{popupStage}</p>
+                        </div>
+                    </motion.div>
+                );
+            })()}
+        </AnimatePresence>
+
+        {leadId && (
+            <AddEventModal
+                isOpen={addEvent.open}
+                leadId={leadId}
+                organizationId={lead?.organization_id}
+                leadName={currentLeadName}
+                defaultType={addEvent.type}
+                defaultTitle={addEvent.title}
+                requireFuture={addEvent.requireFuture}
+                onClose={() => setAddEvent(s => ({ ...s, open: false }))}
+                onCreated={handleEventCreated}
+            />
+        )}
+
+        {/* Comment required modal for Lost / Disqualified */}
+        <AnimatePresence>
+            {stageComment.open && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4"
+                    onClick={() => setStageComment(s => ({ ...s, open: false }))}
+                >
+                    <motion.div
+                        initial={{ scale: 0.95, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.95, opacity: 0 }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-surface rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+                    >
+                        <div className="px-6 py-4 border-b border-border">
+                            <h3 className="text-base font-bold text-text-primary">
+                                Mark as {stageComment.statusName}
+                            </h3>
+                            <p className="text-xs text-text-secondary mt-1">
+                                {stageComment.statusName.toLowerCase() === 'lost'
+                                    ? 'Please provide a reason for marking this lead as lost.'
+                                    : 'Please provide a reason for disqualifying this lead.'}
+                            </p>
+                        </div>
+                        <div className="px-6 py-4">
+                            <textarea
+                                value={stageComment.comment}
+                                onChange={(e) => setStageComment(s => ({ ...s, comment: e.target.value }))}
+                                placeholder={stageComment.statusName.toLowerCase() === 'lost'
+                                    ? 'e.g. Signed with competitor, budget pulled...'
+                                    : 'e.g. Wrong number, spam enquiry, not relevant...'}
+                                rows={3}
+                                autoFocus
+                                className="w-full px-3 py-2 border border-border rounded-xl text-sm bg-surface text-text-primary placeholder:text-text-tertiary resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                            />
+                        </div>
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border bg-surface-elevated">
+                            <button
+                                onClick={() => setStageComment(s => ({ ...s, open: false }))}
+                                className="px-4 py-2 text-sm font-medium text-text-secondary hover:bg-muted rounded-xl transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleStageCommentSubmit}
+                                disabled={!stageComment.comment.trim() || savingStageComment}
+                                className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                            >
+                                {savingStageComment ? 'Saving...' : `Mark as ${stageComment.statusName}`}
+                            </button>
+                        </div>
+                    </motion.div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+        </>
+    );
+}

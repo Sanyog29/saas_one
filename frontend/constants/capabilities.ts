@@ -11,7 +11,8 @@ export const CAPABILITY_MATRIX: Record<RoleKey, CapabilityMatrix> = {
         security: ['view', 'create', 'update', 'delete'],
         dashboards: ['view'],
         reports: ['view'],
-        vendors: ['view', 'create', 'update', 'delete']
+        vendors: ['view', 'create', 'update', 'delete'],
+        crm: ['view', 'create', 'update', 'approve', 'assign', 'delete', 'suspend']
     },
     org_admin: {
         users: ['view', 'create', 'update', 'assign', 'suspend'],
@@ -101,5 +102,13 @@ export const CAPABILITY_MATRIX: Record<RoleKey, CapabilityMatrix> = {
         properties: ['view'],
         dashboards: ['view'],
         reports: ['view']
+    },
+    // CRM Roles
+    bd_admin: {
+        crm: ['view', 'create', 'update', 'approve', 'assign', 'delete'],
+        reports: ['view']
+    },
+    bd_rep: {
+        crm: ['view', 'create', 'update']
     }
 };

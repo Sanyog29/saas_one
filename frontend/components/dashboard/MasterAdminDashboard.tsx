@@ -6,7 +6,8 @@ import {
     LayoutGrid, Settings, Trash2, RefreshCcw,
     CheckCircle2, AlertCircle, Search, Plus, ExternalLink, XCircle, Filter,
     Key, Eye, EyeOff, Globe, Copy, X, Ticket, Link as LinkIcon, LogOut,
-    UserCircle, FileDown, Brain, Wrench, MessageCircle
+    UserCircle, FileDown, Brain, Wrench, MessageCircle,
+    TrendingUp, MapPin, Radio, Flame, Phone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -31,7 +32,35 @@ import WhatsAppTemplatesManager from '@/frontend/components/admin/WhatsAppTempla
 import WhatsAppSystemControl from '@/frontend/components/ops/WhatsAppSystemControl';
 import IssueTrackingDashboard from '@/frontend/components/master-admin/IssueTrackingDashboard';
 
-type Tab = 'overview' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
+type Tab = 'overview' | 'bd-pipeline' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
+
+// Shape returned by GET /api/admin/bd-stats (cross-org BD pipeline metrics).
+interface BDStats {
+    kpis: {
+        total_leads: number;
+        hot_leads: number;
+        warm_leads: number;
+        lost_leads: number;
+        won_leads: number;
+        followups_due: number;
+    };
+    by_location: { location: string; count: number }[];
+    by_source: { source_name: string; count: number }[];
+    rep_performance: { user_id: string; user_name: string; total_leads: number; hot: number; won: number; followups_due: number }[];
+    hot_leads: {
+        id: string;
+        company_name: string | null;
+        contact_person: string | null;
+        location: string | null;
+        source_name: string | null;
+        poc: string | null;
+        status_name: string;
+        priority: string | null;
+        next_followup_date: string | null;
+        organization_id: string | null;
+        organization_code: string | null;
+    }[];
+}
 
 interface Organization {
     id: string;
@@ -111,7 +140,7 @@ const MasterAdminDashboard = () => {
     // Restore tab from URL and handle back navigation
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'analytics', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
+if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -341,6 +370,7 @@ const MasterAdminDashboard = () => {
 
     const navItems: { id: Tab, label: string, icon: any }[] = [
         { id: 'overview', label: 'Console', icon: ShieldCheck },
+        { id: 'bd-pipeline', label: 'BD Pipeline', icon: TrendingUp },
         { id: 'analytics', label: 'Engagement', icon: Activity },
         { id: 'resolvers', label: 'Resolvers', icon: Wrench },
         { id: 'organizations', label: 'Organizations', icon: Building2 },
@@ -399,7 +429,7 @@ const MasterAdminDashboard = () => {
 
                     <div className="flex items-center gap-3 px-2 mb-6">
                         <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-sm">
-                            {user?.email?.[0].toUpperCase() || 'M'}
+                            {user?.email?.[0]?.toUpperCase() || 'M'}
                         </div>
                         <div className="flex-1 overflow-hidden">
                             <p className="font-bold text-sm text-foreground truncate">
@@ -482,6 +512,7 @@ const MasterAdminDashboard = () => {
                         transition={{ duration: 0.2 }}
                     >
                         {activeTab === 'overview' && <OverviewGrid stats={stats} />}
+                        {activeTab === 'bd-pipeline' && <BDPipelineTab router={router} />}
                         {activeTab === 'analytics' && <AnalyticsTab />}
                         {activeTab === 'organizations' && (
                             selectedOrg ? (
@@ -628,6 +659,14 @@ const OverviewGrid = ({ stats }: { stats: any }) => {
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [reducedMotion, setReducedMotion] = useState(false);
 
+    // Defensive: stats may be partial / error-shaped (e.g. a 403 response body) — coerce to numbers.
+    const safeStats = {
+        entities: Number(stats?.entities) || 0,
+        activeSessions: Number(stats?.activeSessions) || 0,
+        securityAlerts: Number(stats?.securityAlerts) || 0,
+        pendingDeletions: Number(stats?.pendingDeletions) || 0,
+    };
+
     // Detect prefers-reduced-motion
     useEffect(() => {
         const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -641,7 +680,7 @@ const OverviewGrid = ({ stats }: { stats: any }) => {
         {
             id: 'licensed-entities',
             label: 'Licensed Entities',
-            value: stats.entities.toString(),
+            value: safeStats.entities.toString(),
             icon: Building2,
             trend: '-',
             color: 'text-blue-600',
@@ -649,52 +688,52 @@ const OverviewGrid = ({ stats }: { stats: any }) => {
             analytics: {
                 title: 'Entity Growth',
                 items: [
-                    { region: 'Current Total', count: stats.entities, delta: '-' },
+                    { region: 'Current Total', count: safeStats.entities, delta: '-' },
                 ]
             }
         },
         {
             id: 'active-sessions',
             label: 'Active Sessions',
-            value: stats.activeSessions.toString(),
+            value: safeStats.activeSessions.toString(),
             icon: Activity,
-            trend: stats.activeSessions > 0 ? 'LIVE' : '-',
+            trend: safeStats.activeSessions > 0 ? 'LIVE' : '-',
             color: 'text-emerald-600',
             bg: 'bg-emerald-50',
             analytics: {
                 title: 'Engagement',
                 items: [
-                    { label: 'Live Users', count: stats.activeSessions, delta: '0' },
+                    { label: 'Live Users', count: safeStats.activeSessions, delta: '0' },
                 ]
             }
         },
         {
             id: 'security-alerts',
             label: 'Security Alerts',
-            value: stats.securityAlerts.toString(),
+            value: safeStats.securityAlerts.toString(),
             icon: ShieldCheck,
-            trend: stats.securityAlerts === 0 ? 'SAFE' : 'NOTICE',
+            trend: safeStats.securityAlerts === 0 ? 'SAFE' : 'NOTICE',
             color: 'text-indigo-600',
             bg: 'bg-indigo-50',
             analytics: {
                 title: 'Threat Timeline',
                 items: [
-                    { label: 'Resolved Today', count: stats.securityAlerts, delta: '-' },
+                    { label: 'Resolved Today', count: safeStats.securityAlerts, delta: '-' },
                 ]
             }
         },
         {
             id: 'pending-deletions',
             label: 'Pending Deletions',
-            value: stats.pendingDeletions.toString(),
+            value: safeStats.pendingDeletions.toString(),
             icon: Trash2,
-            trend: stats.pendingDeletions > 0 ? 'QUEUED' : '-',
+            trend: safeStats.pendingDeletions > 0 ? 'QUEUED' : '-',
             color: 'text-rose-600',
             bg: 'bg-rose-50',
             analytics: {
                 title: 'Deletion Queue',
                 items: [
-                    { label: 'Pending', count: stats.pendingDeletions, delta: '-' },
+                    { label: 'Pending', count: safeStats.pendingDeletions, delta: '-' },
                 ]
             }
         },
@@ -819,6 +858,254 @@ const OverviewGrid = ({ stats }: { stats: any }) => {
     );
 };
 
+// Sub-component: BD (Business Development) Pipeline — cross-org coworking lead metrics.
+const BDPipelineTab = ({ router }: { router: ReturnType<typeof useRouter> }) => {
+    const [data, setData] = useState<BDStats | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const res = await fetch('/api/admin/bd-stats');
+                if (!res.ok) {
+                    if (res.status === 403) throw new Error('You do not have permission to view BD metrics.');
+                    throw new Error('Failed to load BD pipeline metrics.');
+                }
+                const json = await res.json();
+                if (!cancelled) setData(json);
+            } catch (err: any) {
+                if (!cancelled) setError(err?.message || 'Failed to load BD pipeline metrics.');
+            } finally {
+                if (!cancelled) setIsLoading(false);
+            }
+        };
+        load();
+        return () => { cancelled = true; };
+    }, []);
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center py-24">
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="text-center py-20 border border-dashed border-border rounded-2xl">
+                <AlertTriangle className="w-10 h-10 mx-auto mb-3 text-warning" />
+                <p className="text-sm font-semibold text-muted-foreground">{error}</p>
+            </div>
+        );
+    }
+
+    // Defensive defaults — never crash on empty/partial data.
+    const kpis = data?.kpis ?? { total_leads: 0, hot_leads: 0, warm_leads: 0, lost_leads: 0, won_leads: 0, followups_due: 0 };
+    const byLocation = data?.by_location ?? [];
+    const bySource = data?.by_source ?? [];
+    const repPerformance = data?.rep_performance ?? [];
+    const hotLeads = data?.hot_leads ?? [];
+
+    const kpiCards: { id: string; label: string; value: number; icon: any; color: string; tint: string }[] = [
+        { id: 'total', label: 'Total Leads', value: kpis.total_leads, icon: TrendingUp, color: 'var(--primary)', tint: 'rgba(112,143,150,0.12)' },
+        { id: 'hot', label: 'Hot Leads', value: kpis.hot_leads, icon: Flame, color: 'var(--danger)', tint: 'rgba(239,68,68,0.1)' },
+        { id: 'warm', label: 'Warm Leads', value: kpis.warm_leads, icon: Activity, color: 'var(--warning)', tint: 'rgba(245,158,11,0.1)' },
+        { id: 'won', label: 'Won Leads', value: kpis.won_leads, icon: CheckCircle2, color: 'var(--success)', tint: 'rgba(16,185,129,0.1)' },
+        { id: 'lost', label: 'Lost Leads', value: kpis.lost_leads, icon: XCircle, color: 'var(--text-tertiary)', tint: 'rgba(100,116,139,0.1)' },
+        { id: 'followups', label: 'Follow-ups Due', value: kpis.followups_due, icon: Phone, color: 'var(--info)', tint: 'rgba(59,130,246,0.1)' },
+    ];
+
+    const maxLocation = Math.max(1, ...byLocation.map(l => l.count));
+    const maxSource = Math.max(1, ...bySource.map(s => s.count));
+    const sourceIcon = (name: string) => {
+        const n = (name || '').toLowerCase();
+        if (n.includes('meta') || n.includes('facebook') || n.includes('instagram')) return Radio;
+        if (n.includes('linkedin')) return LinkIcon;
+        if (n.includes('website') || n.includes('web')) return Globe;
+        return Radio;
+    };
+
+    return (
+        <div className="space-y-8">
+            {/* KPI tiles */}
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+                {kpiCards.map((c) => (
+                    <div key={c.id} className="relative overflow-hidden rounded-2xl bg-card border border-border shadow-[var(--shadow-md)] p-5 flex flex-col gap-3 hover:-translate-y-0.5 transition-transform duration-200">
+                        <div className="flex items-start justify-between">
+                            <span className="text-[11px] font-semibold text-text-tertiary tracking-widest uppercase">{c.label}</span>
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: c.tint }}>
+                                <c.icon className="w-4 h-4" style={{ color: c.color }} />
+                            </div>
+                        </div>
+                        <p className="text-3xl metric-number" style={{ color: 'var(--text-primary)' }}>{c.value}</p>
+                    </div>
+                ))}
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Leads by Location */}
+                <div className="bg-card border border-border rounded-3xl p-8">
+                    <div className="flex items-center gap-2 mb-6">
+                        <MapPin className="w-5 h-5 text-secondary" />
+                        <h3 className="text-lg font-black text-foreground">Leads by Location</h3>
+                    </div>
+                    {byLocation.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic py-6 text-center">No location data yet.</p>
+                    ) : (
+                        <div className="space-y-4">
+                            {byLocation.slice(0, 10).map((l) => (
+                                <div key={l.location} className="space-y-1.5">
+                                    <div className="flex justify-between text-xs font-bold text-text-secondary">
+                                        <span className="truncate pr-2">{l.location}</span>
+                                        <span className="flex-shrink-0">{l.count}</span>
+                                    </div>
+                                    <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                                        <div className="h-full rounded-full" style={{ width: `${Math.round((l.count / maxLocation) * 100)}%`, background: 'var(--primary)' }} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Leads by Source */}
+                <div className="bg-card border border-border rounded-3xl p-8">
+                    <div className="flex items-center gap-2 mb-6">
+                        <Radio className="w-5 h-5 text-secondary" />
+                        <h3 className="text-lg font-black text-foreground">Leads by Source</h3>
+                    </div>
+                    {bySource.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic py-6 text-center">No campaign source data yet.</p>
+                    ) : (
+                        <div className="space-y-4">
+                            {bySource.slice(0, 10).map((s) => {
+                                const Icon = sourceIcon(s.source_name);
+                                return (
+                                    <div key={s.source_name} className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)' }}>
+                                            <Icon className="w-4 h-4 text-info" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between text-xs font-bold text-text-secondary mb-1">
+                                                <span className="truncate pr-2">{s.source_name}</span>
+                                                <span className="flex-shrink-0">{s.count}</span>
+                                            </div>
+                                            <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                                                <div className="h-full rounded-full" style={{ width: `${Math.round((s.count / maxSource) * 100)}%`, background: 'var(--info)' }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* BD Rep Performance */}
+            <div className="bg-card border border-border rounded-3xl p-8">
+                <div className="flex items-center gap-2 mb-6">
+                    <Users className="w-5 h-5 text-secondary" />
+                    <h3 className="text-lg font-black text-foreground">BD Rep Performance</h3>
+                </div>
+                {repPerformance.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic py-6 text-center">No assigned reps yet.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b border-border">
+                                    <th className="py-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest">POC / BD Rep</th>
+                                    <th className="py-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Total Leads</th>
+                                    <th className="py-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Hot</th>
+                                    <th className="py-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Won</th>
+                                    <th className="py-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Follow-ups Due</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {repPerformance.map((r) => (
+                                    <tr key={r.user_id} className="hover:bg-muted/40 transition-colors">
+                                        <td className="py-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-black text-xs flex-shrink-0">
+                                                    {(r.user_name || '?')[0]?.toUpperCase() || '?'}
+                                                </div>
+                                                <span className="text-sm font-bold text-foreground">{r.user_name || 'Unknown'}</span>
+                                            </div>
+                                        </td>
+                                        <td className="py-4 text-right text-sm font-black text-foreground">{r.total_leads}</td>
+                                        <td className="py-4 text-right text-sm font-bold" style={{ color: 'var(--danger)' }}>{r.hot}</td>
+                                        <td className="py-4 text-right text-sm font-bold" style={{ color: 'var(--success)' }}>{r.won}</td>
+                                        <td className="py-4 text-right text-sm font-bold" style={{ color: r.followups_due > 0 ? 'var(--info)' : 'var(--text-tertiary)' }}>{r.followups_due}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Hot / Priority Leads */}
+            <div className="bg-card border border-border rounded-3xl p-8">
+                <div className="flex items-center gap-2 mb-6">
+                    <Flame className="w-5 h-5" style={{ color: 'var(--danger)' }} />
+                    <h3 className="text-lg font-black text-foreground">Hot / Priority Leads</h3>
+                </div>
+                {hotLeads.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic py-6 text-center">No hot leads right now.</p>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="border-b border-border">
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Company</th>
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Contact</th>
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Location</th>
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Source</th>
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">POC</th>
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Status</th>
+                                    <th className="py-3 px-2 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Follow-up</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {hotLeads.map((l) => {
+                                    const canLink = !!l.organization_id;
+                                    return (
+                                        <tr
+                                            key={l.id}
+                                            onClick={canLink ? () => router.push(`/${l.organization_id}/crm`) : undefined}
+                                            className={`transition-colors ${canLink ? 'cursor-pointer hover:bg-muted/40' : ''}`}
+                                        >
+                                            <td className="py-4 px-2 text-sm font-bold text-foreground">{l.company_name || '—'}</td>
+                                            <td className="py-4 px-2 text-sm text-text-secondary">{l.contact_person || '—'}</td>
+                                            <td className="py-4 px-2 text-sm text-text-secondary">{l.location || '—'}</td>
+                                            <td className="py-4 px-2 text-sm text-text-secondary">{l.source_name || '—'}</td>
+                                            <td className="py-4 px-2 text-sm text-text-secondary">{l.poc || '—'}</td>
+                                            <td className="py-4 px-2">
+                                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider" style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--danger)' }}>
+                                                    {l.status_name}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-2 text-xs font-medium text-text-secondary">
+                                                {l.next_followup_date ? new Date(l.next_followup_date).toLocaleDateString() : '—'}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
 // Sub-component: Organization Management
 const OrganizationsList = ({ organizations, users, isLoading, onSoftDelete, onRestore, onDrillDown }: {
     organizations: Organization[];
@@ -862,7 +1149,7 @@ const OrganizationsList = ({ organizations, users, isLoading, onSoftDelete, onRe
                                     <td className="px-8 py-6">
                                         <div className="flex items-center gap-4">
                                             <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-xs font-bold border border-primary/20">
-                                                {org.name.substring(0, 2).toUpperCase()}
+                                                {(org.name || '??').substring(0, 2).toUpperCase()}
                                             </div>
                                             <div>
                                                 <p className="font-black text-text-primary text-sm leading-none mb-1">{org.name}</p>

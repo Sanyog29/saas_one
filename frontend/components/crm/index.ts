@@ -1,0 +1,15 @@
+// CRM Components Index
+export { default as CRMDashboard } from './CRMDashboard';
+export { default as LeadsTable } from './LeadsTable';
+export { default as LeadDetailDrawer } from './LeadDetailDrawer';
+export { default as LeadForm } from './LeadForm';
+export { default as CalendarView } from './CalendarView';
+export { default as ImportWizard } from './ImportWizard';
+export { default as AIInsightsPanel } from './AIInsightsPanel';
+export { default as CampaignsManager } from './CampaignsManager';
+export { default as MetaIntegrationGuide } from './MetaIntegrationGuide';
+export { default as StatusInfoTooltip } from './StatusInfoTooltip';
+export { default as CallCoachPanel } from './CallCoachPanel';
+export { default as CoachingTrendChart } from './CoachingTrendChart';
+export { default as ExecutiveImpactReport } from './ExecutiveImpactReport';
+export { default as CampaignSpendManager } from './CampaignSpendManager';

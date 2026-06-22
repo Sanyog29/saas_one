@@ -48,14 +48,14 @@ function AuthContent() {
         else if (initialMode === 'reset') setAuthMode('update-password');
         setMounted(true);
     }, [initialMode]);
-    const formRef = React.useRef<HTMLFormElement>(null);
-
-    const { signIn, signUp, signInWithGoogle, signInWithZoho, resetPassword, signOut } = useAuth();
-    const router = useRouter();
 
     // Memoize supabase client to prevent re-creation on every render
     const supabase = React.useMemo(() => createClient(), []);
 
+    const formRef = React.useRef<HTMLFormElement>(null);
+
+    const { signIn, signUp, signInWithGoogle, signInWithZoho, resetPassword, signOut } = useAuth();
+    const router = useRouter();
 
     useEffect(() => {
         if (urlError) {
@@ -150,12 +150,24 @@ function AuthContent() {
 
         try {
             if (authMode === 'signup') {
-                const data = await signUp(email, password, fullName);
+                // Account creation only. Role, organization and property are
+                // selected in the onboarding flow after sign-up.
+                const response = await fetch('/api/auth/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, fullName })
+                });
 
-                if (data?.session) {
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Signup failed');
+                }
+
+                if (result.data?.session) {
                     console.log('Signup successful, session found. Redirecting...');
                     router.push('/onboarding');
-                } else if (data?.user) {
+                } else if (result.data?.user) {
                     console.log('Signup successful, but no session. Email confirmation likely required.');
                     setSuccess('Account created! Please check your email inbox to verify your account before logging in.');
                     // Don't redirect if there's no session, as onboarding requires a logged-in user
@@ -200,14 +212,49 @@ function AuthContent() {
                 // Property-level roles (property_admin, staff, tenant, etc.) may also have
                 // an org_membership row (created by the user-create API), but they should
                 // be routed via Step 4 (property_memberships) instead.
-                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement'];
+                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement', 'bd_admin', 'bd_rep'];
                 const activeOrgMemberships = (orgMemberships || []).filter(
                     (m) => ORG_LEVEL_ROLES.includes(m.role) && (m.is_active === true || m.is_active === null)
                 );
 
+                // ✅ CRM guard — single source of truth.
+                // Business-development (CRM) users must ALWAYS land on the CRM view and
+                // NEVER fall through to an FMS dashboard. We fetch property memberships
+                // early so we can detect any genuine FMS role that should outrank CRM.
+                // If the user has a CRM role and NO genuine FMS role, short-circuit to /{org}/crm.
+                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin'];
+                const FMS_ROLES = ['property_admin', 'tenant', 'security', 'staff', 'mst', 'vendor', 'org_admin', 'owner', 'admin', 'procurement', 'org_super_admin', 'super_tenant', 'maintenance_vendor'];
+
+                const { data: allPropMembershipsForGuard } = await supabase
+                    .from('property_memberships')
+                    .select('property_id, organization_id, role, is_active')
+                    .eq('user_id', userProfile.id)
+                    .order('created_at', { ascending: false });
+
+                const activePropForGuard = (allPropMembershipsForGuard || []).filter(
+                    (m) => m.is_active === true || m.is_active === null
+                );
+                const allActiveRoles = [
+                    ...activeOrgMemberships.map((m) => m.role),
+                    ...activePropForGuard.map((m) => m.role),
+                ];
+                const hasCrmRole = allActiveRoles.some((r) => CRM_ONLY_ROLES.includes(r));
+                const hasFmsRole = allActiveRoles.some((r) => FMS_ROLES.includes(r));
+
+                if (hasCrmRole && !hasFmsRole) {
+                    // Resolve the org id from whichever membership carries the CRM role.
+                    const crmOrgMembership = activeOrgMemberships.find((m) => CRM_ONLY_ROLES.includes(m.role));
+                    const crmPropMembership = activePropForGuard.find((m) => CRM_ONLY_ROLES.includes(m.role));
+                    const crmOrgId = crmOrgMembership?.organization_id || crmPropMembership?.organization_id;
+                    if (crmOrgId) {
+                        router.replace(`/${crmOrgId}/crm`);
+                        return;
+                    }
+                }
+
                 if (activeOrgMemberships.length > 0) {
                     // Pick best by priority (org_super_admin first, then super_tenant, then others)
-                    const ORG_PRIORITY = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'member'];
+                    const ORG_PRIORITY = ['org_super_admin', 'bd_admin', 'org_admin', 'super_tenant', 'owner', 'admin', 'member', 'bd_rep'];
                     const best = [...activeOrgMemberships].sort((a, b) => {
                         const ai = ORG_PRIORITY.indexOf(a.role) === -1 ? 99 : ORG_PRIORITY.indexOf(a.role);
                         const bi = ORG_PRIORITY.indexOf(b.role) === -1 ? 99 : ORG_PRIORITY.indexOf(b.role);
@@ -216,11 +263,14 @@ function AuthContent() {
 
                     if (best.role === 'procurement') {
                         router.replace('/procurement');
+                    } else if (best.role === 'bd_admin' || best.role === 'bd_rep') {
+                        // CRM users route to CRM module
+                        router.replace(`/${best.organization_id}/crm`);
                     } else {
                         router.replace(
                             redirectPath && redirectPath !== '/'
                                 ? redirectPath
-                                : `/org/${best.organization_id}/dashboard`
+                                : `/${best.organization_id}/dashboard`
                         );
                     }
                     return;
@@ -264,6 +314,9 @@ function AuthContent() {
                         router.replace(`/property/${pId}/vendor`);
                     } else if (role === 'procurement') {
                         router.replace('/procurement');
+                    } else if (role === 'bd_rep' || role === 'bd_admin') {
+                        // CRM users route to org dashboard with CRM
+                        router.replace(`/${propMembership.organization_id}/crm`);
                     } else {
                         router.replace(`/property/${pId}/dashboard`);
                     }
@@ -441,17 +494,22 @@ function AuthContent() {
 
                                 <form className="space-y-4" onSubmit={handleAuthAction}>
                                     {authMode === 'signup' && (
-                                        <div className="space-y-2 relative z-20">
-                                            <label className="text-sm font-semibold text-text-primary font-body">Name*</label>
-                                            <input
-                                                type="text"
-                                                placeholder="Enter your name"
-                                                value={fullName}
-                                                onChange={(e) => setFullName(e.target.value)}
-                                                required
-                                                className="w-full h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface text-text-primary font-body placeholder:text-text-tertiary transition-smooth focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary hover:border-primary/50"
-                                            />
-                                        </div>
+                                        <>
+                                            <div className="space-y-2 relative z-20">
+                                                <label className="text-sm font-semibold text-text-primary font-body">Name*</label>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Enter your name"
+                                                    value={fullName}
+                                                    onChange={(e) => setFullName(e.target.value)}
+                                                    required
+                                                    className="w-full h-10 px-4 rounded-[var(--radius-md)] border border-border bg-surface text-text-primary font-body placeholder:text-text-tertiary transition-smooth focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary hover:border-primary/50"
+                                                />
+                                            </div>
+
+                                            {/* Role & organization are chosen in the onboarding flow
+                                                after the account is created. */}
+                                        </>
                                     )}
 
                                     {(authMode === 'signin' || authMode === 'signup' || authMode === 'forgot') && (

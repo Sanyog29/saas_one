@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle, Activity,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
-    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon, Droplets
+    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon, Droplets, TrendingUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -43,6 +43,8 @@ import ProcurementModule from '../procurement/ProcurementModule';
 import VMSOrgVisitorDashboard from '@/frontend/components/vms/VMSOrgVisitorDashboard';
 import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
+
+import { BDQuickStats } from './UnifiedDashboard';
 
 // Types
 type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel_logger' | 'diesel' | 'electricity_logger' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement' | 'roster' | 'water_logger' | 'water';
@@ -1148,6 +1150,13 @@ const OrgAdminDashboard = () => {
                             >
                                 <DoorOpen className="w-4 h-4" />
                                 Meeting Rooms
+                            </button>
+                            <button
+                                onClick={() => router.push(`/${org?.id}/crm`)}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm text-text-secondary hover:bg-muted hover:text-text-primary"
+                            >
+                                <TrendingUp className="w-4 h-4" />
+                                Business Development
                             </button>
                         </div>
                     </div>
@@ -2411,6 +2420,8 @@ const OverviewTab = memo(function OverviewTab({
                         </motion.div>
                     )}
                 </motion.div>
+
+                {/* BD Pipeline moved to right column below */}
             </div>
 
             {/* Main Content Grid - with padding */}
@@ -2571,6 +2582,9 @@ const OverviewTab = memo(function OverviewTab({
                         className="lg:col-span-5 space-y-3"
                         variants={cardVariants}
                     >
+                        {/* BD Pipeline — compact, source tiles + leads by status */}
+                        <BDQuickStats orgId={orgId} />
+
                         {/* Checklist Progress */}
                         <div
                             onClick={() => onTabChange('checklist')}

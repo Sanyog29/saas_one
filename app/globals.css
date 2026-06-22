@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ============================================
    DESIGN SYSTEM TOKENS - FACILITY MANAGEMENT SaaS
    Primary: #708F96 (Muted Sky Blue)
@@ -11,9 +13,15 @@
   --primary: #708F96;
   --primary-light: #8AA5AC;
   --primary-dark: #5A737A;
+  --primary-rgb: 112, 143, 150;
   --secondary: #AA895F;
   --secondary-light: #C4A479;
   --secondary-dark: #8F7350;
+
+  /* Accent (alias of brand for components referencing accent) */
+  --accent: #708F96;
+  --accent-light: #8AA5AC;
+  --accent-dark: #5A737A;
 
   /* Surfaces & Backgrounds - Phase 3 Premium Gradients */
   --background: #FAFBFC;
@@ -25,6 +33,8 @@
   --border-subtle: #F1F5F9;
   --muted: #F1F5F9;
   --card: #FFFFFF;
+  /* Subtly tinted card surface so cards lift off the canvas */
+  --card-tint: #FBFCFE;
   --foreground: #1A2332;
 
   /* Phase 3 Card Surface (Light) */
@@ -50,11 +60,17 @@
   --sidebar-foreground: #1A2332;
   --sidebar-border: #E2E8F0;
 
-  /* Status Colors */
+  /* Status Colors (semantic accents) */
   --success: #10B981;
+  /* emerald */
   --warning: #F59E0B;
+  /* amber */
   --error: #EF4444;
+  /* red */
+  --danger: #EF4444;
+  /* alias of error */
   --info: #3B82F6;
+  /* blue */
 
   /* Glass/Dashboard Specific (Light Mode) */
   --glass-bg: rgba(255, 255, 255, 0.7);
@@ -150,6 +166,7 @@
   --sidebar-bg: #080E10;
   --surface: #121A1D;
   --surface-elevated: #1C2629;
+  --card-tint: #16201F;
   --border: #242E31;
   --border-subtle: #1C2629;
   --muted: #0D1416;
@@ -213,6 +230,9 @@
   --color-secondary: var(--secondary);
   --color-secondary-light: var(--secondary-light);
   --color-secondary-dark: var(--secondary-dark);
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
+  --color-accent-dark: var(--accent-dark);
 
   /* Base Colors */
   --color-background: var(--background);
@@ -222,6 +242,7 @@
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-card: var(--card);
+  --color-card-tint: var(--card-tint);
   --color-muted: var(--muted);
 
   /* Text */
@@ -239,6 +260,7 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);
+  --color-danger: var(--danger);
   --color-info: var(--info);
 
   /* Neon Accents */
@@ -547,11 +569,11 @@
   }
 
   .bg-primary\/10 {
-    background-color: rgba(112, 143, 150, 0.1);
+    background-color: rgba(var(--primary-rgb), 0.1);
   }
 
   .bg-primary\/20 {
-    background-color: rgba(112, 143, 150, 0.2);
+    background-color: rgba(var(--primary-rgb), 0.2);
   }
 
   .bg-secondary {
@@ -587,7 +609,7 @@
   }
 
   .shadow-primary\/25 {
-    box-shadow: 0 10px 15px -3px rgba(112, 143, 150, 0.25);
+    box-shadow: 0 10px 15px -3px rgba(var(--primary-rgb), 0.25);
   }
 
   .shadow-secondary\/25 {
@@ -1386,12 +1408,12 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(112, 143, 150, 0.3);
+  background: rgba(var(--primary-rgb), 0.3);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(112, 143, 150, 0.5);
+  background: rgba(var(--primary-rgb), 0.5);
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */

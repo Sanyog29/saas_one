@@ -5,7 +5,9 @@ import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
 import {
     LayoutDashboard, Users, Ticket, Package, Settings, LogOut,
-    Menu, X, GitMerge, Calendar, ShoppingCart, CalendarDays, Droplets, Coffee
+    Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
+    FileUp, Bot, Building2, Send, CalendarDays, Droplets, Coffee,
+    Sparkles, DollarSign,
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -25,9 +27,13 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
     const { signOut, user } = useAuth();
     const [showSignOutModal, setShowSignOutModal] = React.useState(false);
 
+    const userRole = user?.user_metadata?.role;
+    const isBDRole = userRole === 'bd_rep' || userRole === 'bd_admin';
+
     const NAV_ITEMS = React.useMemo(() => {
-        const userRole = user?.user_metadata?.role;
         const isAdmin = userRole === 'org_super_admin' || userRole === 'property_admin';
+
+        if (isBDRole) return [];
 
         const items = [
             { label: 'Overview', href: `/${orgId}/dashboard`, icon: LayoutDashboard, domain: 'dashboards' as const },
@@ -38,7 +44,6 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
             { label: 'Staff', href: `/${orgId}/users`, icon: Users, domain: 'users' as const },
         ];
 
-        // Roster Management - only for org_super_admin and property_admin
         if (isAdmin) {
             items.push({ label: 'Roster Management', href: `/${orgId}/dashboard?tab=roster`, icon: CalendarDays, domain: 'dashboards' as const });
         }
@@ -51,7 +56,21 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
         }
 
         return items;
-    }, [orgId, user?.user_metadata?.role]);
+    }, [orgId, userRole, isBDRole]);
+
+    const CRM_NAV_ITEMS = React.useMemo(() => [
+        { label: 'Dashboard', href: `/${orgId}/crm`, icon: BarChart3, domain: 'crm' as const },
+        { label: 'Leads', href: `/${orgId}/crm/leads`, icon: UsersRound, domain: 'crm' as const },
+        { label: 'Calendar', href: `/${orgId}/crm/calendar`, icon: Calendar, domain: 'crm' as const },
+        { label: 'Activities', href: `/${orgId}/crm/activities`, icon: Building2, domain: 'crm' as const },
+        { label: 'Reports', href: `/${orgId}/crm/reports`, icon: BarChart3, domain: 'crm' as const },
+        { label: 'Import Leads', href: `/${orgId}/crm/import`, icon: FileUp, domain: 'crm' as const },
+        { label: 'Campaigns', href: `/${orgId}/crm/campaigns`, icon: Send, domain: 'crm' as const },
+        { label: 'AI Insights', href: `/${orgId}/crm/ai`, icon: Bot, domain: 'crm' as const },
+        { label: 'Call Coaching', href: `/${orgId}/crm/coaching`, icon: Sparkles, domain: 'crm' as const },
+        { label: 'Campaign Spend', href: `/${orgId}/crm/spend`, icon: DollarSign, domain: 'crm' as const },
+        { label: 'Settings', href: `/${orgId}/crm/settings`, icon: Settings, domain: 'crm' as const },
+    ], [orgId]);
 
     const getUserInitials = (name: string) => {
         return name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U';
@@ -82,7 +101,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
 
             {/* Sidebar */}
             <aside className={`
-                fixed inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
+                fixed inset-y-0 left-0 z-50 w-72 bg-surface border-r border-border transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0
                 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
                 flex flex-col inset-y-0 overflow-hidden
             `}>
@@ -98,16 +117,20 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                     <div className="flex flex-col items-center gap-2 mb-2">
                         <img src="/autopilot-logo-new.png" alt="Logo" className="h-10 w-auto object-contain" />
                         <div className="px-3 py-1 bg-primary/5 rounded-full border border-primary/10">
-                            <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em]">Staff Dashboard</p>
+                            <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em]">
+                                {isBDRole ? 'CRM Dashboard' : 'Staff Dashboard'}
+                            </p>
                         </div>
                     </div>
                 </div>
 
                 {/* Navigation */}
                 <nav className="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar touch-scroll min-h-0">
-                    <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
-                        Management
-                    </p>
+                    {!isBDRole && (
+                        <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
+                            Management
+                        </p>
+                    )}
                     {NAV_ITEMS.map((item) => (
                         <CapabilityWrapper key={item.href} domain={item.domain} action="view">
                             <Link
@@ -126,10 +149,41 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                             </Link>
                         </CapabilityWrapper>
                     ))}
+
+                    {/* CRM Section */}
+                    <CapabilityWrapper domain="crm" action="view">
+                        <div className={isBDRole ? '' : 'pt-4 mt-4 border-t border-border'}>
+                            <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
+                                CRM
+                            </p>
+                            {CRM_NAV_ITEMS.map((item) => {
+                                const isActive = item.href.endsWith('/crm')
+                                    ? pathname === item.href
+                                    : pathname?.startsWith(item.href);
+                                return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    onClick={handleLinkClick}
+                                    className={`
+                                        flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
+                                        ${isActive
+                                            ? 'bg-primary text-text-inverse shadow-sm'
+                                            : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                                        }
+                                    `}
+                                >
+                                    <item.icon className={`w-5 h-5 transition-smooth group-hover:scale-105 shrink-0`} />
+                                    <span className="font-body font-medium text-sm">{item.label}</span>
+                                </Link>
+                                );
+                            })}
+                        </div>
+                    </CapabilityWrapper>
                 </nav>
 
                 {/* Bottom Section */}
-                <div className="p-4 pb-12 mt-auto space-y-3 border-t border-border flex-shrink-0 bg-white">
+                <div className="p-4 pb-12 mt-auto space-y-3 border-t border-border flex-shrink-0 bg-surface">
                     {/* User Profile */}
                     {user?.user_metadata?.role !== 'org_super_admin' && (
                         <div className="px-3 py-3 rounded-[var(--radius-lg)] border border-border/5">
