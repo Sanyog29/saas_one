@@ -44,10 +44,10 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
         }
 
         items.push({ label: 'Cafeteria', href: `/${orgId}/dashboard?tab=cafeteria`, icon: Coffee, domain: 'dashboards' as const });
-        items.push({ label: 'Water Level', href: `/${orgId}/dashboard?tab=water`, icon: Droplets, domain: 'dashboards' as const });
+        items.push({ label: 'Water Level', href: `/${orgId}/dashboard?tab=water_logger`, icon: Droplets, domain: 'dashboards' as const });
 
         if (userRole === 'org_super_admin') {
-            items.push({ label: 'Water Analytics', href: `/${orgId}/dashboard?tab=water_analytics`, icon: Droplets, domain: 'dashboards' as const });
+            items.push({ label: 'Water Analytics', href: `/${orgId}/dashboard?tab=water`, icon: Droplets, domain: 'dashboards' as const });
         }
 
         return items;

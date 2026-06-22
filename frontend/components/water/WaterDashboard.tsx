@@ -112,12 +112,43 @@ export function WaterDashboard({ propertyId }: Props) {
         }
     };
 
-    const handleExport = () => {
-        window.open(`/api/properties/${propertyId}/water/export?month=${month}`, '_blank');
+    const handleExport = async () => {
+        try {
+            const res = await fetch(`/api/properties/${propertyId}/water/export?month=${month}`);
+            if (!res.ok) throw new Error('Failed to export');
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Water_Export_${month}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            setNotification({ message: 'Failed to export data', type: 'error' });
+        }
     };
 
-    const handleDownloadTemplate = () => {
-        window.open(`/api/properties/${propertyId}/water/import-template`, '_blank');
+    const handleDownloadTemplate = async () => {
+        try {
+            const res = await fetch(`/api/properties/${propertyId}/water/import-template`);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(errText || 'Failed to download template');
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Water_Import_Template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error: any) {
+            setNotification({ message: error.message || 'Failed to download template', type: 'error' });
+        }
     };
 
     // Calculate MTD totals

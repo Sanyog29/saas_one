@@ -226,6 +226,27 @@ export async function POST(
                     .eq('id', r.meter_id);
             }
 
+            // --- DUAL WRITE: Sync to Spreadsheet facility_meter_readings ---
+            const facilityPayload = processedReadings.map((r) => ({
+                meter_id: r.meter_id,
+                reading_date: r.reading_date,
+                initial_reading: r.opening_reading,
+                final_reading: r.closing_reading,
+                consumption: r.final_units,
+                meter_constant_used: r.multiplier_value_used,
+                is_rollover: false,
+                created_by: user.id,
+                updated_at: new Date().toISOString()
+            }));
+
+            await supabase
+                .from('facility_meter_readings')
+                .upsert(facilityPayload, {
+                    onConflict: 'meter_id,reading_date',
+                    ignoreDuplicates: false
+                });
+            // ----------------------------------------------------------------
+
             console.log('[ElectricityReadings] Batch submission successful');
             return NextResponse.json({ success: true }, { status: 201 });
         } catch (error: any) {
@@ -276,6 +297,25 @@ export async function POST(
         .from('electricity_meters')
         .update({ last_reading: body.closing_reading, updated_at: new Date().toISOString() })
         .eq('id', body.meter_id);
+
+    // --- DUAL WRITE: Sync to Spreadsheet facility_meter_readings ---
+    await supabase
+        .from('facility_meter_readings')
+        .upsert({
+            meter_id: processedReading.meter_id,
+            reading_date: processedReading.reading_date,
+            initial_reading: processedReading.opening_reading,
+            final_reading: processedReading.closing_reading,
+            consumption: processedReading.final_units,
+            meter_constant_used: processedReading.multiplier_value_used,
+            is_rollover: false,
+            created_by: user.id,
+            updated_at: new Date().toISOString()
+        }, {
+            onConflict: 'meter_id,reading_date',
+            ignoreDuplicates: false
+        });
+    // ----------------------------------------------------------------
 
     console.log('[ElectricityReadings] Single reading saved:', data?.id, 'Cost:', data?.computed_cost);
     return NextResponse.json(data, { status: 201 });
@@ -358,6 +398,25 @@ export async function PATCH(
         });
     }
 
+    // --- DUAL WRITE: Sync to Spreadsheet facility_meter_readings ---
+    await supabase
+        .from('facility_meter_readings')
+        .upsert({
+            meter_id: processedReading.meter_id,
+            reading_date: processedReading.reading_date,
+            initial_reading: processedReading.opening_reading,
+            final_reading: processedReading.closing_reading,
+            consumption: processedReading.final_units,
+            meter_constant_used: processedReading.multiplier_value_used,
+            is_rollover: false,
+            created_by: user.id,
+            updated_at: new Date().toISOString()
+        }, {
+            onConflict: 'meter_id,reading_date',
+            ignoreDuplicates: false
+        });
+    // ----------------------------------------------------------------
+
     return NextResponse.json(data);
 }
 
@@ -383,10 +442,10 @@ export async function DELETE(
 
     console.log('[ElectricityReadings] DELETE request for reading:', readingId, 'property:', propertyId);
 
-    // 1. Get the reading details first to know the meter_id and opening_reading
+    // 1. Get the reading details first to know the meter_id, reading_date, and opening_reading
     const { data: readingData, error: fetchError } = await supabase
         .from('electricity_readings')
-        .select('meter_id, opening_reading')
+        .select('meter_id, reading_date, opening_reading')
         .eq('id', readingId)
         .eq('property_id', propertyId)
         .single();
@@ -409,6 +468,14 @@ export async function DELETE(
         console.error('[ElectricityReadings] Error deleting reading:', deleteError.message);
         return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
+
+    // --- DUAL WRITE: Sync to Spreadsheet facility_meter_readings ---
+    await supabase
+        .from('facility_meter_readings')
+        .delete()
+        .eq('meter_id', meter_id)
+        .eq('reading_date', readingData.reading_date);
+    // ----------------------------------------------------------------
 
     // 3. Recalibrate meter's last_reading
     // Find the new most recent reading for this meter

@@ -9,6 +9,7 @@ import ElectricityLoggerCard from './ElectricityLoggerCard';
 import ElectricityMeterConfigModal from './ElectricityMeterConfigModal';
 import ElectricityReadingHistory from './ElectricityReadingHistory';
 import ElectricityImportModal from './ElectricityImportModal';
+import ElectricitySpreadsheetLogger from './ElectricitySpreadsheetLogger';
 import { Toast } from '../ui/Toast';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
 
@@ -91,6 +92,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [viewMode, setViewMode] = useState<'cards' | 'spreadsheet'>('cards');
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'error', visible: boolean }>({
@@ -437,10 +439,25 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
     };
 
     // Export
-    const handleExport = () => {
+    const handleExport = async () => {
         const today = new Date().toISOString().split('T')[0];
         const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        window.open(`/api/properties/${propertyId}/electricity-export?startDate=${monthAgo}&endDate=${today}`, '_blank');
+        
+        try {
+            const res = await fetch(`/api/properties/${propertyId}/electricity-export?startDate=${monthAgo}&endDate=${today}`);
+            if (!res.ok) throw new Error('Failed to export data');
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Electricity_Export_${today}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            setToast({ message: 'Failed to export data', type: 'error', visible: true });
+        }
     };
 
     if (!propertyId) return <div>Select Property</div>;
@@ -517,6 +534,10 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                     <button onClick={() => setShowConfigModal(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
                         <Settings className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">Config</span>
                     </button>
+                    <div className={`ml-auto flex items-center bg-slate-100 dark:bg-[#161b22] p-1 rounded-lg border ${isDark ? 'border-[#30363d]' : 'border-slate-200'}`}>
+                        <button onClick={() => setViewMode('cards')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'cards' ? 'bg-white dark:bg-[#30363d] shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}>Cards</button>
+                        <button onClick={() => setViewMode('spreadsheet')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'spreadsheet' ? 'bg-white dark:bg-[#30363d] shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}>Spreadsheet</button>
+                    </div>
                 </div>
 
                 <ElectricityImportModal
@@ -537,33 +558,39 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                     onClose={() => setToast(prev => ({ ...prev, visible: false }))}
                 />
 
-                {/* Meters Grid */}
-                {meters.length === 0 ? (
-                    <div className="rounded-3xl p-12 text-center border bg-white border-slate-100 shadow-sm">
-                        <Zap className="w-16 h-16 text-primary/20 mx-auto mb-4" />
-                        <h3 className="text-xl font-bold mb-2">No Meters Configured</h3>
-                        <button onClick={() => setShowConfigModal(true)} className="px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-lg">+ Add Meter</button>
-                    </div>
+                {viewMode === 'spreadsheet' ? (
+                    <ElectricitySpreadsheetLogger propertyId={propertyId} isDark={isDark} />
                 ) : (
-                    <div className={`grid gap-6 ${isEmbedded ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
-                        {meters.map((meter) => (
-                            <ElectricityLoggerCard
-                                key={meter.id}
-                                meter={meter}
-                                previousClosing={previousClosings[meter.id]}
-                                averageConsumption={averages[meter.id]}
-                                multipliers={multipliersMap[meter.id] || []}
-                                activeTariffRate={activeTariff?.rate_per_unit || 0}
-                                onReadingChange={handleReadingChange}
-                                onSave={handleSaveSingleReading}
-                                onMultiplierSave={handleSaveMultiplier}
-                                onDelete={handleDeleteMeter}
-                                isSubmitting={isSubmitting}
-                                isDark={isDark}
-                                retakeTask={retakeTasks[meter.id]}
-                            />
-                        ))}
-                    </div>
+                    <>
+                        {/* Meters Grid */}
+                        {meters.length === 0 ? (
+                            <div className="rounded-3xl p-12 text-center border bg-white border-slate-100 shadow-sm">
+                                <Zap className="w-16 h-16 text-primary/20 mx-auto mb-4" />
+                                <h3 className="text-xl font-bold mb-2">No Meters Configured</h3>
+                                <button onClick={() => setShowConfigModal(true)} className="px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-lg">+ Add Meter</button>
+                            </div>
+                        ) : (
+                            <div className={`grid gap-6 ${isEmbedded ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+                                {meters.map((meter) => (
+                                    <ElectricityLoggerCard
+                                        key={meter.id}
+                                        meter={meter}
+                                        previousClosing={previousClosings[meter.id]}
+                                        averageConsumption={averages[meter.id]}
+                                        multipliers={multipliersMap[meter.id] || []}
+                                        activeTariffRate={activeTariff?.rate_per_unit || 0}
+                                        onReadingChange={handleReadingChange}
+                                        onSave={handleSaveSingleReading}
+                                        onMultiplierSave={handleSaveMultiplier}
+                                        onDelete={handleDeleteMeter}
+                                        isSubmitting={isSubmitting}
+                                        isDark={isDark}
+                                        retakeTask={retakeTasks[meter.id]}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </>
                 )}
             </main>
 
