@@ -12,7 +12,7 @@ export async function resolveDistributionAssignee(
 
     const { data: rule } = await supabaseAdmin
         .from('crm_lead_distribution_rules')
-        .select('id, mode, members:crm_lead_distribution_members(id, user_id, assigned_count, last_assigned_at)')
+        .select('id, mode, members:crm_lead_distribution_members(id, user_id, assigned_count, last_assigned_at, is_active)')
         .eq('organization_id', organizationId)
         .eq('campaign', campaign)
         .eq('is_active', true)

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { Users, Sparkles, Bell, ChevronDown } from 'lucide-react';
 import BorderGlow from '@/frontend/components/ui/BorderGlow';
 
-export type StatPeriod = 'today' | 'month' | 'all';
+export type StatPeriod = 'today' | 'week' | 'month' | 'all';
 
 interface CampaignCount {
     campaign: string;
@@ -26,6 +26,7 @@ interface CrmStatTilesProps {
 
 const PERIODS: { value: StatPeriod; label: string }[] = [
     { value: 'today', label: 'Today' },
+    { value: 'week', label: 'This Week' },
     { value: 'month', label: 'This Month' },
     { value: 'all', label: 'Total' },
 ];

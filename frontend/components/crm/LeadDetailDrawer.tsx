@@ -86,6 +86,8 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
     const [savingRemarks, setSavingRemarks] = useState(false);
     const [stageComment, setStageComment] = useState<{ open: boolean; statusId: string; statusName: string; comment: string }>({ open: false, statusId: '', statusName: '', comment: '' });
     const [savingStageComment, setSavingStageComment] = useState(false);
+    const [editingActivity, setEditingActivity] = useState<{ id: string; description: string } | null>(null);
+    const [savingActivity, setSavingActivity] = useState(false);
 
     useEffect(() => {
         if (leadId && isOpen) {
@@ -243,6 +245,21 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 user_info: { id: '', full_name: 'You', email: '' },
             } as CRMActivity, ...prev]);
         } catch {}
+    };
+
+    const handleSaveActivityEdit = async () => {
+        if (!editingActivity || !leadId) return;
+        setSavingActivity(true);
+        try {
+            await fetch(`/api/crm/activities/${editingActivity.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ description: editingActivity.description }),
+            });
+            setActivities(prev => prev.map(a => a.id === editingActivity.id ? { ...a, description: editingActivity.description } : a));
+            setEditingActivity(null);
+        } catch {}
+        setSavingActivity(false);
     };
 
     const handleEventCreated = (event: CRMEvent) => {
@@ -559,6 +576,39 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                         </div>
                                     </div>
 
+                                    {/* Meta Attribution */}
+                                    {lead.meta_lead_id && (
+                                        <div className="bg-surface-elevated rounded-xl p-4">
+                                            <h3 className="font-bold text-text-primary mb-3">Meta Attribution</h3>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {lead.meta_form_name && (
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Form</p>
+                                                        <p className="text-sm font-medium text-text-primary">{lead.meta_form_name}</p>
+                                                    </div>
+                                                )}
+                                                {lead.campaign && (
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Campaign</p>
+                                                        <p className="text-sm font-medium text-text-primary">{lead.campaign}</p>
+                                                    </div>
+                                                )}
+                                                {lead.meta_campaign_id && (
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Campaign ID</p>
+                                                        <p className="text-xs font-mono text-text-secondary">{lead.meta_campaign_id}</p>
+                                                    </div>
+                                                )}
+                                                {lead.meta_ad_id && (
+                                                    <div>
+                                                        <p className="text-xs text-text-tertiary">Ad ID</p>
+                                                        <p className="text-xs font-mono text-text-secondary">{lead.meta_ad_id}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Assignment */}
                                     {lead.assigned_user && (
                                         <div className="bg-surface-elevated rounded-xl p-4">
@@ -726,22 +776,28 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         <button
-                                            onClick={() => handleLogTimelineAction('site_visit', 'Site Visit')}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs font-bold hover:bg-teal-100 transition-colors dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-800"
+                                            onClick={() => handleLogTimelineAction('site_visit', 'Visit Pending')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800"
                                         >
-                                            <MapPinIcon className="w-3.5 h-3.5" /> Site Visit
+                                            <MapPinIcon className="w-3.5 h-3.5" /> Visit Pending
                                         </button>
                                         <button
-                                            onClick={() => handleLogTimelineAction('proposal_sent', 'LOI')}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+                                            onClick={() => handleLogTimelineAction('site_visit', 'Visit Done')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 text-teal-700 border border-teal-200 rounded-lg text-xs font-bold hover:bg-teal-100 transition-colors dark:bg-teal-900/20 dark:text-teal-400 dark:border-teal-800"
                                         >
-                                            <FileSignature className="w-3.5 h-3.5" /> LOI
+                                            <MapPinIcon className="w-3.5 h-3.5" /> Visit Done
                                         </button>
                                         <button
                                             onClick={() => handleLogTimelineAction('updated', 'Layout Shared')}
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold hover:bg-purple-100 transition-colors dark:bg-purple-900/20 dark:text-purple-400 dark:border-purple-800"
                                         >
                                             <LayoutGrid className="w-3.5 h-3.5" /> Layout Shared
+                                        </button>
+                                        <button
+                                            onClick={() => handleLogTimelineAction('proposal_sent', 'LOI')}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
+                                        >
+                                            <FileSignature className="w-3.5 h-3.5" /> LOI
                                         </button>
                                     </div>
                                     {timeline.length === 0 ? (
@@ -756,8 +812,9 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                             {timeline.map((item) => {
                                                 const Icon = ACTIVITY_ICONS[item.icon] || Edit;
                                                 const dot = ACTIVITY_DOT_COLORS[item.activityType] || '#64748B';
+                                                const isEditing = editingActivity?.id === item.id;
                                                 return (
-                                                    <div key={item.id} className="relative flex gap-4">
+                                                    <div key={item.id} className="relative flex gap-4 group">
                                                         <div
                                                             className="absolute -left-5 top-1 w-3.5 h-3.5 rounded-full border-2 border-white shadow-sm z-10"
                                                             style={{ backgroundColor: dot }}
@@ -768,15 +825,45 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                                     {Icon && <Icon className="w-3.5 h-3.5" style={{ color: dot }} />}
                                                                     {item.title}
                                                                 </span>
-                                                                <span className="text-xs text-text-tertiary whitespace-nowrap flex-shrink-0">
-                                                                    {formatDate(item.timestamp)}
-                                                                </span>
+                                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                                    <span className="text-xs text-text-tertiary whitespace-nowrap">
+                                                                        {formatDate(item.timestamp)}
+                                                                    </span>
+                                                                    {!isEditing && (
+                                                                        <button
+                                                                            onClick={() => setEditingActivity({ id: item.id, description: item.description || '' })}
+                                                                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-elevated transition-all"
+                                                                            title="Edit"
+                                                                        >
+                                                                            <Pencil className="w-3 h-3 text-text-tertiary" />
+                                                                        </button>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            {item.description && (
-                                                                <p className="text-sm text-text-secondary mt-1 whitespace-pre-wrap break-words">{item.description}</p>
-                                                            )}
-                                                            {item.user && (
-                                                                <p className="text-xs text-text-tertiary mt-1">by {item.user.full_name}</p>
+                                                            {isEditing ? (
+                                                                <div className="mt-2 space-y-1.5">
+                                                                    <textarea
+                                                                        value={editingActivity.description}
+                                                                        onChange={e => setEditingActivity({ ...editingActivity, description: e.target.value })}
+                                                                        rows={2}
+                                                                        className="w-full border border-border rounded-lg px-2.5 py-1.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                                                    />
+                                                                    <div className="flex gap-2">
+                                                                        <button onClick={handleSaveActivityEdit} disabled={savingActivity} className="px-3 py-1 bg-primary text-white rounded-lg text-xs font-bold disabled:opacity-50">
+                                                                            {savingActivity ? 'Saving…' : 'Save'}
+                                                                        </button>
+                                                                        <button onClick={() => setEditingActivity(null)} className="px-3 py-1 text-xs font-bold text-text-secondary hover:bg-surface-elevated rounded-lg">Cancel</button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    {item.description && (
+                                                                        <p className="text-sm text-text-secondary mt-1 whitespace-pre-wrap break-words">{item.description}</p>
+                                                                    )}
+                                                                    {item.user && (
+                                                                        <p className="text-xs text-text-tertiary mt-1">by {item.user.full_name}</p>
+                                                                    )}
+                                                                </>
                                                             )}
                                                         </div>
                                                     </div>
@@ -876,6 +963,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 requireFuture={addEvent.requireFuture}
                 onClose={() => setAddEvent(s => ({ ...s, open: false }))}
                 onCreated={handleEventCreated}
+                onQuickLog={handleLogTimelineAction}
             />
         )}
 

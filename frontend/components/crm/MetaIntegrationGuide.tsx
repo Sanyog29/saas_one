@@ -31,7 +31,7 @@ export default function MetaIntegrationGuide({ orgId }: { orgId: string }) {
             try {
                 const [mRes, sRes] = await Promise.all([
                     fetch(q('/api/crm/settings?type=meta')),
-                    fetch(q('/api/crm/settings?type=all')),
+                    fetch(q('/api/crm/settings?type=all&scope=bd')),
                 ]);
                 if (mRes.ok) {
                     const m = (await mRes.json()).meta;

@@ -8,6 +8,8 @@ export { default as ImportWizard } from './ImportWizard';
 export { default as AIInsightsPanel } from './AIInsightsPanel';
 export { default as CampaignsManager } from './CampaignsManager';
 export { default as MetaIntegrationGuide } from './MetaIntegrationGuide';
+export { default as LinkedInIntegrationGuide } from './LinkedInIntegrationGuide';
+export { default as CompetitorAdWatch } from './CompetitorAdWatch';
 export { default as StatusInfoTooltip } from './StatusInfoTooltip';
 export { default as CallCoachPanel } from './CallCoachPanel';
 export { default as CoachingTrendChart } from './CoachingTrendChart';

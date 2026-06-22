@@ -15,6 +15,7 @@ interface LeadFormProps {
 
 export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode }: LeadFormProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [seats, setSeats] = useState<string>('');
     const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [sources, setSources] = useState<LeadSource[]>([]);
     const [users, setUsers] = useState<{ id: string; full_name: string }[]>([]);
@@ -42,6 +43,11 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
         if (isOpen) {
             fetchConfigs();
             if (initialData) {
+                // Read seats from the real column (falls back to a legacy token if present).
+                const reqRaw = initialData.requirement || '';
+                const seatMatch = reqRaw.match(/\[seats=(\d+)/);
+                setSeats((initialData as any).seats != null ? String((initialData as any).seats) : (seatMatch ? seatMatch[1] : ''));
+                const reqClean = reqRaw.replace(/^\[seats=\d+;bucket=[^\]]*\]\s*/, '');
                 setFormData({
                     company_name: initialData.company_name || '',
                     contact_person: initialData.contact_person || '',
@@ -49,7 +55,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     secondary_contact_number: initialData.secondary_contact_number || '',
                     email: initialData.email || '',
                     location: initialData.location || '',
-                    requirement: initialData.requirement || '',
+                    requirement: reqClean,
                     property_interest: initialData.property_interest || '',
                     lead_source: initialData.lead_source || '',
                     deal_value: initialData.deal_value || 0,
@@ -61,6 +67,7 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                     assigned_to: initialData.assigned_to || ''
                 });
             } else {
+                setSeats('');
                 setFormData({
                     company_name: '',
                     contact_person: '',
@@ -112,7 +119,12 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            await onSubmit(formData);
+            const seatNum = parseInt(seats);
+            const payload: any = {
+                ...formData,
+                seats: !isNaN(seatNum) && seatNum > 0 ? seatNum : null,
+            };
+            await onSubmit(payload);
             onClose();
         } catch (error) {
             console.error('Failed to submit:', error);
@@ -364,6 +376,24 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                             <div>
                                 <h3 className="text-sm font-semibold text-text-primary mb-4">Additional Details</h3>
                                 <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                                            Seat Requirement
+                                        </label>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={seats}
+                                            onChange={(e) => setSeats(e.target.value)}
+                                            className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                                            placeholder="e.g. 50"
+                                        />
+                                        {seats && !isNaN(parseInt(seats)) && parseInt(seats) > 0 && (
+                                            <span className="inline-block mt-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                                {(() => { const n = parseInt(seats); return n < 25 ? '<25' : n <= 50 ? '25–50' : n <= 100 ? '50–100' : '100+'; })()} seats bucket
+                                            </span>
+                                        )}
+                                    </div>
                                     <div>
                                         <label className="block text-xs font-medium text-text-secondary mb-1.5">
                                             Requirement

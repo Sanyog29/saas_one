@@ -104,6 +104,11 @@ export const CAPABILITY_MATRIX: Record<RoleKey, CapabilityMatrix> = {
         reports: ['view']
     },
     // CRM Roles
+    bd_super_admin: {
+        crm: ['view', 'create', 'update', 'approve', 'assign', 'delete', 'suspend'],
+        reports: ['view'],
+        dashboards: ['view']
+    },
     bd_admin: {
         crm: ['view', 'create', 'update', 'approve', 'assign', 'delete'],
         reports: ['view']

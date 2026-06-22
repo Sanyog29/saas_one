@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Filter, Download, Plus, ChevronDown, MoreHorizontal, Phone, Mail, MapPin, Building, User, Calendar, ArrowUpDown, Check } from 'lucide-react';
+import { Search, Filter, Download, Plus, ChevronDown, MoreHorizontal, Phone, Mail, MapPin, Building, User, Users, Calendar, ArrowUpDown, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { CRMLead, LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
@@ -16,6 +16,20 @@ interface LeadsTableProps {
         assigned_to?: string[];
         property_interest?: string[];
     };
+}
+
+// Resolve seat count from the real `seats` column, or fall back to the
+// [seats=N] token the Meta sync embeds in `requirement` before the column exists.
+function seatInfo(lead: any): { count: number | null; bucket: string | null; cleanReq: string | null } {
+    let count: number | null = typeof lead.seats === 'number' ? lead.seats : null;
+    let cleanReq: string | null = lead.requirement || null;
+    if (count == null && lead.requirement) {
+        const m = lead.requirement.match(/\[seats=(\d+)/);
+        if (m) count = parseInt(m[1]);
+    }
+    if (cleanReq) cleanReq = cleanReq.replace(/^\[seats=\d+;bucket=[^\]]*\]\s*/, '').trim() || null;
+    const bucket = count == null ? null : count < 25 ? '<25' : count <= 50 ? '25–50' : count <= 100 ? '50–100' : '100+';
+    return { count, bucket, cleanReq };
 }
 
 export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: LeadsTableProps) {
@@ -38,6 +52,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
         date_from?: string;
         date_to?: string;
         week?: 'this_week' | 'last_week';
+        seats_range?: string;
     }>({});
     // Applied filters (actually sent to API)
     const [appliedFilters, setAppliedFilters] = useState<typeof stagedFilters>({});
@@ -81,6 +96,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
             }
             if (appliedFilters.date_from) params.set('date_from', appliedFilters.date_from);
             if (appliedFilters.date_to) params.set('date_to', appliedFilters.date_to);
+            if (appliedFilters.seats_range) params.set('seats_range', appliedFilters.seats_range);
 
             // Week quick filter
             if (appliedFilters.week) {
@@ -413,6 +429,27 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                 </div>
                                 )}
                                 <div>
+                                    <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Seat Count</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[
+                                            { label: '< 25', value: 'lt25' },
+                                            { label: '25–50', value: '25to50' },
+                                            { label: '50–100', value: '50to100' },
+                                            { label: '100+', value: 'gt100' },
+                                        ].map(r => (
+                                            <button
+                                                key={r.value}
+                                                onClick={() => setStagedFilters({ ...stagedFilters, seats_range: stagedFilters.seats_range === r.value ? undefined : r.value })}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                                                    stagedFilters.seats_range === r.value
+                                                        ? 'bg-primary text-white border-primary'
+                                                        : 'bg-surface text-text-secondary border-border hover:border-primary/40'
+                                                }`}
+                                            >{r.label}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
                                     <label className="block text-xs font-bold text-text-secondary uppercase tracking-wide mb-2">Active (Ring)</label>
                                     <div className="flex flex-wrap gap-2">
                                         {Array.from({ length: 10 }, (_, i) => i + 1).map(r => {
@@ -477,7 +514,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Location</th>
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Assigned To</th>
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Status</th>
-                                <th className="text-right px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Deal Value</th>
+                                <th className="text-center px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Seats</th>
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Follow-up</th>
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Created</th>
                             </tr>
@@ -516,6 +553,9 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                                 {lead.company_name && lead.contact_person && (
                                                     <p className="text-xs text-text-secondary">{lead.contact_person}</p>
                                                 )}
+                                                {(lead as any).meta_lead_id && (
+                                                    <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Meta</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
@@ -552,10 +592,26 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                         <td className="px-4 py-3">
                                             {getStatusBadge(lead)}
                                         </td>
-                                        <td className="px-4 py-3 text-right">
-                                            <p className="font-medium text-text-primary text-sm">
-                                                {formatCurrency(lead.deal_value)}
-                                            </p>
+                                        <td className="px-4 py-3 text-center">
+                                            {(() => { const si = seatInfo(lead); return (
+                                            <div className="relative group inline-flex items-center gap-1.5 cursor-default">
+                                                <Users className="w-4 h-4 text-text-tertiary" />
+                                                {si.count != null ? (
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <span className="font-bold text-text-primary text-sm">{si.count}</span>
+                                                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{si.bucket}</span>
+                                                    </span>
+                                                ) : (
+                                                    <span className="font-medium text-text-tertiary text-sm">-</span>
+                                                )}
+                                                {si.cleanReq && (
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 max-w-xs truncate">
+                                                        {si.cleanReq}
+                                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            ); })()}
                                         </td>
                                         <td className="px-4 py-3">
                                             {lead.next_followup_date ? (

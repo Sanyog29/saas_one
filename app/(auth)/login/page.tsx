@@ -212,7 +212,7 @@ function AuthContent() {
                 // Property-level roles (property_admin, staff, tenant, etc.) may also have
                 // an org_membership row (created by the user-create API), but they should
                 // be routed via Step 4 (property_memberships) instead.
-                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement', 'bd_admin', 'bd_rep'];
+                const ORG_LEVEL_ROLES = ['org_super_admin', 'super_tenant', 'owner', 'admin', 'org_admin', 'maintenance_vendor', 'procurement', 'bd_admin', 'bd_super_admin', 'bd_rep'];
                 const activeOrgMemberships = (orgMemberships || []).filter(
                     (m) => ORG_LEVEL_ROLES.includes(m.role) && (m.is_active === true || m.is_active === null)
                 );
@@ -222,7 +222,7 @@ function AuthContent() {
                 // NEVER fall through to an FMS dashboard. We fetch property memberships
                 // early so we can detect any genuine FMS role that should outrank CRM.
                 // If the user has a CRM role and NO genuine FMS role, short-circuit to /{org}/crm.
-                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin'];
+                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin', 'bd_super_admin'];
                 const FMS_ROLES = ['property_admin', 'tenant', 'security', 'staff', 'mst', 'vendor', 'org_admin', 'owner', 'admin', 'procurement', 'org_super_admin', 'super_tenant', 'maintenance_vendor'];
 
                 const { data: allPropMembershipsForGuard } = await supabase
@@ -254,7 +254,7 @@ function AuthContent() {
 
                 if (activeOrgMemberships.length > 0) {
                     // Pick best by priority (org_super_admin first, then super_tenant, then others)
-                    const ORG_PRIORITY = ['org_super_admin', 'bd_admin', 'org_admin', 'super_tenant', 'owner', 'admin', 'member', 'bd_rep'];
+                    const ORG_PRIORITY = ['org_super_admin', 'bd_super_admin', 'bd_admin', 'org_admin', 'super_tenant', 'owner', 'admin', 'member', 'bd_rep'];
                     const best = [...activeOrgMemberships].sort((a, b) => {
                         const ai = ORG_PRIORITY.indexOf(a.role) === -1 ? 99 : ORG_PRIORITY.indexOf(a.role);
                         const bi = ORG_PRIORITY.indexOf(b.role) === -1 ? 99 : ORG_PRIORITY.indexOf(b.role);
@@ -263,7 +263,7 @@ function AuthContent() {
 
                     if (best.role === 'procurement') {
                         router.replace('/procurement');
-                    } else if (best.role === 'bd_admin' || best.role === 'bd_rep') {
+                    } else if (best.role === 'bd_admin' || best.role === 'bd_super_admin' || best.role === 'bd_rep') {
                         // CRM users route to CRM module
                         router.replace(`/${best.organization_id}/crm`);
                     } else {
@@ -314,7 +314,7 @@ function AuthContent() {
                         router.replace(`/property/${pId}/vendor`);
                     } else if (role === 'procurement') {
                         router.replace('/procurement');
-                    } else if (role === 'bd_rep' || role === 'bd_admin') {
+                    } else if (role === 'bd_rep' || role === 'bd_admin' || role === 'bd_super_admin') {
                         // CRM users route to org dashboard with CRM
                         router.replace(`/${propMembership.organization_id}/crm`);
                     } else {

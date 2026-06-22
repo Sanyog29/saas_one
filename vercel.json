@@ -47,6 +47,14 @@
     {
       "path": "/api/cron/generate-sop-slots",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-meta-insights",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-linkedin",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

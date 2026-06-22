@@ -10,7 +10,7 @@ export default function CRMCampaignsPage() {
     const orgId = params?.orgId as string;
     const { membership } = useAuth();
     const role = membership?.org_role;
-    const authorized = role && ['bd_admin', 'org_admin', 'org_super_admin'].includes(role);
+    const authorized = role && ['bd_admin', 'bd_super_admin', 'org_admin', 'org_super_admin'].includes(role);
 
     if (!authorized) {
         return (

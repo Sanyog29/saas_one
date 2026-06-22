@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { Settings, Palette, MapPin, Building2, Bell, Link2, Plus, Edit, Trash2, Loader2, Check, Send, ChevronDown, Search, X, Filter, Calendar, GraduationCap, RotateCcw, Shuffle, ToggleLeft, ToggleRight, Info, PhoneCall } from 'lucide-react';
 import Link from 'next/link';
 import { LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
-import { MetaIntegrationGuide } from '@/frontend/components/crm';
+import { MetaIntegrationGuide, LinkedInIntegrationGuide } from '@/frontend/components/crm';
 import LeadDistributionManager from '@/frontend/components/crm/LeadDistributionManager';
 
 // ── Property Mapping types ────────────────────────────────────────────────────
@@ -933,6 +933,19 @@ export default function CRMSettingsPage() {
                                         </div>
                                     </div>
                                     <MetaIntegrationGuide orgId={orgId} />
+                                </div>
+
+                                <div className="border-t border-slate-200 pt-6">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="w-12 h-12 bg-[#0A66C2]/10 rounded-xl flex items-center justify-center">
+                                            <span className="text-xl font-bold text-[#0A66C2]">in</span>
+                                        </div>
+                                        <div>
+                                            <h3 className="font-semibold text-text-primary">LinkedIn Lead Gen + Ads</h3>
+                                            <p className="text-sm text-text-secondary">Pull LinkedIn Lead Gen Form responses + ad spend into your CRM</p>
+                                        </div>
+                                    </div>
+                                    <LinkedInIntegrationGuide orgId={orgId} />
                                 </div>
 
                                 <div className="border-t border-slate-200 pt-6">

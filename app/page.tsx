@@ -51,7 +51,7 @@ export default function Home() {
                 // Business-development (CRM) users must ALWAYS land on the CRM view and
                 // NEVER fall through to an FMS dashboard. If the user has a CRM role and
                 // NO genuine FMS role, short-circuit to /{org}/crm.
-                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin'];
+                const CRM_ONLY_ROLES = ['bd_rep', 'bd_admin', 'bd_super_admin'];
                 const FMS_ROLES = ['property_admin', 'tenant', 'security', 'staff', 'mst', 'vendor', 'org_admin', 'owner', 'admin', 'procurement', 'org_super_admin', 'super_tenant', 'maintenance_vendor'];
 
                 const crmOrgMemberships = (membership?.all_org_memberships || [])

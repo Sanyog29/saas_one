@@ -14,6 +14,7 @@ interface StagePipelineProps {
 }
 
 const RING_RE = /^ring\s*\d+$/i;
+const ACTIVITY_STATUSES = new Set(['visit pending', 'visit done', 'layout shared', 'loi']);
 
 function RingDropdownPortal({
     ringStatuses,
@@ -95,12 +96,13 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
 
     if (!statuses?.length) return null;
 
-    const ringStatuses = statuses.filter(s => RING_RE.test(s.name));
+    const filteredStatuses = statuses.filter(s => !ACTIVITY_STATUSES.has(s.name.toLowerCase()));
+    const ringStatuses = filteredStatuses.filter(s => RING_RE.test(s.name));
 
-    const firstRingIndex = statuses.findIndex(s => RING_RE.test(s.name));
+    const firstRingIndex = filteredStatuses.findIndex(s => RING_RE.test(s.name));
     const pipeline: (LeadStatusConfig | 'ring-dropdown')[] = [];
     let ringInserted = false;
-    for (const s of statuses) {
+    for (const s of filteredStatuses) {
         if (RING_RE.test(s.name)) {
             if (!ringInserted) {
                 pipeline.push('ring-dropdown');
@@ -111,8 +113,8 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
         }
     }
 
-    const currentIndex = statuses.findIndex(s => s.id === currentStatusId);
-    const currentStatus = statuses.find(s => s.id === currentStatusId);
+    const currentIndex = filteredStatuses.findIndex(s => s.id === currentStatusId);
+    const currentStatus = filteredStatuses.find(s => s.id === currentStatusId);
     const isCurrentRing = currentStatus ? RING_RE.test(currentStatus.name) : false;
     const currentRingNum = isCurrentRing ? parseInt(currentStatus!.name.replace(/\D/g, '')) : 0;
 
@@ -141,9 +143,9 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
                                             <span
                                                 className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all group-hover:scale-105 ${isCurrentRing ? 'shadow-md ring-2 ring-offset-2 ring-offset-[var(--card)]' : ''}`}
                                                 style={{
-                                                    backgroundColor: isCurrentRing ? ringColor : isDone ? `${ringColor}1A` : 'var(--card)',
-                                                    borderColor: isCurrentRing ? ringColor : isDone ? `${ringColor}66` : 'var(--border)',
-                                                    color: isCurrentRing ? '#fff' : isDone ? ringColor : 'var(--text-tertiary)',
+                                                    backgroundColor: isCurrentRing ? ringColor : 'var(--card)',
+                                                    borderColor: isCurrentRing ? ringColor : 'var(--border)',
+                                                    color: isCurrentRing ? '#fff' : 'var(--text-tertiary)',
                                                     ...(isCurrentRing ? { boxShadow: `0 0 0 2px ${ringColor}` } : {}),
                                                 }}
                                             >
@@ -180,7 +182,7 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
                                 {i < pipeline.length - 1 && (
                                     <span
                                         className="h-0.5 w-4 shrink-0 rounded-full mt-[21px]"
-                                        style={{ backgroundColor: isDone || isCurrentRing ? `${ringColor}66` : 'var(--border)' }}
+                                        style={{ backgroundColor: 'var(--border)' }}
                                     />
                                 )}
                             </React.Fragment>
@@ -191,7 +193,7 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
                     const v = getStageVisual(s.name);
                     const Icon = v.icon;
                     const isCurrent = s.id === currentStatusId;
-                    const statusIdx = statuses.findIndex(st => st.id === s.id);
+                    const statusIdx = filteredStatuses.findIndex(st => st.id === s.id);
                     const isDone = currentIndex >= 0 && statusIdx < currentIndex;
                     const big = v.size === 'lg';
                     const circle = big ? 'w-11 h-11' : 'w-8 h-8';
@@ -199,9 +201,7 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
 
                     const style: React.CSSProperties = isCurrent
                         ? { backgroundColor: v.color, borderColor: v.color, color: '#fff' }
-                        : isDone
-                            ? { backgroundColor: `${v.color}1A`, borderColor: `${v.color}66`, color: v.color }
-                            : { backgroundColor: 'var(--card)', borderColor: 'var(--border)', color: 'var(--text-tertiary)' };
+                        : { backgroundColor: 'var(--card)', borderColor: 'var(--border)', color: 'var(--text-tertiary)' };
 
                     return (
                         <React.Fragment key={s.id}>
@@ -228,7 +228,7 @@ export default function StagePipeline({ statuses, currentStatusId, onChange, isU
                             {i < pipeline.length - 1 && (
                                 <span
                                     className="h-0.5 w-4 shrink-0 rounded-full mt-[21px]"
-                                    style={{ backgroundColor: isDone ? `${v.color}66` : 'var(--border)' }}
+                                    style={{ backgroundColor: 'var(--border)' }}
                                 />
                             )}
                         </React.Fragment>

@@ -15,7 +15,7 @@ import { supabaseAdmin } from '@/backend/lib/supabase/admin';
  *     markets (cities) assigned to them in BD-admin settings (crm_territories).
  */
 
-export const CRM_ADMIN_ROLES = ['bd_admin', 'org_admin', 'org_super_admin'] as const;
+export const CRM_ADMIN_ROLES = ['bd_admin', 'bd_super_admin', 'org_admin', 'org_super_admin'] as const;
 export const CRM_ROLES = ['bd_rep', ...CRM_ADMIN_ROLES] as const;
 
 export interface CrmAccess {

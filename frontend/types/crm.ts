@@ -241,6 +241,7 @@ export interface CRMLead {
     email?: string;
     location?: string;
     requirement?: string;
+    seats?: number;
     property_interest?: string;
     lead_source?: string;
     deal_value: number;
@@ -365,6 +366,8 @@ export interface CreateLeadInput {
     email?: string;
     location?: string;
     requirement?: string;
+    seats?: number | null;
+    move_in_timeline?: string | null;
     property_interest?: string;
     lead_source?: string;
     deal_value?: number;
