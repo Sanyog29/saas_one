@@ -7,6 +7,7 @@ import { useAuth } from '@/frontend/context/AuthContext';
 import { CRMLead, LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
 import { getStageVisual } from '@/frontend/lib/crm/stages';
 import { getSourceVisual } from '@/frontend/lib/crm/sourceIcons';
+import SourceBadge from '@/frontend/components/crm/SourceBadge';
 
 interface LeadsTableProps {
     onLeadSelect?: (lead: CRMLead) => void;
@@ -633,9 +634,13 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                                 {lead.company_name && lead.contact_person && (
                                                     <p className="text-xs text-text-secondary">{lead.contact_person}</p>
                                                 )}
-                                                {(lead as any).meta_lead_id && (
-                                                    <span className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Meta</span>
-                                                )}
+                                                <SourceBadge
+                                                    source={
+                                                        (lead as any).source_info?.name
+                                                        || ((lead as any).linkedin_lead_id ? 'LinkedIn' : (lead as any).meta_lead_id ? 'Meta' : null)
+                                                    }
+                                                    className="mt-0.5"
+                                                />
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
