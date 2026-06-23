@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
+import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 import { LINKEDIN_OAUTH_BASE, LINKEDIN_SCOPES } from '@/backend/services/linkedinClient';
 
 /**
@@ -16,8 +17,8 @@ import { LINKEDIN_OAUTH_BASE, LINKEDIN_SCOPES } from '@/backend/services/linkedi
 export async function GET(request: NextRequest) {
     const access = await resolveCrmAccess(request, readOrgId(request));
     if (isCrmAccessError(access)) return access;
-    if (!access.isAdmin && !access.isMasterAdmin) {
-        return NextResponse.json({ error: 'Admin only' }, { status: 403 });
+    if (!isBdSuperAdmin(access.user.email) && !access.roles?.includes('bd_super_admin') && !access.isMasterAdmin) {
+        return NextResponse.json({ error: 'BD super admin only' }, { status: 403 });
     }
 
     const { data: cfg } = await supabaseAdmin

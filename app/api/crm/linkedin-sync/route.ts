@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
+import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 import { LinkedInConfig } from '@/backend/services/linkedinClient';
 import { syncLinkedInLeadsForOrg } from '@/backend/services/linkedinLeadSync';
 import { syncLinkedInInsightsForOrg } from '@/backend/services/linkedinInsightsSync';
@@ -21,8 +22,8 @@ const CONFIG_SELECT =
 export async function POST(request: NextRequest) {
     const access = await resolveCrmAccess(request, readOrgId(request));
     if (isCrmAccessError(access)) return access;
-    if (!access.isAdmin && !access.isMasterAdmin) {
-        return NextResponse.json({ error: 'Admin only' }, { status: 403 });
+    if (!isBdSuperAdmin(access.user.email) && !access.roles?.includes('bd_super_admin') && !access.isMasterAdmin) {
+        return NextResponse.json({ error: 'BD super admin only' }, { status: 403 });
     }
     const body = await request.json().catch(() => ({}));
     const mode: string = body.mode || 'both';

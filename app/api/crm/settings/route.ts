@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
+import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 
 // Statuses/sources visible to an org = its own rows + the shared global (NULL) defaults.
 function orgOrGlobal(query: any, organizationId: string) {
@@ -67,7 +68,10 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ meta: safe });
     }
     if (type === 'linkedin') {
-        if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        const isLinkedInAdmin = isBdSuperAdmin(access.user.email) || access.roles?.includes('bd_super_admin') || access.isMasterAdmin;
+        if (!isLinkedInAdmin) {
+            return NextResponse.json({ error: 'Forbidden — BD super admin only' }, { status: 403 });
+        }
         const { data } = await supabaseAdmin.from('crm_linkedin_config').select('*').eq('organization_id', org).maybeSingle();
         const now = Date.now();
         const safe = data
@@ -222,6 +226,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true });
         }
         case 'save_linkedin_config': {
+            const isLinkedInAdmin = isBdSuperAdmin(access.user.email) || access.roles?.includes('bd_super_admin') || access.isMasterAdmin;
+            if (!isLinkedInAdmin) {
+                return NextResponse.json({ error: 'Forbidden — BD super admin only' }, { status: 403 });
+            }
             const upd: Record<string, any> = {
                 organization_id: org,
                 client_id: d.client_id ?? null,
