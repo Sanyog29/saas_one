@@ -179,6 +179,11 @@ export async function syncLinkedInLeadsForOrg(cfg: LinkedInConfig): Promise<Lead
             property_interest: cfg.default_property ?? null,
             campaign: campaignName,
             linkedin_lead_id: String(leadId),
+            // Real submission time so the lead doesn't appear "new" on import day.
+            created_at: (() => {
+                const ts = resp.submittedAt ?? resp.createdAt ?? resp.formResponse?.submittedAt;
+                return typeof ts === 'number' ? new Date(ts).toISOString() : (ts ? new Date(ts).toISOString() : undefined);
+            })(),
         });
         if (insErr) { errors.push(insErr.message); skipped++; }
         else inserted++;

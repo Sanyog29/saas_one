@@ -199,6 +199,9 @@ export async function POST(request: NextRequest) {
                     campaign: form.name,
                     meta_form_name: form.name,
                     meta_lead_id: leadgenId,
+                    // Stamp the lead with its real Meta submission time, not the
+                    // import time — otherwise back-filled leads look "new today".
+                    created_at: lead.created_time ? new Date(lead.created_time).toISOString() : undefined,
                 }).select('id').single();
 
                 // Log in crm_meta_leads

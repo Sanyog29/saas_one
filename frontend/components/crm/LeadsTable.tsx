@@ -60,6 +60,11 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [sources, setSources] = useState<LeadSource[]>([]);
     const [campaigns, setCampaigns] = useState<string[]>([]);
+    const [reps, setReps] = useState<{ id: string; full_name?: string; name?: string }[]>([]);
+    // Bulk reassign (admins only)
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [reassigning, setReassigning] = useState(false);
+    const [reassignTo, setReassignTo] = useState('');
     const [sortBy, setSortBy] = useState('created_at');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -139,13 +144,14 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     const fetchConfigs = async () => {
         try {
             const [settingsRes, campaignsRes] = await Promise.all([
-                fetch('/api/crm/settings?type=all'),
+                fetch('/api/crm/settings?type=all&scope=bd'),
                 fetch('/api/crm/campaigns'),
             ]);
             if (settingsRes.ok) {
                 const data = await settingsRes.json();
                 setStatuses(data.statuses || []);
                 setSources(data.sources || []);
+                setReps(data.users || []);
             }
             if (campaignsRes.ok) {
                 const data = await campaignsRes.json();
@@ -159,6 +165,41 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     const handleApplyFilters = () => {
         setAppliedFilters({ ...stagedFilters });
         setPage(1);
+    };
+
+    // --- Bulk reassign (admins) ---------------------------------------------
+    const toggleSelect = (id: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+    const toggleSelectAll = () => {
+        setSelectedIds(prev => prev.size === leads.length ? new Set() : new Set(leads.map(l => l.id)));
+    };
+    const handleBulkReassign = async () => {
+        if (!selectedIds.size) return;
+        const assignee = reassignTo === '__unassign__' ? null : reassignTo || null;
+        setReassigning(true);
+        try {
+            const ids = Array.from(selectedIds);
+            await Promise.all(ids.map(id =>
+                fetch(`/api/crm/leads/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assigned_to: assignee }),
+                })
+            ));
+            setSelectedIds(new Set());
+            setReassignTo('');
+            await fetchLeads();
+        } catch (err) {
+            console.error('Bulk reassign failed:', err);
+        } finally {
+            setReassigning(false);
+        }
     };
 
     const handleClearFilters = () => {
@@ -503,12 +544,42 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                 )}
             </AnimatePresence>
 
+            {/* Bulk reassign bar (admins only) */}
+            {!isBdRep && selectedIds.size > 0 && (
+                <div className="flex items-center gap-3 mb-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl">
+                    <span className="text-sm font-bold text-primary">{selectedIds.size} selected</span>
+                    <select
+                        value={reassignTo}
+                        onChange={(e) => setReassignTo(e.target.value)}
+                        className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    >
+                        <option value="">Reassign to…</option>
+                        {reps.map((r) => <option key={r.id} value={r.id}>{r.full_name || r.name}</option>)}
+                        <option value="__unassign__">— Unassign —</option>
+                    </select>
+                    <button
+                        onClick={handleBulkReassign}
+                        disabled={!reassignTo || reassigning}
+                        className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-bold disabled:opacity-40 hover:bg-primary/90"
+                    >{reassigning ? 'Reassigning…' : 'Apply'}</button>
+                    <button onClick={() => setSelectedIds(new Set())} className="text-sm text-text-secondary hover:text-text-primary ml-auto">Clear</button>
+                </div>
+            )}
+
             {/* Table */}
             <div className="bg-surface rounded-xl border border-border overflow-hidden" data-tour="leads-table">
                 <div className="overflow-x-auto">
                     <table className="w-full">
                         <thead>
                             <tr className="bg-surface-elevated border-b border-border">
+                                {!isBdRep && (
+                                    <th className="px-3 py-3 w-10">
+                                        <input type="checkbox" aria-label="Select all"
+                                            checked={leads.length > 0 && selectedIds.size === leads.length}
+                                            onChange={toggleSelectAll}
+                                            className="rounded border-slate-300" />
+                                    </th>
+                                )}
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Lead</th>
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Contact</th>
                                 <th className="text-left px-4 py-3 text-xs font-bold text-text-secondary uppercase tracking-wide">Location</th>
@@ -523,14 +594,14 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                             {isLoading ? (
                                 [...Array(5)].map((_, i) => (
                                     <tr key={i}>
-                                        <td colSpan={8} className="px-4 py-4">
+                                        <td colSpan={isBdRep ? 8 : 9} className="px-4 py-4">
                                             <div className="h-8 bg-muted rounded animate-pulse" />
                                         </td>
                                     </tr>
                                 ))
                             ) : leads.length === 0 ? (
                                 <tr>
-                                    <td colSpan={8} className="px-4 py-12 text-center text-text-secondary">
+                                    <td colSpan={isBdRep ? 8 : 9} className="px-4 py-12 text-center text-text-secondary">
                                         <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
                                             <Search className="w-8 h-8 text-text-tertiary" />
                                         </div>
@@ -543,8 +614,17 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                                     <tr
                                         key={lead.id}
                                         onClick={() => onLeadSelect?.(lead)}
-                                        className="hover:bg-surface-elevated cursor-pointer transition-colors"
+                                        className={`hover:bg-surface-elevated cursor-pointer transition-colors ${selectedIds.has(lead.id) ? 'bg-primary/5' : ''}`}
                                     >
+                                        {!isBdRep && (
+                                            <td className="px-3 py-3 w-10" onClick={(e) => e.stopPropagation()}>
+                                                <input type="checkbox" aria-label="Select lead"
+                                                    checked={selectedIds.has(lead.id)}
+                                                    onChange={() => {}}
+                                                    onClick={(e) => toggleSelect(lead.id, e)}
+                                                    className="rounded border-slate-300" />
+                                            </td>
+                                        )}
                                         <td className="px-4 py-3">
                                             <div>
                                                 <p className="font-medium text-text-primary text-sm">
