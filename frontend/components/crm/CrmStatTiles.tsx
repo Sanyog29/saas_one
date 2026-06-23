@@ -67,7 +67,7 @@ export default function CrmStatTiles({
                     ))}
                 </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {tiles.map((t) => {
                     const Icon = t.icon;
                     const tileGlow = TILE_GLOW[t.color] || TILE_GLOW['#708F96'];

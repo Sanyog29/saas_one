@@ -599,7 +599,7 @@ export default function ImportWizard({ isOpen, onClose, onComplete }: ImportWiza
                                     </h3>
                                 </div>
 
-                                <div className="grid grid-cols-3 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div className="bg-slate-50 rounded-xl p-4 text-center">
                                         <p className="text-2xl font-bold text-text-primary">{results.total_rows}</p>
                                         <p className="text-sm text-text-secondary">Total Rows</p>

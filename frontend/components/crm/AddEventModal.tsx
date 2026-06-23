@@ -134,7 +134,7 @@ export default function AddEventModal({
                     <div className="p-5 space-y-4">
                         <div>
                             <label className="text-xs font-bold text-text-tertiary uppercase tracking-wide">Type</label>
-                            <div className="grid grid-cols-4 gap-2 mt-1.5">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
                                 {EVENT_TYPES.map((t) => (
                                     <button
                                         key={t.value}

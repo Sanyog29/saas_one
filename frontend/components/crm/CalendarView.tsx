@@ -196,8 +196,10 @@ export default function CalendarView({ onEventClick, onCreateEvent }: CalendarVi
                 </div>
             </div>
 
-            {/* Calendar Grid */}
+            {/* Calendar Grid — scrolls horizontally on small screens so day cells stay usable */}
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden" data-tour="calendar-grid">
+              <div className="overflow-x-auto touch-scroll">
+                <div className="min-w-[560px]">
                 {/* Week Days Header */}
                 <div className="grid grid-cols-7 border-b border-slate-200">
                     {weekDays.map(day => (
@@ -257,6 +259,8 @@ export default function CalendarView({ onEventClick, onCreateEvent }: CalendarVi
                         );
                     })}
                 </div>
+                </div>
+              </div>
             </div>
 
             {/* Selected Day Events */}
