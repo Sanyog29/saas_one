@@ -18,13 +18,13 @@ export const LINKEDIN_API_VERSION = '202406';
 export const LINKEDIN_REST_BASE = 'https://api.linkedin.com/rest';
 export const LINKEDIN_OAUTH_BASE = 'https://www.linkedin.com/oauth/v2';
 
-// Scopes required for the full leads + ads integration.
-export const LINKEDIN_SCOPES = [
-    'r_marketing_leadgen_automation', // read Lead Gen Form responses
-    'r_ads',                          // read ad accounts / campaigns
-    'r_ads_reporting',                // read adAnalytics (spend / metrics)
-    'r_organization_social',          // resolve org page name (optional but useful)
-].join(' ');
+// Scopes requested during OAuth. Only request what the app is APPROVED for —
+// LinkedIn rejects the whole authorization if any scope is unauthorized.
+// Override via env as more products get approved, e.g.:
+//   LINKEDIN_SCOPES="r_ads r_ads_reporting r_marketing_leadgen_automation"
+// Default = Advertising API (Development Tier): spend + reporting only.
+export const LINKEDIN_SCOPES =
+    process.env.LINKEDIN_SCOPES?.trim() || 'r_ads r_ads_reporting';
 
 export interface LinkedInConfig {
     id: string;
