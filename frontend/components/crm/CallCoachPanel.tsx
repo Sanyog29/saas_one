@@ -212,62 +212,41 @@ export default function CallCoachPanel({
                 </div>
             )}
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
-                {/* Call list */}
-                <div className="rounded-[var(--radius-lg)] border border-slate-200 bg-white">
-                    <div className="border-b border-slate-200 px-4 py-3">
-                        <h4 className="text-sm font-semibold text-text-primary">
-                            Recordings ({calls.length})
-                        </h4>
-                    </div>
-                    <div className="max-h-[400px] overflow-y-auto">
-                        {calls.length === 0 ? (
-                            <div className="p-6 text-center text-sm text-text-secondary">
-                                No recordings yet. Upload one to get started.
-                            </div>
-                        ) : (
-                            calls.map((call) => (
+            <div className="flex flex-col gap-4 min-w-0">
+                {/* Compact recordings strip — horizontal, frees width for the report */}
+                {calls.length > 0 && (
+                    <div className="min-w-0">
+                        <div className="mb-2 flex items-center gap-1.5 text-xs font-bold text-text-tertiary uppercase tracking-wide">
+                            <FileAudio className="h-3.5 w-3.5" /> Recordings ({calls.length})
+                        </div>
+                        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                            {calls.map((call) => (
                                 <button
                                     key={call.id}
                                     onClick={() => setSelectedId(call.id)}
-                                    className={`w-full border-b border-slate-100 p-3 text-left transition-colors hover:bg-slate-50 ${
-                                        selectedId === call.id ? 'bg-primary/5' : ''
+                                    className={`shrink-0 rounded-xl border px-3 py-2 text-left transition-colors min-w-[140px] ${
+                                        selectedId === call.id ? 'border-primary bg-primary/5' : 'border-slate-200 bg-white hover:bg-slate-50'
                                     }`}
                                 >
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <FileAudio className="h-4 w-4 text-text-secondary" />
-                                            <span className="text-sm font-medium text-text-primary">
-                                                {formatDate(call.uploaded_at)}
-                                            </span>
-                                        </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-xs font-bold text-text-primary whitespace-nowrap">{formatDate(call.uploaded_at)}</span>
                                         <CallStatusBadge status={call.status} />
                                     </div>
                                     {call.overall_score != null && (
-                                        <div className="mt-1 flex items-center gap-2 text-xs text-text-secondary">
+                                        <div className="mt-1 flex items-center gap-1 text-[11px] text-text-secondary">
                                             <Sparkles className="h-3 w-3" />
-                                            Score: <span className="font-semibold text-text-primary">{call.overall_score.toFixed(1)}/10</span>
-                                            {call.rep_talk_ratio != null && (
-                                                <>
-                                                    <span className="text-text-tertiary">·</span>
-                                                    <span>Talk: {Math.round(call.rep_talk_ratio * 100)}%</span>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
-                                    {call.summary && (
-                                        <div className="mt-1 line-clamp-2 text-xs text-text-secondary">
-                                            {call.summary}
+                                            <span className="font-bold text-text-primary">{call.overall_score.toFixed(1)}/10</span>
+                                            {call.rep_talk_ratio != null && <span className="text-text-tertiary">· {Math.round(call.rep_talk_ratio * 100)}% talk</span>}
                                         </div>
                                     )}
                                 </button>
-                            ))
-                        )}
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Detail */}
-                <div className="min-h-[400px]">
+                <div className="min-h-[200px] min-w-0">
                     {isLoadingDetail && (
                         <div className="flex items-center justify-center p-12">
                             <Loader2 className="h-6 w-6 animate-spin text-text-secondary" />
@@ -376,9 +355,18 @@ function CallDetailView({ call }: { call: CrmCallDetail }) {
                 </>
             )}
 
-            {/* Transcript */}
+            {/* Transcript — collapsed by default so the coaching report leads */}
             {call.transcript && call.transcript.length > 0 && (
-                <TranscriptView segments={call.transcript} />
+                <details className="rounded-[var(--radius-lg)] border border-slate-200 bg-white group">
+                    <summary className="flex items-center justify-between cursor-pointer px-5 py-3 text-sm font-semibold text-text-primary select-none">
+                        <span className="flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Transcript ({call.transcript.length})</span>
+                        <span className="text-xs font-normal text-text-tertiary group-open:hidden">Show</span>
+                        <span className="text-xs font-normal text-text-tertiary hidden group-open:inline">Hide</span>
+                    </summary>
+                    <div className="px-1 pb-1">
+                        <TranscriptView segments={call.transcript} />
+                    </div>
+                </details>
             )}
         </div>
     );
@@ -510,32 +498,26 @@ function CoachingLists({ report }: { report: CoachingReport }) {
 
 function TranscriptView({ segments }: { segments: TranscriptSegment[] }) {
     return (
-        <div className="rounded-[var(--radius-lg)] border border-slate-200 bg-white p-5">
-            <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-text-primary">
-                <MessageSquare className="h-4 w-4" />
-                Transcript
-            </h4>
-            <div className="max-h-96 space-y-2 overflow-y-auto rounded-[var(--radius-md)] bg-slate-50 p-3">
-                {segments.map((seg, i) => (
-                    <div key={i} className="text-sm">
-                        <span className="mr-2 font-mono text-xs text-text-tertiary">
-                            {formatTime(seg.start)}
-                        </span>
-                        <span
-                            className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                seg.speaker === 'rep'
-                                    ? 'bg-primary/10 text-primary'
-                                    : seg.speaker === 'client'
-                                    ? 'bg-amber-100 text-amber-700'
-                                    : 'bg-slate-200 text-slate-700'
-                            }`}
-                        >
-                            {seg.speaker}
-                        </span>
-                        <span className="text-text-primary">{seg.text}</span>
-                    </div>
-                ))}
-            </div>
+        <div className="max-h-96 space-y-2 overflow-y-auto rounded-[var(--radius-md)] bg-slate-50 p-3 min-w-0">
+            {segments.map((seg, i) => (
+                <div key={i} className="text-sm break-words">
+                    <span className="mr-2 font-mono text-xs text-text-tertiary">
+                        {formatTime(seg.start)}
+                    </span>
+                    <span
+                        className={`mr-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            seg.speaker === 'rep'
+                                ? 'bg-primary/10 text-primary'
+                                : seg.speaker === 'client'
+                                ? 'bg-amber-100 text-amber-700'
+                                : 'bg-slate-200 text-slate-700'
+                        }`}
+                    >
+                        {seg.speaker}
+                    </span>
+                    <span className="text-text-primary">{seg.text}</span>
+                </div>
+            ))}
         </div>
     );
 }
