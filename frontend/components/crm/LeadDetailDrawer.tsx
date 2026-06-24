@@ -89,6 +89,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
     const [editingActivity, setEditingActivity] = useState<{ id: string; description: string } | null>(null);
     const [savingActivity, setSavingActivity] = useState(false);
     // Reassignment (admins + reps)
+    const [formResponses, setFormResponses] = useState<{ question: string; answer: string }[]>([]);
     const [reps, setReps] = useState<{ id: string; full_name?: string; email?: string }[]>([]);
     const [showReassign, setShowReassign] = useState(false);
     const [reassigning, setReassigning] = useState(false);
@@ -126,6 +127,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 setActivities(data.activities || []);
                 setNotes(data.notes || []);
                 setEvents(data.events || []);
+                setFormResponses(data.form_responses || []);
             }
         } catch (error) {
             console.error('Failed to fetch lead details:', error);
@@ -685,6 +687,21 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Request Details — every field the prospect submitted on the ad form */}
+                                    {formResponses.length > 0 && (
+                                        <div className="bg-surface-elevated rounded-xl p-4">
+                                            <h3 className="font-bold text-text-primary mb-3">Request Details</h3>
+                                            <div className="space-y-2.5">
+                                                {formResponses.map((f, i) => (
+                                                    <div key={i} className="flex flex-col">
+                                                        <span className="text-xs font-bold text-text-secondary">{f.question}</span>
+                                                        <span className="text-sm text-text-primary break-words">{f.answer}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Requirement */}
                                     <div className="bg-surface-elevated rounded-xl p-4">

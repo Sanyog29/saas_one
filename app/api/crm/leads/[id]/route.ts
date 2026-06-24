@@ -42,14 +42,58 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (isCrmAccessError(access)) return access;
     if (!canAccessLead(lead0, access)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-    const [{ data: lead }, { data: activities }, { data: notes }, { data: events }] = await Promise.all([
+    const [{ data: lead }, { data: activities }, { data: notes }, { data: events }, { data: metaRow }] = await Promise.all([
         supabaseAdmin.from('crm_leads').select(LEAD_SELECT).eq('id', id).single(),
         supabaseAdmin.from('crm_activity_log').select('*, user_info:users(id, full_name, email)').eq('lead_id', id).order('created_at', { ascending: false }),
         supabaseAdmin.from('crm_notes').select('*, user_info:users(id, full_name, email)').eq('lead_id', id).order('created_at', { ascending: false }),
         supabaseAdmin.from('crm_events').select('*').eq('lead_id', id).order('start_datetime', { ascending: true }),
+        supabaseAdmin.from('crm_meta_leads').select('payload').eq('processed_lead_id', id).maybeSingle(),
     ]);
 
-    return NextResponse.json({ lead, activities: activities || [], notes: notes || [], events: events || [] });
+    // Surface the original ad-form Q&A (Meta) so the UI shows EVERY field the
+    // prospect submitted. Prefer the raw field_data; fall back to the lead's
+    // parsed columns (webhook leads don't store raw field_data).
+    let formResponses = extractFormResponses((metaRow as any)?.payload);
+    if (formResponses.length === 0 && lead) formResponses = responsesFromLead(lead);
+
+    return NextResponse.json({ lead, activities: activities || [], notes: notes || [], events: events || [], form_responses: formResponses });
+}
+
+/** Turn a Meta lead payload's field_data into humanized {question, answer} pairs. */
+function extractFormResponses(payload: any): { question: string; answer: string }[] {
+    const fd: any[] = payload?.field_data || [];
+    const humanize = (s: string) => (s || '')
+        .replace(/[_?]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    return fd
+        .map((f) => ({
+            question: humanize(f.name || ''),
+            answer: Array.isArray(f.values) ? f.values.join(', ').replace(/_/g, ' ') : String(f.values ?? ''),
+        }))
+        .filter((x) => x.question && x.answer);
+}
+
+/** Fallback: reconstruct the key form fields from a lead's parsed columns. */
+function responsesFromLead(lead: any): { question: string; answer: string }[] {
+    // Pull move-in / seats out of requirement if present.
+    const req: string = lead.requirement || '';
+    const moveIn = lead.move_in_timeline || (req.match(/Move-?in:\s*([^|]+)/i)?.[1]?.trim());
+    const seats = lead.seats != null ? String(lead.seats) : (req.match(/Seats:\s*([^|]+)/i)?.[1]?.trim());
+    const company = lead.company_name || (req.match(/Company:\s*([^|]+)/i)?.[1]?.trim());
+    const title = req.match(/Title:\s*([^|]+)/i)?.[1]?.trim();
+    const pairs: [string, any][] = [
+        ['Move-in Timeline', moveIn],
+        ['Seat Requirement', seats],
+        ['Name', lead.contact_person],
+        ['Work Email', lead.email],
+        ['Phone', lead.contact_number],
+        ['Company Name', company],
+        ['Job Title', title],
+        ['City', lead.city || lead.location],
+    ];
+    return pairs.filter(([, v]) => v != null && String(v).trim()).map(([q, v]) => ({ question: q, answer: String(v).trim() }));
 }
 
 // PATCH /api/crm/leads/[id]

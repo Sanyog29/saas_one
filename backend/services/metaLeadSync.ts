@@ -107,7 +107,7 @@ export async function syncMetaLeadsForOrg(orgId: string, opts: { perFormCap?: nu
                 }
                 return null;
             };
-            const fullName = get('full_name', 'full name', 'name') || [get('first_name'), get('last_name')].filter(Boolean).join(' ') || null;
+            const fullName = get('full_name', 'full name') || [get('first_name'), get('last_name')].filter(Boolean).join(' ') || get('name') || null;
             const email = get('email', 'work email', 'work_email');
             const phone = get('phone_number', 'phone', 'mobile_number', 'mobile');
             const city = get('city', 'preferred location', 'location');
