@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import ChannelSwitch from '@/frontend/components/crm/ChannelSwitch';
 import {
     Loader2, AlertCircle, TrendingUp, TrendingDown, Target, DollarSign,
     Users, MousePointerClick, Eye, Award, AlertTriangle, Zap, ArrowRight,
@@ -142,16 +143,10 @@ export default function PerformanceMarketingDashboard() {
                     <span style={{ color: C.textTertiary }}>→</span>
                     <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
                         style={inputStyle} />
-                    <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}
-                        style={inputStyle}>
-                        <option value="">All channels</option>
-                        <option value="meta_ads">Meta Ads</option>
-                        <option value="google_ads">Google Ads</option>
-                        <option value="whatsapp">WhatsApp</option>
-                        <option value="email">Email</option>
-                        <option value="referral">Referral</option>
-                        <option value="organic">Organic</option>
-                    </select>
+                    <ChannelSwitch
+                        value={(channelFilter || 'all') as any}
+                        onChange={(v) => setChannelFilter(v === 'all' ? '' : v)}
+                    />
                 </div>
             </div>
 

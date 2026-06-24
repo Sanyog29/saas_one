@@ -78,6 +78,13 @@ function weekBounds() {
     return { start: mon.toISOString(), end: sun.toISOString(), mon };
 }
 
+const CHANNEL_BADGE: Record<string, { label: string; color: string; glyph: string }> = {
+    meta_ads: { label: 'Meta Ads', color: '#1877F2', glyph: '∞' },
+    linkedin_ads: { label: 'LinkedIn Ads', color: '#0A66C2', glyph: 'in' },
+    google_ads: { label: 'Google Ads', color: '#16A34A', glyph: 'G' },
+    other: { label: 'Other', color: '#64748B', glyph: '·' },
+};
+
 const PERIODS = ['Today', 'This Week', 'This Month', 'Custom'] as const;
 type Period = typeof PERIODS[number];
 
@@ -107,6 +114,7 @@ export default function BdSuperAdminDashboard() {
     const [stats, setStats] = useState<any>(null);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [latest, setLatest] = useState<any[]>([]);
+    const [channelMix, setChannelMix] = useState<any[]>([]);
     const [events, setEvents] = useState<any[]>([]);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [cities, setCities] = useState<string[]>(['All Cities']);
@@ -142,11 +150,13 @@ export default function BdSuperAdminDashboard() {
             j(`/api/crm/leads?sort_by=created_at&sort_order=desc&page_size=8${org}`),
             j(`/api/crm/events?start_date=${encodeURIComponent(wk.start)}&end_date=${encodeURIComponent(wk.end)}${org}`),
             j(`/api/crm/accounts?limit=8${org}`),
-        ]).then(([ip, ipp, iy, s, c, l, ev, ac]) => {
+            j(`/api/crm/campaigns/performance?from=${pr.from}&to=${pr.to}${org}`),
+        ]).then(([ip, ipp, iy, s, c, l, ev, ac, perf]) => {
             if (!active) return;
             setImpactPeriod(ip); setImpactPrev(ipp); setImpactYear(iy); setStats(s);
             setCampaigns(Array.isArray(c?.campaigns) ? c.campaigns : []);
             setLatest(Array.isArray(l?.leads) ? l.leads : []);
+            setChannelMix(Array.isArray(perf?.by_channel) ? perf.by_channel : []);
             setEvents(Array.isArray(ev?.events) ? ev.events : []);
             setAccounts(Array.isArray(ac?.accounts) ? ac.accounts : []);
             // Real city list from territory performance.
@@ -386,6 +396,54 @@ export default function BdSuperAdminDashboard() {
                 <KpiCard icon={TrendingUp} tint="emerald" label="Pipeline Generated" value={inrCompact(kpis.pipeline_generated)} delta={kpis.pipeline_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />
                 <KpiCard icon={Target} tint="pink" label="SQLs" value={compactNum(kpis.sqls)} delta={null} sub="warm + MQL" href={`/${orgId}/crm/leads`} />
             </div>
+
+            {/* Blended channel performance (Meta / LinkedIn / Google) */}
+            {channelMix.length > 0 && (
+                <Panel title="Channel Performance" href={`/${orgId}/crm/marketing`} linkLabel="Full marketing report">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm min-w-[520px]">
+                            <thead>
+                                <tr className="text-left text-[11px] font-bold text-text-tertiary uppercase border-b border-border">
+                                    <th className="px-4 py-2">Channel</th>
+                                    <th className="px-4 py-2">Spend</th>
+                                    <th className="px-4 py-2">Leads</th>
+                                    <th className="px-4 py-2">CTR</th>
+                                    <th className="px-4 py-2">CPL</th>
+                                    <th className="px-4 py-2">Impressions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {channelMix.map((r: any) => {
+                                    const meta = CHANNEL_BADGE[r.channel] || CHANNEL_BADGE.other;
+                                    const maxSpend = Math.max(1, ...channelMix.map((x: any) => x.spend));
+                                    return (
+                                        <tr key={r.channel} className="border-b border-border last:border-0">
+                                            <td className="px-4 py-2.5">
+                                                <span className="inline-flex items-center gap-2 font-bold text-text-primary">
+                                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black text-white" style={{ backgroundColor: meta.color }}>{meta.glyph}</span>
+                                                    {meta.label}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-text-primary whitespace-nowrap">{inrCompact(r.spend)}</span>
+                                                    <div className="flex-1 h-1.5 bg-surface-elevated rounded-full overflow-hidden min-w-[40px]">
+                                                        <div className="h-full rounded-full" style={{ width: `${Math.max(3, (r.spend / maxSpend) * 100)}%`, backgroundColor: meta.color }} />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 font-bold text-text-primary">{compactNum(r.leads)}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary">{r.ctr != null ? `${r.ctr.toFixed(2)}%` : '—'}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary">{r.cpl != null ? inrCompact(Math.round(r.cpl)) : '—'}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary">{compactNum(r.impressions)}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Panel>
+            )}
 
             {/* Row 2 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
