@@ -171,13 +171,13 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
                         </div>
                         <input
                             type="range"
-                            min={5}
-                            max={70}
+                            min={0}
+                            max={100}
                             value={Math.round(opacity * 100)}
                             onChange={(e) => setOpacity(Number(e.target.value) / 100)}
                             className="w-full accent-primary"
                         />
-                        <p className="text-xs text-slate-500">Keep it subtle so your content stays easy to read.</p>
+                        <p className="text-xs text-slate-500">0% = hidden · 100% = full strength. Lower values keep your content easier to read.</p>
                     </div>
 
                     {accent && preview && (

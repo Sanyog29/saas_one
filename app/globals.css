@@ -633,6 +633,14 @@
     background: var(--surface-elevated);
   }
 
+  /* Chameleon: integrate the wallpaper accent into content cards as a soft
+     diagonal wash. Scoped to the main content area (not the sidebar) and only
+     active when a wallpaper sets --surface-gradient. Layers over bg-surface's
+     background-color, so the flat tint still shows through where it fades out. */
+  .crm-chameleon .bg-surface {
+    background-image: var(--surface-gradient, none);
+  }
+
   .hover\:bg-surface-elevated:hover {
     background: var(--surface-elevated);
   }

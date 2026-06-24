@@ -96,9 +96,15 @@ export function crmThemeVars(accent: string, isDark: boolean): CSSProperties | u
     const ts = tintText(TEXT_TINT_SECONDARY);
     const rgba = (c: [number, number, number], a: number) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
 
+    // A soft diagonal accent wash layered on top of cards so the wallpaper color
+    // is "integrated" into tiles (subtle, fades out — not a flat slab of color).
+    const [ar, ag, ab] = accentRgb;
+    const surfaceGradient = `linear-gradient(160deg, rgba(${ar}, ${ag}, ${ab}, 0.16) 0%, rgba(${ar}, ${ag}, ${ab}, 0.04) 45%, rgba(${ar}, ${ag}, ${ab}, 0) 75%)`;
+
     return {
         ['--surface' as any]: mixHex(surfBase, accent, TINT_STRENGTH),
         ['--surface-elevated' as any]: mixHex(surfElev, accent, TINT_STRENGTH),
+        ['--surface-gradient' as any]: surfaceGradient,
         // Brand primary / accent (buttons, links, icons, active nav, glows)
         ['--primary' as any]: primary,
         ['--primary-light' as any]: primaryLight,
