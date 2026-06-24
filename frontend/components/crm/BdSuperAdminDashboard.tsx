@@ -115,6 +115,7 @@ export default function BdSuperAdminDashboard() {
     const [cityOpen, setCityOpen] = useState(false);
     const [trendKey, setTrendKey] = useState<'15d' | '3m' | '6m' | '12m' | 'custom'>('12m');
     const [trendCustom, setTrendCustom] = useState<{ from: string; to: string }>({ from: '', to: '' });
+    const [trendChannel, setTrendChannel] = useState<'blended' | 'meta' | 'linkedin'>('blended');
     const cityRef = useRef<HTMLDivElement>(null);
 
     const [impactPeriod, setImpactPeriod] = useState<any>(null);
@@ -222,9 +223,15 @@ export default function BdSuperAdminDashboard() {
 
     const trend = useMemo(() => {
         const mt = impactYear?.monthly_trend || [];
-        return mt.map((m: any) => ({ d: m.label, v: m.leads || 0 }));
-    }, [impactYear]);
+        const pick = (m: any) => {
+            if (trendChannel === 'meta') return m.metaLeads || 0;
+            if (trendChannel === 'linkedin') return m.linkedinLeads || 0;
+            return m.leads || 0; // blended
+        };
+        return mt.map((m: any) => ({ d: m.label, v: pick(m) }));
+    }, [impactYear, trendChannel]);
     const trendTotal = trend.reduce((a: number, b: any) => a + b.v, 0);
+    const trendColor = trendChannel === 'meta' ? '#1877F2' : trendChannel === 'linkedin' ? '#0A66C2' : '#6366F1';
 
     const campaignSpend = useMemo(() => {
         const cb = impactPeriod?.campaign_breakdown || [];
@@ -558,24 +565,48 @@ export default function BdSuperAdminDashboard() {
                         </div>
                     }
                 >
-                    {trend.length === 0 ? <Empty msg="No lead history" /> : (
-                        <div className="px-5 py-3">
-                            <div className="flex items-baseline gap-2 mb-2">
-                                <span className="text-2xl font-black text-text-primary">{compactNum(trendTotal)}</span>
-                                <span className="text-[11px] text-text-tertiary font-medium">leads · {{ '15d': 'last 15 days', '3m': 'last 3 months', '6m': 'last 6 months', '12m': 'last 12 months', custom: 'custom range' }[trendKey]}</span>
-                            </div>
-                            <ResponsiveContainer width="100%" height={150}>
-                                <AreaChart data={trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                                    <defs><linearGradient id="leadFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366F1" stopOpacity={0.25} /><stop offset="100%" stopColor="#6366F1" stopOpacity={0} /></linearGradient></defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                                    <XAxis dataKey="d" stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} interval="preserveStartEnd" />
-                                    <YAxis stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} width={36} />
-                                    <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }} />
-                                    <Area type="monotone" dataKey="v" stroke="#6366F1" strokeWidth={2} fill="url(#leadFill)" dot={{ r: 2.5, fill: '#6366F1' }} />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                    <div className="px-5 py-3">
+                        {/* Channel toggle: blended vs Meta-only vs LinkedIn-only */}
+                        <div className="flex items-center gap-0.5 bg-surface-elevated rounded-full p-1 border border-border w-fit mb-3">
+                            {([
+                                { key: 'blended', label: 'Blended', color: '#6366F1' },
+                                { key: 'meta', label: 'Meta', color: '#1877F2' },
+                                { key: 'linkedin', label: 'LinkedIn', color: '#0A66C2' },
+                            ] as const).map(c => (
+                                <button
+                                    key={c.key}
+                                    onClick={() => setTrendChannel(c.key)}
+                                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-colors ${trendChannel === c.key ? 'text-white' : 'text-text-secondary hover:text-text-primary'}`}
+                                    style={trendChannel === c.key ? { backgroundColor: c.color } : undefined}
+                                >
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: trendChannel === c.key ? '#fff' : c.color }} />
+                                    {c.label}
+                                </button>
+                            ))}
                         </div>
-                    )}
+                        {trend.length === 0 || trendTotal === 0 ? (
+                            <Empty msg={trendChannel === 'blended' ? 'No lead history' : `No ${trendChannel === 'meta' ? 'Meta' : 'LinkedIn'} leads in this range`} />
+                        ) : (
+                            <>
+                                <div className="flex items-baseline gap-2 mb-2">
+                                    <span className="text-2xl font-black text-text-primary">{compactNum(trendTotal)}</span>
+                                    <span className="text-[11px] text-text-tertiary font-medium">
+                                        {trendChannel === 'blended' ? 'leads' : `${trendChannel === 'meta' ? 'Meta' : 'LinkedIn'} leads`} · {{ '15d': 'last 15 days', '3m': 'last 3 months', '6m': 'last 6 months', '12m': 'last 12 months', custom: 'custom range' }[trendKey]}
+                                    </span>
+                                </div>
+                                <ResponsiveContainer width="100%" height={150}>
+                                    <AreaChart data={trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                        <defs><linearGradient id="leadFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={trendColor} stopOpacity={0.25} /><stop offset="100%" stopColor={trendColor} stopOpacity={0} /></linearGradient></defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                                        <XAxis dataKey="d" stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} interval="preserveStartEnd" />
+                                        <YAxis stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} width={36} />
+                                        <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }} />
+                                        <Area type="monotone" dataKey="v" stroke={trendColor} strokeWidth={2} fill="url(#leadFill)" dot={{ r: 2.5, fill: trendColor }} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </>
+                        )}
+                    </div>
                 </Panel>
 
                 <Panel title="Spend per Campaign" href={`/${orgId}/crm/campaigns`} linkLabel="View campaigns" right={<MiniSelect label={period} options={[...PERIODS]} onSelect={v => setPeriod(v as Period)} />}>
