@@ -56,6 +56,8 @@ export default function RepTimeGridCalendar({
 }) {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+    const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set(['call', 'meeting', 'site_visit', 'followup', 'internal', 'demo']));
+    const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
     // Build week starting from Monday
     const weekDays = useMemo(() => {
@@ -73,7 +75,8 @@ export default function RepTimeGridCalendar({
             const dayEvents = (events || []).filter((e: any) => {
                 if (!e.start_datetime) return false;
                 const eventDate = new Date(e.start_datetime).toISOString().split('T')[0];
-                return eventDate === dateStr;
+                const eventType = (e.event_type || 'internal').toLowerCase();
+                return eventDate === dateStr && activeFilters.has(eventType);
             }).map((e: any) => ({
                 id: e.id,
                 title: e.title || e.event_type || 'Event',
@@ -96,7 +99,7 @@ export default function RepTimeGridCalendar({
             });
         }
         return days;
-    }, [events, currentDate]);
+    }, [events, currentDate, activeFilters]);
 
     const activeReps = useMemo(() => {
         const repIds = new Set<string>();
@@ -105,6 +108,27 @@ export default function RepTimeGridCalendar({
         }
         return reps.filter((r: any) => repIds.has(r.id)).slice(0, 10);
     }, [events, reps]);
+
+    const toggleFilter = (type: string) => {
+        const newFilters = new Set(activeFilters);
+        if (newFilters.has(type)) {
+            newFilters.delete(type);
+        } else {
+            newFilters.add(type);
+        }
+        setActiveFilters(newFilters);
+    };
+
+    const handleTimeSlotClick = (day: Day, timeIndex: number) => {
+        const hour = 8 + timeIndex;
+        const date = day.fullDate.toISOString().split('T')[0];
+        const time = `${hour < 12 ? hour : hour - 12}:00 ${hour < 12 ? 'AM' : 'PM'}`;
+        window.location.href = `/${orgId}/crm/calendar?date=${date}&time=${time}`;
+    };
+
+    const handleEventClick = (event: CalendarEvent) => {
+        setSelectedEvent(event);
+    };
 
     const getEventPosition = (time: string) => {
         const [hour, period] = time.split(' ');
@@ -185,7 +209,12 @@ export default function RepTimeGridCalendar({
                                 {/* Time Slots */}
                                 <div className="relative">
                                     {TIME_SLOTS.map((time, idx) => (
-                                        <div key={time} className={`h-16 border-b border-border p-1 relative ${day.isToday && idx === Math.floor((new Date().getHours() - 8)) ? 'bg-primary/5' : ''}`}>
+                                        <div
+                                            key={time}
+                                            onClick={() => handleTimeSlotClick(day, idx)}
+                                            className={`h-16 border-b border-border p-1 relative cursor-pointer hover:bg-primary/5 transition-colors ${day.isToday && idx === Math.floor((new Date().getHours() - 8)) ? 'bg-primary/5 border-l-2 border-l-primary' : ''}`}
+                                            title="Click to add event"
+                                        >
                                             {day.events.map((event) => {
                                                 const startHour = parseInt(event.startTime.split(':')[0]);
                                                 const startMinute = parseInt(event.startTime.split(':')[1]);
@@ -193,7 +222,12 @@ export default function RepTimeGridCalendar({
 
                                                 if (timeIndex === idx) {
                                                     return (
-                                                        <div key={event.id} className={`absolute left-1 right-1 p-2 rounded text-[10px] font-bold ${EVENT_COLORS[event.type] || EVENT_COLORS.internal}`}>
+                                                        <div
+                                                            key={event.id}
+                                                            onClick={() => handleEventClick(event)}
+                                                            className={`absolute left-1 right-1 p-2 rounded text-[10px] font-bold cursor-pointer hover:shadow-md hover:scale-105 transition-all ${EVENT_COLORS[event.type] || EVENT_COLORS.internal}`}
+                                                            title={`${event.title} - Click for details`}
+                                                        >
                                                             <div className="flex items-start gap-1">
                                                                 <span className="text-base flex-shrink-0">{EVENT_ICONS[event.type]}</span>
                                                                 <div className="min-w-0">
@@ -218,18 +252,88 @@ export default function RepTimeGridCalendar({
 
             {/* Footer */}
             <div className="border-t border-border p-4 flex items-center justify-between bg-surface">
-                <div className="flex items-center gap-4 text-xs">
+                <div className="flex items-center gap-3 text-xs flex-wrap">
                     {Object.entries(EVENT_ICONS).map(([type, icon]) => (
-                        <div key={type} className="flex items-center gap-1.5">
+                        <button
+                            key={type}
+                            onClick={() => toggleFilter(type)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all ${
+                                activeFilters.has(type)
+                                    ? 'bg-primary/10 text-primary font-semibold border border-primary/30'
+                                    : 'bg-surface-elevated text-text-secondary opacity-50 hover:opacity-75'
+                            }`}
+                            title={`Click to toggle ${type.replace('_', ' ')}`}
+                        >
                             <span className="text-base">{icon}</span>
-                            <span className="font-medium text-text-secondary capitalize">{type.replace('_', ' ')}</span>
-                        </div>
+                            <span className="font-medium capitalize">{type.replace('_', ' ')}</span>
+                        </button>
                     ))}
                 </div>
                 <Link href={`/${orgId}/crm/calendar`} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-colors">
                     <Plus className="w-3 h-3" /> Add Activity
                 </Link>
             </div>
+
+            {/* Event Details Modal */}
+            {selectedEvent && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+                    onClick={() => setSelectedEvent(null)}
+                >
+                    <div
+                        className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                <h3 className="text-lg font-black text-text-primary flex items-center gap-2">
+                                    <span className="text-2xl">{EVENT_ICONS[selectedEvent.type]}</span>
+                                    {selectedEvent.title}
+                                </h3>
+                                <p className="text-sm text-text-secondary capitalize mt-1">{selectedEvent.type.replace('_', ' ')}</p>
+                            </div>
+                            <button
+                                onClick={() => setSelectedEvent(null)}
+                                className="text-text-tertiary hover:text-text-primary text-2xl leading-none"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <div className="space-y-3 bg-surface rounded-lg p-4 mb-4">
+                            <div>
+                                <p className="text-xs font-bold text-text-tertiary uppercase">Time</p>
+                                <p className="text-sm font-bold text-text-primary">{selectedEvent.startTime} – {selectedEvent.endTime || '...'}</p>
+                            </div>
+                            {selectedEvent.location && (
+                                <div>
+                                    <p className="text-xs font-bold text-text-tertiary uppercase">Location</p>
+                                    <p className="text-sm font-bold text-text-primary">{selectedEvent.location}</p>
+                                </div>
+                            )}
+                            {selectedEvent.user && (
+                                <div>
+                                    <p className="text-xs font-bold text-text-tertiary uppercase">Organizer</p>
+                                    <p className="text-sm font-bold text-text-primary flex items-center gap-2">
+                                        {selectedEvent.user?.user_photo_url || selectedEvent.user?.avatar_url ? (
+                                            <img src={selectedEvent.user.user_photo_url || selectedEvent.user.avatar_url} alt="" className="w-5 h-5 rounded-full" />
+                                        ) : null}
+                                        {selectedEvent.user?.full_name || 'Unknown'}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={() => {
+                                setSelectedEvent(null);
+                                window.location.href = `/${orgId}/crm/calendar`;
+                            }}
+                            className="w-full px-4 py-2 bg-primary text-white font-bold rounded-lg hover:bg-primary-dark transition-colors text-sm"
+                        >
+                            Edit Event
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
