@@ -47,6 +47,9 @@ function periodRange(period: Period): { from: string; to: string } {
         const day = now.getDay(); const offset = day === 0 ? 6 : day - 1;
         return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)), to };
     }
+    if (period === 'Last 15 Days') {
+        return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14)), to };
+    }
     // This Month / Custom → month-to-date
     return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), 1)), to };
 }
@@ -62,13 +65,17 @@ function prevPeriodRange(period: Period): { from: string; to: string } {
         const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
         return { from: fmtDate(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() - 7)), to: fmtDate(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() - 1)) };
     }
+    if (period === 'Last 15 Days') {
+        // Prior 15-day window: day-29 .. day-15
+        return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)), to: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 15)) };
+    }
     // This Month / Custom → first of last month .. same day-of-month last month
     const firstLast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const sameDayLast = new Date(now.getFullYear(), now.getMonth() - 1, Math.min(now.getDate(), new Date(now.getFullYear(), now.getMonth(), 0).getDate()));
     return { from: fmtDate(firstLast), to: fmtDate(sameDayLast) };
 }
 
-const deltaLabelFor = (p: Period) => p === 'Today' ? 'vs yesterday' : p === 'This Week' ? 'vs last week' : 'vs last month';
+const deltaLabelFor = (p: Period) => p === 'Today' ? 'vs yesterday' : p === 'This Week' ? 'vs last week' : p === 'Last 15 Days' ? 'vs prev 15 days' : 'vs last month';
 
 function weekBounds() {
     const now = new Date();
@@ -85,7 +92,7 @@ const CHANNEL_BADGE: Record<string, { label: string; color: string; glyph: strin
     other: { label: 'Other', color: '#64748B', glyph: '·' },
 };
 
-const PERIODS = ['Today', 'This Week', 'This Month', 'Custom'] as const;
+const PERIODS = ['Today', 'This Week', 'Last 15 Days', 'This Month', 'Custom'] as const;
 type Period = typeof PERIODS[number];
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
