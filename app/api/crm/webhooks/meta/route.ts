@@ -2,22 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveDistributionAssignee } from '@/backend/lib/crm/distribution';
-
-/**
- * Meta Lead Ads webhook.
- *
- * Setup (per organization, configured under CRM → Settings → Integrations):
- *   1. Create a Meta App + a WhatsApp/Facebook Page, subscribe the Page to the
- *      `leadgen` webhook field.
- *   2. Callback URL:  https://<your-domain>/api/crm/webhooks/meta
- *   3. Verify Token:  the value saved in crm_meta_config.verify_token
- *   4. App Secret:    saved in crm_meta_config.app_secret  (validates payloads)
- *   5. Page Access Token: saved in crm_meta_config.page_access_token
- *      (used to fetch the submitted field data via the Graph API)
- *
- * GET  -> subscription verification handshake (echoes hub.challenge)
- * POST -> receives leadgen notifications, fetches field data, creates a lead
- */
+import { EmailService } from '@/backend/services/EmailService';
 
 const GRAPH_VERSION = 'v19.0';
 
@@ -121,8 +106,83 @@ async function resolveSystemUser(config: any): Promise<string | null> {
     return pm.data?.[0]?.user_id || om.data?.[0]?.user_id || null;
 }
 
+function cleanPhone(raw: string | null): string | null {
+    if (!raw) return null;
+    const digits = raw.replace(/\D/g, '').replace(/^0+/, '');
+    return digits.replace(/^91/, '') || null;
+}
+
+async function fetchFormName(formId: string, token: string): Promise<string | null> {
+    try {
+        const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${formId}?fields=name&access_token=${encodeURIComponent(token)}`);
+        const json = await res.json();
+        return json.name || null;
+    } catch { return null; }
+}
+
+async function findExistingLead(orgId: string, phone: string | null, email: string | null) {
+    if (!phone && !email) return null;
+    const conditions: string[] = [];
+    const cleanedPhone = cleanPhone(phone);
+    if (cleanedPhone) conditions.push(`contact_number.ilike.%${cleanedPhone}%`);
+    if (email) conditions.push(`email.ilike.${email}`);
+    if (conditions.length === 0) return null;
+    const { data } = await supabaseAdmin
+        .from('crm_leads')
+        .select('id, contact_person, assigned_to')
+        .eq('organization_id', orgId)
+        .or(conditions.join(','))
+        .limit(1)
+        .maybeSingle();
+    return data;
+}
+
+async function notifyNewLead(config: any, lead: any, assignedTo: string, formName: string | null) {
+    try {
+        const { data: users } = await supabaseAdmin
+            .from('users')
+            .select('id, email, full_name')
+            .in('id', [assignedTo]);
+        const { data: admins } = await supabaseAdmin
+            .from('organization_memberships')
+            .select('user_id, users:user_id(email, full_name)')
+            .eq('organization_id', config.organization_id)
+            .in('role', ['bd_admin', 'org_admin', 'org_super_admin'])
+            .eq('is_active', true)
+            .limit(5);
+
+        const emails = new Set<string>();
+        users?.forEach((u: any) => { if (u.email) emails.add(u.email); });
+        admins?.forEach((a: any) => {
+            const e = (a.users as any)?.email;
+            if (e) emails.add(e);
+        });
+
+        if (emails.size === 0) return;
+
+        const repName = users?.[0]?.full_name || 'Unassigned';
+        const html = `
+            <h2>New Meta Lead Received</h2>
+            <table style="border-collapse:collapse;font-family:sans-serif;">
+                <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Name</td><td>${lead.contact_person || 'N/A'}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Phone</td><td>${lead.contact_number || 'N/A'}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Email</td><td>${lead.email || 'N/A'}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">City</td><td>${lead.city || 'N/A'}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Form</td><td>${formName || 'N/A'}</td></tr>
+                <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Assigned To</td><td>${repName}</td></tr>
+            </table>
+            <p style="margin-top:16px;">Log in to <b>Autopilot CRM</b> to follow up.</p>
+        `;
+
+        for (const to of emails) {
+            await EmailService.sendNewLeadEmail({ emailTo: to, subject: `New Meta Lead: ${lead.contact_person || 'Unknown'}`, html });
+        }
+    } catch (err) {
+        console.error('[Meta webhook] email notification failed:', err);
+    }
+}
+
 async function processLeadgen(leadgenId: string, value: any, config: any) {
-    // Idempotency: skip if we've already recorded this leadgen id.
     const { data: existing } = await supabaseAdmin
         .from('crm_meta_leads').select('id, status').eq('meta_lead_id', leadgenId).maybeSingle();
     if (existing) {
@@ -132,7 +192,6 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         return { leadgen_id: leadgenId, status: 'duplicate' };
     }
 
-    // Record the raw notification first.
     const { data: metaRow } = await supabaseAdmin
         .from('crm_meta_leads')
         .insert({
@@ -149,7 +208,6 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         .single();
 
     try {
-        // Fetch the submitted field data from the Graph API.
         const fields = await fetchLeadFields(leadgenId, config.page_access_token);
         const get = (...names: string[]) => {
             for (const n of names) {
@@ -163,18 +221,26 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         const phone = get('phone_number', 'phone', 'mobile_number');
         const city = get('city', 'location');
 
+        // Cross-source dedup: check phone/email against existing leads.
+        const existingLead = await findExistingLead(config.organization_id, phone, email);
+        if (existingLead) {
+            await supabaseAdmin.from('crm_meta_leads')
+                .update({ status: 'duplicate_contact', processed_lead_id: existingLead.id, processed_at: new Date().toISOString() })
+                .eq('id', metaRow!.id);
+            return { leadgen_id: leadgenId, status: 'duplicate_contact', existing_lead_id: existingLead.id };
+        }
+
         const createdBy = await resolveSystemUser(config);
         if (!createdBy) throw new Error('No assignee/admin available to own the lead');
 
-        // Resolve campaign from the Meta form name or ad metadata, then
-        // check distribution rules for round-robin / exclusive assignment.
-        const campaignName = value.campaign_name || value.form_name || null;
+        // Fetch form name from Graph API for round-robin matching + reporting.
+        const formName = value.form_id ? await fetchFormName(value.form_id, config.page_access_token) : null;
+        const campaignName = formName || value.campaign_name || null;
         const distributionAssignee = await resolveDistributionAssignee(
             config.organization_id,
             campaignName
         );
 
-        // Default status + lead source.
         const { data: def } = await supabaseAdmin
             .from('crm_lead_statuses').select('id').eq('is_default', true)
             .or(`organization_id.eq.${config.organization_id},organization_id.is.null`)
@@ -187,36 +253,39 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
             sourceId = metaSrc?.id ?? null;
         }
 
+        const assignedTo = distributionAssignee ?? config.default_assignee ?? createdBy;
+        const leadData = {
+            organization_id: config.organization_id,
+            created_by: createdBy,
+            assigned_to: assignedTo,
+            company_name: fullName || 'Meta Lead',
+            contact_person: fullName,
+            contact_number: phone,
+            email,
+            location: city,
+            city,
+            status: def?.id,
+            priority: 'Medium',
+            lead_source: sourceId,
+            property_interest: config.default_property ?? null,
+            campaign: campaignName,
+            meta_lead_id: leadgenId,
+            meta_campaign_id: value.campaign_id ?? null,
+            meta_adset_id: value.adgroup_id ?? value.adset_id ?? null,
+            meta_ad_id: value.ad_id ?? null,
+            meta_form_name: formName,
+        };
+
         const { data: lead, error: leadErr } = await supabaseAdmin
-            .from('crm_leads')
-            .insert({
-                organization_id: config.organization_id,
-                created_by: createdBy,
-                assigned_to: distributionAssignee ?? config.default_assignee ?? createdBy,
-                company_name: fullName || 'Meta Lead',
-                contact_person: fullName,
-                contact_number: phone,
-                email,
-                location: city,
-                city,
-                status: def?.id,
-                priority: 'Medium',
-                lead_source: sourceId,
-                property_interest: config.default_property ?? null,
-                campaign: campaignName,
-                meta_lead_id: leadgenId,
-                meta_campaign_id: value.campaign_id ?? null,
-                meta_adset_id: value.adgroup_id ?? value.adset_id ?? null,
-                meta_ad_id: value.ad_id ?? null,
-                meta_form_name: value.form_id ?? null,
-            })
-            .select('id')
-            .single();
+            .from('crm_leads').insert(leadData).select('id').single();
         if (leadErr) throw leadErr;
 
         await supabaseAdmin.from('crm_meta_leads')
             .update({ status: 'processed', processed_lead_id: lead.id, processed_at: new Date().toISOString() })
             .eq('id', metaRow!.id);
+
+        // Fire-and-forget email notification.
+        notifyNewLead(config, leadData, assignedTo, formName).catch(() => {});
 
         return { leadgen_id: leadgenId, status: 'processed', lead_id: lead.id };
     } catch (err: any) {

@@ -125,7 +125,7 @@ const UnifiedDashboard = () => {
 
     // Auto-redirect BD roles to CRM immediately
     useEffect(() => {
-        if (!isLoading && (session?.role === 'bd_admin' || session?.role === 'bd_rep')) {
+        if (!isLoading && (session?.role === 'bd_admin' || session?.role === 'bd_super_admin' || session?.role === 'bd_rep')) {
             const orgId = session?.org_id || (session as any)?.organization_id;
             if (orgId) {
                 router.replace(`/${orgId}/crm`);
@@ -186,7 +186,7 @@ const UnifiedDashboard = () => {
 
     // BD roles already redirected above via useEffect
     // Show brief loading state while redirecting
-    if (role === 'bd_admin' || role === 'bd_rep') {
+    if (role === 'bd_admin' || role === 'bd_super_admin' || role === 'bd_rep') {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50">
                 <div className="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mb-4 animate-pulse">

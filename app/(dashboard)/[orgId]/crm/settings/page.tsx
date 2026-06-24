@@ -5,8 +5,10 @@ import { useParams } from 'next/navigation';
 import { Settings, Palette, MapPin, Building2, Bell, Link2, Plus, Edit, Trash2, Loader2, Check, Send, ChevronDown, Search, X, Filter, Calendar, GraduationCap, RotateCcw, Shuffle, ToggleLeft, ToggleRight, Info, PhoneCall } from 'lucide-react';
 import Link from 'next/link';
 import { LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
-import { MetaIntegrationGuide } from '@/frontend/components/crm';
+import { MetaIntegrationGuide, LinkedInIntegrationGuide } from '@/frontend/components/crm';
 import LeadDistributionManager from '@/frontend/components/crm/LeadDistributionManager';
+import { useAuth } from '@/frontend/context/AuthContext';
+import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 
 // ── Property Mapping types ────────────────────────────────────────────────────
 interface PropertyMapping {
@@ -96,6 +98,9 @@ type SettingsTab = 'statuses' | 'sources' | 'properties' | 'territories' | 'dist
 export default function CRMSettingsPage() {
     const params = useParams();
     const orgId = params?.orgId as string;
+    const { user, membership } = useAuth();
+    // LinkedIn integration is restricted to BD super admins.
+    const canSeeLinkedIn = isBdSuperAdmin(user?.email, membership?.org_role);
     const [activeTab, setActiveTab] = useState<SettingsTab>('statuses');
     const [statuses, setStatuses] = useState<LeadStatusConfig[]>([]);
     const [sources, setSources] = useState<LeadSource[]>([]);
@@ -934,6 +939,22 @@ export default function CRMSettingsPage() {
                                     </div>
                                     <MetaIntegrationGuide orgId={orgId} />
                                 </div>
+
+                                {canSeeLinkedIn && (
+                                    <div className="border-t border-slate-200 pt-6">
+                                        <div className="flex items-center gap-3 mb-4">
+                                            <div className="w-12 h-12 bg-[#0A66C2]/10 rounded-xl flex items-center justify-center">
+                                                <span className="text-xl font-bold text-[#0A66C2]">in</span>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-semibold text-text-primary">LinkedIn Lead Gen + Ads</h3>
+                                                <p className="text-sm text-text-secondary">Pull LinkedIn Lead Gen Form responses + ad spend into your CRM</p>
+                                            </div>
+                                            <span className="ml-auto text-[10px] font-bold px-2 py-1 rounded-full bg-[#0A66C2]/10 text-[#0A66C2]">BD Super Admin</span>
+                                        </div>
+                                        <LinkedInIntegrationGuide orgId={orgId} />
+                                    </div>
+                                )}
 
                                 <div className="border-t border-slate-200 pt-6">
                                     <div className="flex items-center justify-between flex-wrap gap-3">

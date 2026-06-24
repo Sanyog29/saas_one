@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
+import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 
 // Statuses/sources visible to an org = its own rows + the shared global (NULL) defaults.
 function orgOrGlobal(query: any, organizationId: string) {
@@ -21,6 +22,9 @@ async function bdMemberIds(organizationId: string): Promise<string[]> {
         .select('user_id')
         .eq('organization_id', organizationId)
         .eq('is_active', true)
+        // NOTE: role is the app_role Postgres enum; 'bd_super_admin' is NOT an
+        // enum value (the 3 super admins are bd_admin on the backend), so it must
+        // not appear here or the query throws 'invalid input value for enum'.
         .in('role', ['bd_rep', 'bd_admin']);
     return (data || []).map((m: any) => m.user_id);
 }
@@ -63,6 +67,27 @@ export async function GET(request: NextRequest) {
             : null;
         return NextResponse.json({ meta: safe });
     }
+    if (type === 'linkedin') {
+        const isLinkedInAdmin = isBdSuperAdmin(access.user.email) || access.roles?.includes('bd_super_admin') || access.isMasterAdmin;
+        if (!isLinkedInAdmin) {
+            return NextResponse.json({ error: 'Forbidden — BD super admin only' }, { status: 403 });
+        }
+        const { data } = await supabaseAdmin.from('crm_linkedin_config').select('*').eq('organization_id', org).maybeSingle();
+        const now = Date.now();
+        const safe = data
+            ? {
+                  ...data,
+                  client_secret: data.client_secret ? '••••••••' : null,
+                  access_token: undefined,
+                  refresh_token: undefined,
+                  oauth_state: undefined,
+                  // Surface connection health without leaking tokens.
+                  connected: !!data.access_token && !!data.is_active,
+                  token_expired: data.token_expires_at ? new Date(data.token_expires_at).getTime() <= now : null,
+              }
+            : null;
+        return NextResponse.json({ linkedin: safe });
+    }
 
     // type === 'all' (or unspecified): bundle everything the settings UI needs.
     const [statusesRes, sourcesRes, propsRes] = await Promise.all([
@@ -71,6 +96,10 @@ export async function GET(request: NextRequest) {
         supabaseAdmin.from('properties').select('id, name, code').eq('organization_id', org).order('name'),
     ]);
     const scope = new URL(request.url).searchParams.get('scope');
+    const BD_CITIES = ['mumbai', 'bangalore', 'noida', 'andheri', 'lower parel', 'kalyan'];
+    const filteredProps = scope === 'bd'
+        ? (propsRes.data || []).filter((p: any) => BD_CITIES.some(c => p.name?.toLowerCase().includes(c)))
+        : propsRes.data || [];
     const memberIds = scope === 'bd' ? await bdMemberIds(org) : await orgMemberIds(org);
     const { data: users } = memberIds.length
         ? await supabaseAdmin.from('users').select('id, full_name, email').in('id', memberIds).order('full_name')
@@ -79,7 +108,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
         statuses: statusesRes.data || [],
         sources: sourcesRes.data || [],
-        properties: propsRes.data || [],
+        properties: filteredProps,
         users: users || [],
     });
 }
@@ -193,6 +222,31 @@ export async function POST(request: NextRequest) {
             }
             const res = await supabaseAdmin
                 .from('crm_meta_config').upsert(upd, { onConflict: 'organization_id' }).select().single();
+            if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
+            return NextResponse.json({ success: true });
+        }
+        case 'save_linkedin_config': {
+            const isLinkedInAdmin = isBdSuperAdmin(access.user.email) || access.roles?.includes('bd_super_admin') || access.isMasterAdmin;
+            if (!isLinkedInAdmin) {
+                return NextResponse.json({ error: 'Forbidden — BD super admin only' }, { status: 403 });
+            }
+            const upd: Record<string, any> = {
+                organization_id: org,
+                client_id: d.client_id ?? null,
+                ad_account_urn: d.ad_account_urn || null,
+                organization_urn: d.organization_urn || null,
+                default_assignee: d.default_assignee ?? null,
+                default_property: d.default_property ?? null,
+                default_lead_source: d.default_lead_source ?? null,
+                updated_at: new Date().toISOString(),
+            };
+            // Only overwrite the secret when a real (non-masked) value is supplied.
+            if (d.client_secret && d.client_secret !== '••••••••') upd.client_secret = d.client_secret;
+            // is_active is driven by the OAuth callback, not the form — but allow
+            // an explicit disable.
+            if (d.is_active === false) upd.is_active = false;
+            const res = await supabaseAdmin
+                .from('crm_linkedin_config').upsert(upd, { onConflict: 'organization_id' }).select().single();
             if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
             return NextResponse.json({ success: true });
         }

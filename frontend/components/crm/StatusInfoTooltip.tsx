@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Info } from 'lucide-react';
 
 const QUALIFICATION_INFO: Record<string, { label: string; color: string; criteria: string[] }> = {
@@ -107,6 +108,9 @@ interface StatusInfoTooltipProps {
 
 export default function StatusInfoTooltip({ statusName, className = '' }: StatusInfoTooltipProps) {
     const [enabled, setEnabled] = useState(true);
+    const [show, setShow] = useState(false);
+    const [pos, setPos] = useState({ top: 0, left: 0 });
+    const iconRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         try {
@@ -116,26 +120,55 @@ export default function StatusInfoTooltip({ statusName, className = '' }: Status
         } catch {}
     }, []);
 
+    const handleEnter = useCallback(() => {
+        if (!iconRef.current) return;
+        const rect = iconRef.current.getBoundingClientRect();
+        setPos({
+            top: rect.top - 8,
+            left: rect.left + rect.width / 2,
+        });
+        setShow(true);
+    }, []);
+
+    const handleLeave = useCallback(() => setShow(false), []);
+
     const key = statusName.toLowerCase().trim();
     const info = QUALIFICATION_INFO[key] || (key.startsWith('ring') ? QUALIFICATION_INFO['ring'] : undefined);
     if (!info || !enabled) return null;
 
     return (
-        <div className={`relative group inline-flex ${className}`}>
-            <Info className="w-3 h-3 text-text-tertiary cursor-help" />
-            <div className="absolute left-5 top-0 z-50 hidden group-hover:block w-64 p-3 bg-surface border border-border rounded-xl shadow-xl">
-                <p className="text-[10px] font-black uppercase tracking-wider mb-1.5" style={{ color: info.color }}>
-                    {info.label}
-                </p>
-                <ul className="space-y-0.5">
-                    {info.criteria.map((c, i) => (
-                        <li key={i} className="text-[10px] text-text-secondary flex items-start gap-1">
-                            <span className="text-text-tertiary mt-px">·</span>
-                            {c}
-                        </li>
-                    ))}
-                </ul>
+        <>
+            <div
+                ref={iconRef}
+                className={`inline-flex cursor-help ${className}`}
+                onMouseEnter={handleEnter}
+                onMouseLeave={handleLeave}
+            >
+                <Info className="w-3 h-3 text-text-tertiary" />
             </div>
-        </div>
+            {show && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed z-[9999] w-72 p-3 bg-surface border border-border rounded-xl shadow-xl pointer-events-none"
+                    style={{
+                        top: pos.top,
+                        left: pos.left,
+                        transform: 'translate(-50%, -100%)',
+                    }}
+                >
+                    <p className="text-[10px] font-black uppercase tracking-wider mb-1.5" style={{ color: info.color }}>
+                        {info.label}
+                    </p>
+                    <ul className="space-y-0.5">
+                        {info.criteria.map((c, i) => (
+                            <li key={i} className="text-[10px] text-text-secondary flex items-start gap-1">
+                                <span className="text-text-tertiary mt-px">·</span>
+                                {c}
+                            </li>
+                        ))}
+                    </ul>
+                </div>,
+                document.body
+            )}
+        </>
     );
 }

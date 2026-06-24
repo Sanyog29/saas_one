@@ -12,7 +12,8 @@ export type RoleKey =
     | 'tenant_user' | 'vendor'
     | 'super_tenant'
     | 'bd_rep'
-    | 'bd_admin';
+    | 'bd_admin'
+    | 'bd_super_admin';
 
 export type CapabilityDomain =
     | 'users'

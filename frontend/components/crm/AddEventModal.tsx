@@ -20,6 +20,7 @@ interface AddEventModalProps {
     requireFuture?: boolean; // used by the "Future" stage hook
     onClose: () => void;
     onCreated: (event: CRMEvent) => void;
+    onQuickLog?: (activityType: string, label: string) => void;
 }
 
 const EVENT_TYPES: { value: EventType; label: string }[] = [
@@ -28,6 +29,20 @@ const EVENT_TYPES: { value: EventType; label: string }[] = [
     { value: 'site_visit', label: 'Site Visit' },
     { value: 'followup', label: 'Follow-up' },
 ];
+
+const QUICK_LOG_TYPES = [
+    { label: 'Visit Pending', activityType: 'site_visit', color: 'amber' },
+    { label: 'Visit Done',    activityType: 'site_visit', color: 'teal' },
+    { label: 'Layout Shared', activityType: 'updated',    color: 'purple' },
+    { label: 'LOI',           activityType: 'proposal_sent', color: 'indigo' },
+] as const;
+
+const QUICK_COLOR_MAP: Record<string, string> = {
+    amber:  'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
+    teal:   'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100',
+    purple: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100',
+    indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100',
+};
 
 function localDefault(): string {
     const d = new Date();
@@ -40,7 +55,7 @@ function localDefault(): string {
 
 export default function AddEventModal({
     isOpen, leadId, organizationId, leadName, defaultType = 'meeting',
-    defaultTitle, requireFuture, onClose, onCreated,
+    defaultTitle, requireFuture, onClose, onCreated, onQuickLog,
 }: AddEventModalProps) {
     const [eventType, setEventType] = useState<EventType>(defaultType);
     const [title, setTitle] = useState(defaultTitle || '');
@@ -119,7 +134,7 @@ export default function AddEventModal({
                     <div className="p-5 space-y-4">
                         <div>
                             <label className="text-xs font-bold text-text-tertiary uppercase tracking-wide">Type</label>
-                            <div className="grid grid-cols-4 gap-2 mt-1.5">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
                                 {EVENT_TYPES.map((t) => (
                                     <button
                                         key={t.value}
@@ -165,6 +180,23 @@ export default function AddEventModal({
                                 className="w-full mt-1.5 border border-slate-200 rounded-xl p-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                             />
                         </div>
+
+                        {!requireFuture && onQuickLog && (
+                            <div>
+                                <label className="text-xs font-bold text-text-tertiary uppercase tracking-wide">Quick Log Activity</label>
+                                <div className="flex flex-wrap gap-2 mt-1.5">
+                                    {QUICK_LOG_TYPES.map(q => (
+                                        <button
+                                            key={q.label}
+                                            type="button"
+                                            onClick={() => { onQuickLog(q.activityType, q.label); onClose(); }}
+                                            className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${QUICK_COLOR_MAP[q.color]}`}
+                                        >{q.label}</button>
+                                    ))}
+                                </div>
+                                <p className="text-[11px] text-text-tertiary mt-1">Logs instantly to the timeline — no date needed.</p>
+                            </div>
+                        )}
 
                         {error && <p className="text-sm text-red-600">{error}</p>}
                     </div>

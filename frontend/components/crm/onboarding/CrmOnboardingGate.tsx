@@ -5,6 +5,8 @@ import { useRouter, useParams, usePathname } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Circle, Lock, ArrowRight, Sparkles } from 'lucide-react';
 import { useCrmOnboarding, TOUR_ORDER, TOUR_LABELS, TourId } from '@/frontend/hooks/useCrmTour';
+import { useAuth } from '@/frontend/context/AuthContext';
+import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 
 const TOUR_ROUTES: Record<TourId, string> = {
     'crm-dashboard': '/crm',
@@ -25,6 +27,7 @@ function tourOwningRoute(tourId: TourId): string {
 
 export default function CrmOnboardingGate({ children }: { children: React.ReactNode }) {
     const { isLoaded, allCompleted, completedCount, totalCount, nextTourId, completedTours } = useCrmOnboarding();
+    const { user, membership } = useAuth();
     const router = useRouter();
     const params = useParams();
     const pathname = usePathname();
@@ -36,6 +39,13 @@ export default function CrmOnboardingGate({ children }: { children: React.ReactN
     // CrmTour. Reset on full resetAll().
     const [released, setReleased] = useState(false);
     useEffect(() => { setReleased(false); }, [completedCount === 0]);
+
+    // BD Super Admins (CEO portal) skip the rep onboarding tour entirely — it
+    // teaches the rep workflow, which is not their dashboard. (Placed after all
+    // hooks to respect the Rules of Hooks.)
+    if (isBdSuperAdmin(user?.email, membership?.org_role)) {
+        return <>{children}</>;
+    }
 
     if (!isLoaded) {
         return (

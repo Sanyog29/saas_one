@@ -7,10 +7,12 @@ import {
     LayoutDashboard, Users, Ticket, Package, Settings, LogOut,
     Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
     FileUp, Bot, Building2, Send, CalendarDays, Droplets, Coffee,
-    Sparkles, DollarSign,
+    Sparkles, DollarSign, ClipboardList, Target, TrendingUp,
+    BellRing, HelpCircle, Megaphone, Radio, BookOpen,
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
+import { isBdSuperAdmin as checkBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 import SignOutModal from '../ui/SignOutModal';
 import ThemeToggle from '../ui/ThemeToggle';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,11 +26,15 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
     const pathname = usePathname();
     const params = useParams();
     const orgId = params.orgId as string;
-    const { signOut, user } = useAuth();
+    const { signOut, user, membership } = useAuth();
     const [showSignOutModal, setShowSignOutModal] = React.useState(false);
 
     const userRole = user?.user_metadata?.role;
-    const isBDRole = userRole === 'bd_rep' || userRole === 'bd_admin';
+    // Gate the BD Super Admin nav off the SAME source as page.tsx / layout.tsx /
+    // CrmOnboardingGate (email allowlist + membership.org_role) so all four
+    // call sites agree. user_metadata.role is not reliably populated.
+    const isBdSuperAdmin = checkBdSuperAdmin(user?.email, membership?.org_role);
+    const isBDRole = userRole === 'bd_rep' || userRole === 'bd_admin' || isBdSuperAdmin;
 
     const NAV_ITEMS = React.useMemo(() => {
         const isAdmin = userRole === 'org_super_admin' || userRole === 'property_admin';
@@ -58,18 +64,48 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
         return items;
     }, [orgId, userRole, isBDRole]);
 
-    const CRM_NAV_ITEMS = React.useMemo(() => [
-        { label: 'Dashboard', href: `/${orgId}/crm`, icon: BarChart3, domain: 'crm' as const },
-        { label: 'Leads', href: `/${orgId}/crm/leads`, icon: UsersRound, domain: 'crm' as const },
-        { label: 'Calendar', href: `/${orgId}/crm/calendar`, icon: Calendar, domain: 'crm' as const },
-        { label: 'Activities', href: `/${orgId}/crm/activities`, icon: Building2, domain: 'crm' as const },
-        { label: 'Reports', href: `/${orgId}/crm/reports`, icon: BarChart3, domain: 'crm' as const },
-        { label: 'Import Leads', href: `/${orgId}/crm/import`, icon: FileUp, domain: 'crm' as const },
-        { label: 'Campaigns', href: `/${orgId}/crm/campaigns`, icon: Send, domain: 'crm' as const },
-        { label: 'AI Insights', href: `/${orgId}/crm/ai`, icon: Bot, domain: 'crm' as const },
-        { label: 'Call Coaching', href: `/${orgId}/crm/coaching`, icon: Sparkles, domain: 'crm' as const },
-        { label: 'Campaign Spend', href: `/${orgId}/crm/spend`, icon: DollarSign, domain: 'crm' as const },
-        { label: 'Settings', href: `/${orgId}/crm/settings`, icon: Settings, domain: 'crm' as const },
+    const isCrmAdmin = userRole && userRole !== 'bd_rep';
+    const CRM_NAV_ITEMS = React.useMemo(() => {
+        const items = [
+            { label: 'Dashboard', href: `/${orgId}/crm`, icon: LayoutDashboard, domain: 'crm' as const },
+            { label: 'My Leads', href: `/${orgId}/crm/leads`, icon: UsersRound, domain: 'crm' as const },
+            { label: 'Follow Ups', href: `/${orgId}/crm/followups`, icon: BellRing, domain: 'crm' as const },
+            { label: 'Calendar', href: `/${orgId}/crm/calendar`, icon: Calendar, domain: 'crm' as const },
+            { label: 'Tasks', href: `/${orgId}/crm/tasks`, icon: ClipboardList, domain: 'crm' as const },
+            { label: 'Target', href: `/${orgId}/crm/target`, icon: Target, domain: 'crm' as const },
+            { label: 'AI Copilot', href: `/${orgId}/crm/ai`, icon: Sparkles, domain: 'crm' as const },
+            { label: 'Performance', href: `/${orgId}/crm/performance`, icon: TrendingUp, domain: 'crm' as const },
+        ];
+        if (isCrmAdmin) {
+            items.push({ label: 'Settings', href: `/${orgId}/crm/settings`, icon: Settings, domain: 'crm' as const });
+        }
+        items.push({ label: 'Help & Support', href: `/${orgId}/crm/help`, icon: HelpCircle, domain: 'crm' as const });
+        return items;
+    }, [orgId, isCrmAdmin]);
+
+    // BD Super Admin (CEO) portal — grouped OVERVIEW / TOOLS sections.
+    const BD_SUPER_NAV_SECTIONS = React.useMemo(() => [
+        {
+            title: 'Overview',
+            items: [
+                { label: 'CEO Dashboard', href: `/${orgId}/crm`, icon: LayoutDashboard },
+                { label: 'Campaigns', href: `/${orgId}/crm/campaigns`, icon: Megaphone },
+                { label: 'Leads', href: `/${orgId}/crm/leads`, icon: UsersRound },
+                { label: 'ABM Tracker', href: `/${orgId}/crm/abm`, icon: Target },
+                { label: 'Team Performance', href: `/${orgId}/crm/performance`, icon: TrendingUp },
+                { label: 'Reports', href: `/${orgId}/crm/reports`, icon: BarChart3 },
+            ],
+        },
+        {
+            title: 'Tools',
+            items: [
+                { label: 'AI Agent', href: `/${orgId}/crm/ai`, icon: Bot },
+                { label: 'Calendar', href: `/${orgId}/crm/calendar`, icon: Calendar },
+                { label: 'Tasks', href: `/${orgId}/crm/tasks`, icon: ClipboardList },
+                { label: 'Signals', href: `/${orgId}/crm/signals`, icon: Radio },
+                { label: 'Playbooks', href: `/${orgId}/crm/playbooks`, icon: BookOpen },
+            ],
+        },
     ], [orgId]);
 
     const getUserInitials = (name: string) => {
@@ -118,7 +154,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                         <img src="/autopilot-logo-new.png" alt="Logo" className="h-10 w-auto object-contain" />
                         <div className="px-3 py-1 bg-primary/5 rounded-full border border-primary/10">
                             <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em]">
-                                {isBDRole ? 'CRM Dashboard' : 'Staff Dashboard'}
+                                {isBdSuperAdmin ? 'BD Command Center' : isBDRole ? 'CRM Dashboard' : 'Staff Dashboard'}
                             </p>
                         </div>
                     </div>
@@ -150,7 +186,47 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                         </CapabilityWrapper>
                     ))}
 
-                    {/* CRM Section */}
+                    {/* BD Super Admin (CEO) — grouped Overview / Tools sections */}
+                    {isBdSuperAdmin && (
+                        <CapabilityWrapper domain="crm" action="view">
+                            <div className="space-y-5">
+                                {BD_SUPER_NAV_SECTIONS.map((section) => (
+                                    <div key={section.title}>
+                                        <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body uppercase">
+                                            {section.title}
+                                        </p>
+                                        <div className="space-y-1">
+                                            {section.items.map((item) => {
+                                                const isActive = item.href.endsWith('/crm')
+                                                    ? pathname === item.href
+                                                    : pathname?.startsWith(item.href);
+                                                return (
+                                                    <Link
+                                                        key={item.href}
+                                                        href={item.href}
+                                                        onClick={handleLinkClick}
+                                                        className={`
+                                                            flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
+                                                            ${isActive
+                                                                ? 'bg-primary text-text-inverse shadow-sm'
+                                                                : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                                                            }
+                                                        `}
+                                                    >
+                                                        <item.icon className="w-5 h-5 transition-smooth group-hover:scale-105 shrink-0" />
+                                                        <span className="font-body font-medium text-sm">{item.label}</span>
+                                                    </Link>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </CapabilityWrapper>
+                    )}
+
+                    {/* CRM Section (standard rep/admin) */}
+                    {!isBdSuperAdmin && (
                     <CapabilityWrapper domain="crm" action="view">
                         <div className={isBDRole ? '' : 'pt-4 mt-4 border-t border-border'}>
                             <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
@@ -180,12 +256,13 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                             })}
                         </div>
                     </CapabilityWrapper>
+                    )}
                 </nav>
 
                 {/* Bottom Section */}
-                <div className="p-4 pb-12 mt-auto space-y-3 border-t border-border flex-shrink-0 bg-surface">
+                <div className="p-4 space-y-3 border-t border-border flex-shrink-0 bg-surface">
                     {/* User Profile */}
-                    {user?.user_metadata?.role !== 'org_super_admin' && (
+                    {user?.user_metadata?.role !== 'org_super_admin' && !isBdSuperAdmin && (
                         <div className="px-3 py-3 rounded-[var(--radius-lg)] border border-border/5">
                             <div className="flex items-center gap-3">
                                 {user?.user_metadata?.user_photo_url || user?.user_metadata?.avatar_url ? (
@@ -213,9 +290,19 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
 
                     {/* Action Buttons */}
                     <div className="space-y-1">
+                        {isBdSuperAdmin && (
+                            <Link
+                                href={`/${orgId}/crm/help`}
+                                onClick={handleLinkClick}
+                                className="flex items-center gap-2 px-3 py-2.5 lg:py-2 rounded-[var(--radius-md)] text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-smooth"
+                            >
+                                <HelpCircle className="w-4 h-4 shrink-0" />
+                                <span className="text-xs font-semibold font-body">Help & Support</span>
+                            </Link>
+                        )}
                         <div className="flex items-center gap-2">
                             <Link
-                                href={`/${orgId}/settings`}
+                                href={isBdSuperAdmin ? `/${orgId}/crm/settings` : `/${orgId}/settings`}
                                 onClick={handleLinkClick}
                                 className="flex-1 flex items-center gap-2 px-3 py-2.5 lg:py-2 rounded-[var(--radius-md)] text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-smooth"
                             >

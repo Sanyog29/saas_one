@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
     const cities = searchParams.getAll('city');
     const dateFrom = searchParams.get('date_from');
     const dateTo = searchParams.get('date_to');
+    const seatsRange = searchParams.get('seats_range');
     const isArchived = searchParams.get('is_archived') === 'true';
     const sortByRaw = searchParams.get('sort_by') || 'created_at';
     const sortBy = SORTABLE.has(sortByRaw) ? sortByRaw : 'created_at';
@@ -66,6 +67,11 @@ export async function GET(request: NextRequest) {
     if (cities.length) query = query.in('city', cities);
     if (dateFrom) query = query.gte('created_at', dateFrom);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
+    // Seat-range filter on the numeric `seats` column.
+    if (seatsRange === 'lt25') query = query.lt('seats', 25);
+    else if (seatsRange === '25to50') query = query.gte('seats', 25).lte('seats', 50);
+    else if (seatsRange === '50to100') query = query.gte('seats', 50).lte('seats', 100);
+    else if (seatsRange === 'gt100') query = query.gt('seats', 100);
     query = query.eq('is_archived', isArchived);
     query = query.order(sortBy, { ascending: sortOrder });
 
@@ -155,6 +161,8 @@ export async function POST(request: NextRequest) {
         location: body.location ?? null,
         city: body.city ?? body.location ?? null,
         requirement: body.requirement ?? null,
+        seats: body.seats != null && !isNaN(Number(body.seats)) ? Number(body.seats) : null,
+        move_in_timeline: body.move_in_timeline ?? null,
         property_interest: body.property_interest ?? null,
         lead_source: body.lead_source ?? null,
         deal_value: body.deal_value ?? 0,

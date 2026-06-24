@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const propertyId = searchParams.get('property_id');
     const userId = searchParams.get('user_id');
     const city = searchParams.get('city');
-    const period = (searchParams.get('period') || 'all') as 'today' | 'month' | 'all';
+    const period = (searchParams.get('period') || 'all') as 'today' | 'week' | 'month' | 'all';
     const org = access.organizationId;
 
     const now = new Date();
@@ -25,6 +25,13 @@ export async function GET(request: NextRequest) {
             const from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
             const to = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
             return { from, to };
+        }
+        if (period === 'week') {
+            const day = now.getDay();
+            const mondayOffset = day === 0 ? 6 : day - 1;
+            const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
+            const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
+            return { from: monday.toISOString(), to: sunday.toISOString() };
         }
         if (period === 'month') {
             const to = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString();

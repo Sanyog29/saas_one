@@ -145,12 +145,10 @@ export default function CampaignsManager({ orgId }: { orgId: string }) {
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                     <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-                        <Send className="w-6 h-6 text-primary" /> WhatsApp Campaigns
+                        <Megaphone className="w-6 h-6 text-primary" /> Meta Campaigns
                     </h1>
                     <p className="text-sm text-text-secondary mt-1">
-                        Broadcast or drip messages to leads via WhatsApp Business. Use{' '}
-                        <code className="bg-slate-100 px-1 rounded">{'{{name}}'}</code> and{' '}
-                        <code className="bg-slate-100 px-1 rounded">{'{{company}}'}</code> for personalization.
+                        Run and monitor Meta (Facebook & Instagram) ad campaigns. Track spend, leads, and CPL in real time.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">

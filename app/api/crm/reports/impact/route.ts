@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
             id, status, deal_value, priority, created_at, updated_at, closed_at,
             last_contacted, lead_source, campaign, organization_id, assigned_to, created_by,
             city, property_interest, is_archived, lost_reason, lost_reason_notes,
+            meta_lead_id, meta_campaign_id, meta_adset_id, meta_ad_id, meta_form_name,
             status_info:crm_lead_statuses(id, name, color, is_won, is_lost),
             source_info:crm_lead_sources(id, name),
             assigned_user:users!crm_leads_assigned_to_fkey(id, full_name, email)
@@ -107,9 +108,41 @@ export async function GET(request: NextRequest) {
         if (c.name) campaignByName.set(c.name.trim().toLowerCase(), c);
     }
 
-    // Build an id set for filter matching (when caller passes UUIDs)
+    // Build id set for filter matching (when caller passes UUIDs)
     const campaignIdSet = new Set((orgCampaigns || []).map((c) => c.id));
     const validCampaignIds = campaignIds.filter((id) => campaignIdSet.has(id));
+
+    // ── Location-group fallback ───────────────────────────────────────────────
+    // Leads imported via Meta/WhatsApp webhooks store a SHORT LOCATION LABEL
+    // (e.g. "Lower Parel", "Bangalore") in `campaign`, while crm_campaigns stores
+    // full names (e.g. "Leads | Lower Parel | Managed Offices | Jan2026").
+    // Exact match fails → leads never attribute → CPL = 0.
+    //
+    // Fix: for each unique lead campaign label that has no exact match, find all
+    // campaigns whose name CONTAINS that label as a substring and group them.
+    // All matching campaigns' spend is summed into a synthetic "location group"
+    // so the breakdown shows location-level CPL matching the PDF report.
+    const uniqueLeadLabels = new Set(
+        (rawLeads || []).map((l: any) => (l.campaign || '').trim()).filter(Boolean)
+    );
+    // locationGroups: label → { syntheticId, matchingCampaignIds }
+    const locationGroups = new Map<string, { id: string; campaignIds: Set<string> }>();
+    for (const label of uniqueLeadLabels) {
+        if (campaignByName.has(label.toLowerCase())) continue; // exact match exists — skip
+        const labelLower = label.toLowerCase();
+        const matchingIds = new Set<string>();
+        for (const c of orgCampaigns || []) {
+            if ((c.name || '').toLowerCase().includes(labelLower)) matchingIds.add(c.id);
+        }
+        if (matchingIds.size > 0) {
+            locationGroups.set(label, { id: `loc:${label}`, campaignIds: matchingIds });
+        }
+    }
+    // Reverse: campaignId → location group id (for spend attribution)
+    const campaignToLocGroup = new Map<string, string>();
+    for (const [, grp] of locationGroups) {
+        for (const cid of grp.campaignIds) campaignToLocGroup.set(cid, grp.id);
+    }
 
     const fromMs = new Date(from + 'T00:00:00Z').getTime();
     const toMs = new Date(to + 'T23:59:59.999Z').getTime();
@@ -123,15 +156,21 @@ export async function GET(request: NextRequest) {
     });
 
     // Resolve each lead's campaign from its text label.
-    // `leadCampaignId` will be set when the lead's `campaign` text matches a
-    // real campaign name; null otherwise.
+    // Priority: (1) exact name match, (2) location-group fuzzy match, (3) null.
     for (const l of leads as any[]) {
-        // No FK exists between crm_leads and crm_campaigns, so we cannot embed.
-        // Try the text label first — if it matches a campaign name, attach the row.
         let ci: any = null;
         if (l.campaign) {
-            const match = campaignByName.get(String(l.campaign).trim().toLowerCase());
-            if (match) ci = match;
+            const label = String(l.campaign).trim();
+            const exact = campaignByName.get(label.toLowerCase());
+            if (exact) {
+                ci = exact;
+            } else {
+                const grp = locationGroups.get(label);
+                if (grp) {
+                    // Synthetic campaign info for the location group
+                    ci = { id: grp.id, name: label };
+                }
+            }
         }
         l._campaignInfo = ci;
         l._campaignId = ci?.id ?? null;
@@ -190,15 +229,46 @@ export async function GET(request: NextRequest) {
     const derivedSpend = computeDerivedSpend(campaigns || [], from, to);
     const totalSpend = (spendRows || []).reduce((s, r) => s + Number(r.amount || 0), 0) + derivedSpend;
 
+    // Rewrite spend rows: campaigns that belong to a location group emit a
+    // synthetic spend row keyed to the group's id so aggregate() can sum spend
+    // against the same key that leads are attributed to. The original campaign_id
+    // row is dropped to avoid double-counting at the breakdown level.
+    const rewrittenSpendRows = (spendRows || []).map((row: any) => {
+        const locGroupId = campaignToLocGroup.get(row.campaign_id);
+        return locGroupId ? { ...row, campaign_id: locGroupId } : row;
+    });
+
+    // Same rewrite for metrics rows (impressions / clicks / CTR feed into the
+    // same campaignAgg key, so they must match the rewritten spend rows).
+    const rewrittenMetricsRows = (metricsRows || []).map((row: any) => {
+        const locGroupId = campaignToLocGroup.get(row.campaign_id);
+        return locGroupId ? { ...row, campaign_id: locGroupId } : row;
+    });
+
+    // Seed campaignAgg with location-group stubs so they appear in the breakdown
+    // even if the aggregate() function encounters the synthetic id for the first time.
+    const locationGroupSeeds = Array.from(locationGroups.entries()).map(([label, grp]) => ({
+        campaign_id: grp.id,
+        name: label,
+        channel: 'meta',
+        budget_total: null,
+        budget_period: null,
+        start_date: null,
+        end_date: null,
+        status: 'running',
+        created_at: new Date().toISOString(),
+    }));
+
     // ── 4. Aggregate ─────────────────────────────────────────────────────────
     const result = aggregate({
         leads: filteredLeads,
         statuses: statuses || [],
         wonIds,
         lostIds,
-        spendRows: spendRows || [],
-        metricsRows: metricsRows || [],
+        spendRows: rewrittenSpendRows,
+        metricsRows: rewrittenMetricsRows,
         totalSpend,
+        locationGroupSeeds,
         fromMs,
         toMs,
         groupBy,
@@ -262,6 +332,7 @@ interface AggInput {
     targetWinRate: number;
     orgId: string;
     staleDays: number;
+    locationGroupSeeds?: any[];
 }
 
 function aggregate(input: AggInput) {
@@ -307,6 +378,10 @@ function aggregate(input: AggInput) {
 
     const sourceAgg: Record<string, { id: string | null; name: string; count: number; value: number; won: number; wonValue: number }> = {};
     const campaignAgg: Record<string, { id: string; name: string; leads: number; connected: number; won: number; revenue: number; spend: number }> = {};
+    // Pre-seed location group stubs so spend rows can always find their target key.
+    for (const seed of (input.locationGroupSeeds || [])) {
+        campaignAgg[seed.campaign_id] = { id: seed.campaign_id, name: seed.name, leads: 0, connected: 0, won: 0, revenue: 0, spend: 0 };
+    }
     const repAgg: Record<string, { id: string; name: string; leads: number; connected: number; won: number; lost: number; pipeline: number; revenue: number; closeTimes: number[] }> = {};
     const statusAgg: Record<string, { id: string; name: string; color: string; count: number; value: number; isWon: boolean; isLost: boolean }> = {};
     const lostReasonAgg: Record<string, { reason: string; count: number; value: number }> = {};
@@ -410,6 +485,18 @@ function aggregate(input: AggInput) {
             if (isWon) {
                 campaignAgg[cid].won++;
                 campaignAgg[cid].revenue += Number(l.deal_value || 0);
+            }
+        } else if (inRange && !campaignInfo?.id && (l.meta_form_name || l.campaign)) {
+            // Meta leads without a matching crm_campaigns entry — group by form/campaign text.
+            const label = l.meta_form_name || l.campaign;
+            const key = `meta:${label}`;
+            if (!campaignAgg[key]) {
+                campaignAgg[key] = { id: key, name: label, leads: 0, connected: 0, won: 0, revenue: 0, spend: 0 };
+            }
+            campaignAgg[key].leads++;
+            if (isWon) {
+                campaignAgg[key].won++;
+                campaignAgg[key].revenue += Number(l.deal_value || 0);
             }
         }
 
@@ -518,11 +605,17 @@ function aggregate(input: AggInput) {
         connected:monthly.map((m) => m.connected),
     };
 
-    // Attach spend to campaignAgg (sum spend for each campaign)
+    // Attach spend to campaignAgg (sum spend for each campaign).
+    // spendRows have already been rewritten so that campaigns belonging to a
+    // location group carry the synthetic group id as campaign_id. If the key
+    // is missing (e.g. individual campaign with no leads and no group), create
+    // a stub so spend is still visible in the breakdown.
     for (const row of input.spendRows) {
-        if (campaignAgg[row.campaign_id]) {
-            campaignAgg[row.campaign_id].spend += Number(row.amount || 0);
+        const cid = row.campaign_id;
+        if (!campaignAgg[cid]) {
+            campaignAgg[cid] = { id: cid, name: row.name || cid, leads: 0, connected: 0, won: 0, revenue: 0, spend: 0 };
         }
+        campaignAgg[cid].spend += Number(row.amount || 0);
     }
 
     // Aggregate Meta/Google performance metrics per campaign. CTR / CPC / CPM

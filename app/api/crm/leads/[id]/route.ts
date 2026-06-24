@@ -16,7 +16,7 @@ const BASE_FIELDS = [
     'company_name', 'contact_person', 'contact_number', 'secondary_contact_number', 'email',
     'location', 'city', 'requirement', 'property_interest', 'lead_source',
     'status', 'priority', 'next_followup_date', 'followup_notes', 'remarks',
-    'lost_reason', 'lost_reason_notes',
+    'lost_reason', 'lost_reason_notes', 'seats', 'move_in_timeline',
 ];
 // Fields restricted to admins (reassignment / archival / commercial value).
 const ADMIN_FIELDS = ['assigned_to', 'is_archived', 'deal_value'];

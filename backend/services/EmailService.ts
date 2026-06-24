@@ -11,6 +11,26 @@ const transporter = nodemailer.createTransport({
 });
 
 export const EmailService = {
+    async sendNewLeadEmail({ emailTo, subject, html }: { emailTo: string; subject: string; html: string }) {
+        if (!process.env.SMTP_USER) {
+            console.warn('[EmailService] SMTP credentials not found, skipping email send.');
+            return false;
+        }
+        try {
+            await transporter.sendMail({
+                from: `"Autopilot CRM" <${process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER}>`,
+                to: emailTo,
+                subject,
+                html,
+            });
+            console.log(`[EmailService] New lead email sent to ${emailTo}`);
+            return true;
+        } catch (error) {
+            console.error('[EmailService] Failed to send new lead email:', error);
+            return false;
+        }
+    },
+
     async sendMaterialRequestEmail({
         emailTo,
         ticket,
