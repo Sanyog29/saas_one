@@ -271,7 +271,9 @@ export default function CrmBackground() {
     const wp = useWallpaper();
 
     // Pull the authoritative value from the user's profile once per session so
-    // a wallpaper set on another device shows up here too.
+    // a wallpaper set on another device shows up here too. If the wallpaper exists
+    // but the accent is missing (e.g. uploaded before chameleon feature), extract
+    // and save it.
     useEffect(() => {
         if (!user?.id) return;
         const supabase = createClient();
@@ -281,16 +283,32 @@ export default function CrmBackground() {
             .select('metadata')
             .eq('id', user.id)
             .maybeSingle()
-            .then(({ data }) => {
+            .then(async ({ data }) => {
                 if (cancelled || !data) return;
                 const meta = (data.metadata || {}) as Record<string, unknown>;
+                let accent = typeof meta.crm_background_accent === 'string' ? (meta.crm_background_accent as string) : '';
+                const url = typeof meta.crm_background_url === 'string' ? (meta.crm_background_url as string) : '';
+
+                // If wallpaper exists but accent is missing, extract it.
+                if (url && !accent) {
+                    try {
+                        accent = (await extractAccentFromSrc(url)) || '';
+                        // Persist the extracted accent back to the database.
+                        const nextMeta = { ...meta, crm_background_accent: accent };
+                        await supabase.from('users').update({ metadata: nextMeta }).eq('id', user.id);
+                    } catch (err) {
+                        console.warn('Failed to extract/save wallpaper accent:', err);
+                        // Continue anyway — wallpaper still works without accent (just no tint).
+                    }
+                }
+
                 const next: WallpaperState = {
-                    url: typeof meta.crm_background_url === 'string' ? (meta.crm_background_url as string) : '',
+                    url,
                     opacity:
                         typeof meta.crm_background_opacity === 'number'
                             ? (meta.crm_background_opacity as number)
                             : DEFAULT_WALLPAPER_OPACITY,
-                    accent: typeof meta.crm_background_accent === 'string' ? (meta.crm_background_accent as string) : '',
+                    accent,
                 };
                 const cur = readWallpaper(user.id);
                 if (cur.url !== next.url || cur.opacity !== next.opacity || cur.accent !== next.accent) {
