@@ -241,14 +241,28 @@ export default function BdSuperAdminDashboard() {
             : (impactYear?.rep_performance || []);
         const meetingsByName: Record<string, number> = {};
         (stats?.user_performance || []).forEach((u: any) => { meetingsByName[(u.user_name || '').toLowerCase()] = u.meetings || 0; });
-        return rp.filter((r: any) => r.name)
-            .sort((a: any, b: any) => (b.pipeline || 0) - (a.pipeline || 0) || (b.won || 0) - (a.won || 0))
-            .slice(0, 6)
+        let teamList = rp.filter((r: any) => r.name && r.name !== 'Unassigned')
+            .sort((a: any, b: any) => (b.leads || 0) - (a.leads || 0) || (b.won || 0) - (a.won || 0))
             .map((r: any) => ({
-                name: r.name, pipeline: r.pipeline || 0,
+                name: r.name, leads: r.leads || 0,
                 meetings: meetingsByName[(r.name || '').toLowerCase()] ?? 0,
                 sqls: r.won || 0, winRate: Math.round(r.win_rate || 0),
             }));
+
+        // Add specific team members if not already in the list
+        const existingNames = new Set(teamList.map((t: any) => t.name.toLowerCase()));
+        const additionalReps = [
+            { name: 'Harshini', leads: 0, meetings: 0, sqls: 0, winRate: 0 },
+            { name: 'Neha', leads: 0, meetings: 0, sqls: 0, winRate: 0 },
+        ];
+
+        for (const rep of additionalReps) {
+            if (!existingNames.has(rep.name.toLowerCase())) {
+                teamList.push(rep);
+            }
+        }
+
+        return teamList.slice(0, 6);
     }, [impactPeriod, impactYear, stats]);
 
     const signals = useMemo(() => {
@@ -590,15 +604,15 @@ export default function BdSuperAdminDashboard() {
             </div>
 
             {/* Row 3 */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[500px] lg:min-h-[600px]">
+                <div className="lg:col-span-4 flex flex-col">
                     <Panel title="Team Performance" href={`/${orgId}/crm/performance`} linkLabel="View full team report" right={<MiniSelect label={period} options={[...PERIODS]} onSelect={v => setPeriod(v as Period)} />}>
                         {team.length === 0 ? <Empty msg="No rep activity yet" /> : (
                             <div className="px-3 pb-2 overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead><tr className="text-text-tertiary">
                                         <th className="text-left font-bold py-2 px-2"> </th>
-                                        <th className="text-right font-bold py-2 px-1">Pipeline</th>
+                                        <th className="text-right font-bold py-2 px-1">Leads</th>
                                         <th className="text-right font-bold py-2 px-1">Mtgs</th>
                                         <th className="text-right font-bold py-2 px-1">Won</th>
                                         <th className="text-right font-bold py-2 px-1">Win%</th>
@@ -610,7 +624,7 @@ export default function BdSuperAdminDashboard() {
                                                     <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-black text-primary flex-shrink-0">{(t.name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>
                                                     <span className="font-bold text-text-primary whitespace-nowrap">{t.name}</span>
                                                 </div></td>
-                                                <td className="py-2 px-1 text-right text-text-secondary whitespace-nowrap">{inrCompact(t.pipeline)}</td>
+                                                <td className="py-2 px-1 text-right text-text-secondary whitespace-nowrap font-bold text-primary">{t.leads}</td>
                                                 <td className="py-2 px-1 text-right text-text-secondary">{t.meetings}</td>
                                                 <td className="py-2 px-1 text-right text-text-secondary">{t.sqls}</td>
                                                 <td className="py-2 px-1 text-right font-bold text-emerald-600">{t.winRate}%</td>
@@ -623,9 +637,9 @@ export default function BdSuperAdminDashboard() {
                     </Panel>
                 </div>
 
-                <div className="lg:col-span-8">
+                <div className="lg:col-span-8 flex flex-col">
                     <Panel title="Rep Calendar" right={<MiniSelect label="This Week" />}>
-                        <div className="px-3 pb-3 flex flex-col h-full">
+                        <div className="px-3 pb-3 flex flex-col h-full min-h-[450px]">
                             {/* Rep Profile Headers - Always Show */}
                             <div className="mb-4 pb-4 border-b border-border">
                                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2.5">Team Schedule</p>
@@ -675,7 +689,7 @@ export default function BdSuperAdminDashboard() {
                             ) : (
                                 <>
                                     <p className="text-[10px] text-text-tertiary font-medium px-1 mb-3">{calendar[0]?.label} {calendar[0]?.date} – {calendar[6]?.label} {calendar[6]?.date}</p>
-                                    <div className="space-y-2 max-h-[280px] overflow-y-auto flex-1">
+                                    <div className="space-y-2 max-h-[350px] overflow-y-auto flex-1">
                                         {calendar.filter(d => d.events.length).map(d => (
                                             <div key={d.key} className="flex gap-3">
                                                 <div className="w-12 flex-shrink-0 text-center"><p className="text-[9px] text-text-tertiary font-bold uppercase">{d.label}</p><p className="text-base font-black text-text-primary leading-none">{d.date}</p></div>
