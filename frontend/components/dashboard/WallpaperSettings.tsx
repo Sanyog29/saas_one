@@ -8,6 +8,7 @@ import { Image as ImageIcon, Save, Loader2, RotateCcw, UploadCloud } from 'lucid
 import {
     readWallpaper,
     saveWallpaperLocal,
+    extractAccentFromSrc,
     DEFAULT_WALLPAPER_OPACITY,
 } from '@/frontend/components/ui/CrmBackground';
 
@@ -34,9 +35,10 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
         }
     };
 
-    const initial = typeof window !== 'undefined' ? readWallpaper(user?.id) : { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
+    const initial = typeof window !== 'undefined' ? readWallpaper(user?.id) : { url: '', opacity: DEFAULT_WALLPAPER_OPACITY, accent: '' };
     const [preview, setPreview] = useState<string>(initial.url);
     const [opacity, setOpacity] = useState<number>(initial.opacity);
+    const [accent, setAccent] = useState<string>(initial.accent);
     const [file, setFile] = useState<File | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -47,19 +49,22 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
             showToast('Please choose a JPG, PNG, or WebP image', 'error');
             return;
         }
+        const objectUrl = URL.createObjectURL(f);
         setFile(f);
-        setPreview(URL.createObjectURL(f));
+        setPreview(objectUrl);
+        // Preview the chameleon accent immediately (recomputed again on save).
+        extractAccentFromSrc(objectUrl).then((c) => setAccent(c || ''));
     };
 
     // Merge wallpaper fields into users.metadata without clobbering other keys.
-    const persist = async (url: string, op: number) => {
+    const persist = async (url: string, op: number, acc: string) => {
         if (!user) return;
         const { data } = await supabase.from('users').select('metadata').eq('id', user.id).maybeSingle();
         const meta = (data?.metadata || {}) as Record<string, unknown>;
-        const nextMeta = { ...meta, crm_background_url: url, crm_background_opacity: op };
+        const nextMeta = { ...meta, crm_background_url: url, crm_background_opacity: op, crm_background_accent: acc };
         const { error } = await supabase.from('users').update({ metadata: nextMeta }).eq('id', user.id);
         if (error) throw error;
-        saveWallpaperLocal(user.id, { url, opacity: op });
+        saveWallpaperLocal(user.id, { url, opacity: op, accent: acc });
     };
 
     const handleSave = async () => {
@@ -67,7 +72,12 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
         setSaving(true);
         try {
             let url = preview;
+            let nextAccent = accent;
             if (file) {
+                // Derive the chameleon accent from the local blob (no CORS taint).
+                nextAccent = (await extractAccentFromSrc(preview)) || '';
+                setAccent(nextAccent);
+
                 const compressed = await imageCompression(file, {
                     maxSizeMB: 1.5,
                     maxWidthOrHeight: 2560,
@@ -88,7 +98,7 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
                 showToast('Upload an image first, or keep the standard background', 'error');
                 return;
             }
-            await persist(url, opacity);
+            await persist(url, opacity, nextAccent);
             showToast('Wallpaper saved');
         } catch (err: any) {
             console.error('Wallpaper save failed:', err);
@@ -101,9 +111,10 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
     const handleReset = async () => {
         setSaving(true);
         try {
-            await persist('', DEFAULT_WALLPAPER_OPACITY);
+            await persist('', DEFAULT_WALLPAPER_OPACITY, '');
             setPreview('');
             setFile(null);
+            setAccent('');
             setOpacity(DEFAULT_WALLPAPER_OPACITY);
             showToast('Reverted to the standard background');
         } catch (err: any) {
@@ -168,6 +179,16 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
                         />
                         <p className="text-xs text-slate-500">Keep it subtle so your content stays easy to read.</p>
                     </div>
+
+                    {accent && preview && (
+                        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                            <span className="h-7 w-7 shrink-0 rounded-lg border border-slate-200 shadow-inner" style={{ backgroundColor: accent }} />
+                            <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-700">Chameleon accent</p>
+                                <p className="text-xs text-slate-500">Your sidebar &amp; cards pick up a subtle tint of this color.</p>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex flex-wrap items-center gap-3">
                         <button

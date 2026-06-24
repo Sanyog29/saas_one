@@ -8,7 +8,7 @@ import DashboardSidebar, { MobileHeader } from "@/frontend/components/layout/Das
 import Loader from "@/frontend/components/ui/Loader";
 import ModuleSwitch from "@/frontend/components/layout/ModuleSwitch";
 import { isBdSuperAdmin } from "@/frontend/constants/bdSuperAdmins";
-import CrmBackground, { useWallpaper } from "@/frontend/components/ui/CrmBackground";
+import CrmBackground, { useWallpaper, surfaceTintVars, useIsDark } from "@/frontend/components/ui/CrmBackground";
 
 export default function DashboardLayout({
     children,
@@ -21,7 +21,10 @@ export default function DashboardLayout({
     const pathname = usePathname();
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     const wallpaper = useWallpaper();
+    const isDark = useIsDark();
     const hasWallpaper = !!wallpaper.url;
+    // Chameleon tint: shift sidebar + cards (bg-surface) toward the wallpaper accent.
+    const tintStyle = hasWallpaper ? surfaceTintVars(wallpaper.accent, isDark) : undefined;
     useEffect(() => {
         if (!isLoading && !user) {
             router.push('/login');
@@ -72,7 +75,7 @@ export default function DashboardLayout({
         && isBdSuperAdmin(user?.email, membership?.org_role);
 
     return (
-        <div className={`flex min-h-screen ${hasWallpaper ? '' : 'bg-[#fafbfc]'}`}>
+        <div className={`flex min-h-screen ${hasWallpaper ? '' : 'bg-[#fafbfc]'}`} style={tintStyle}>
             {/* Per-user CRM wallpaper (renders nothing unless the user set one) */}
             <CrmBackground />
 
