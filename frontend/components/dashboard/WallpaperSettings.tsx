@@ -185,7 +185,7 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
                             <span className="h-7 w-7 shrink-0 rounded-lg border border-slate-200 shadow-inner" style={{ backgroundColor: accent }} />
                             <div className="min-w-0">
                                 <p className="text-xs font-bold text-slate-700">Chameleon accent</p>
-                                <p className="text-xs text-slate-500">Your sidebar &amp; cards pick up a subtle tint of this color.</p>
+                                <p className="text-xs text-slate-500">Your sidebar, cards, buttons &amp; text pick up this color across the CRM.</p>
                             </div>
                         </div>
                     )}

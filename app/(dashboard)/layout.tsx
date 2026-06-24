@@ -8,7 +8,7 @@ import DashboardSidebar, { MobileHeader } from "@/frontend/components/layout/Das
 import Loader from "@/frontend/components/ui/Loader";
 import ModuleSwitch from "@/frontend/components/layout/ModuleSwitch";
 import { isBdSuperAdmin } from "@/frontend/constants/bdSuperAdmins";
-import CrmBackground, { useWallpaper, surfaceTintVars, useIsDark } from "@/frontend/components/ui/CrmBackground";
+import CrmBackground, { useWallpaper, crmThemeVars, useIsDark } from "@/frontend/components/ui/CrmBackground";
 
 export default function DashboardLayout({
     children,
@@ -22,9 +22,12 @@ export default function DashboardLayout({
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     const wallpaper = useWallpaper();
     const isDark = useIsDark();
-    const hasWallpaper = !!wallpaper.url;
-    // Chameleon tint: shift sidebar + cards (bg-surface) toward the wallpaper accent.
-    const tintStyle = hasWallpaper ? surfaceTintVars(wallpaper.accent, isDark) : undefined;
+    // Wallpaper + chameleon theming are gated to CRM routes for now (test here,
+    // then go global). Non-CRM modules keep the standard chrome.
+    const isCrmRoute = pathname?.includes('/crm') ?? false;
+    const wallpaperActive = !!wallpaper.url && isCrmRoute;
+    // Chameleon theme: shift sidebar, cards, buttons + text toward the accent.
+    const tintStyle = wallpaperActive ? crmThemeVars(wallpaper.accent, isDark) : undefined;
     useEffect(() => {
         if (!isLoading && !user) {
             router.push('/login');
@@ -75,9 +78,9 @@ export default function DashboardLayout({
         && isBdSuperAdmin(user?.email, membership?.org_role);
 
     return (
-        <div className={`flex min-h-screen ${hasWallpaper ? '' : 'bg-[#fafbfc]'}`} style={tintStyle}>
-            {/* Per-user CRM wallpaper (renders nothing unless the user set one) */}
-            <CrmBackground />
+        <div className={`flex min-h-screen ${wallpaperActive ? '' : 'bg-[#fafbfc]'}`} style={tintStyle}>
+            {/* Per-user CRM wallpaper — CRM routes only for now */}
+            {isCrmRoute && <CrmBackground />}
 
             {/* Mobile Header */}
             <MobileHeader onMenuToggle={() => setIsMobileSidebarOpen(true)} />
@@ -89,7 +92,7 @@ export default function DashboardLayout({
             />
 
             {/* Main Content */}
-            <div className={`flex-1 flex flex-col min-w-0 pt-[56px] lg:pt-0 border-l border-slate-300 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)] relative z-10 ${hasWallpaper ? 'bg-transparent' : 'bg-background'}`}>
+            <div className={`flex-1 flex flex-col min-w-0 pt-[56px] lg:pt-0 border-l border-slate-300 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)] relative z-10 ${wallpaperActive ? 'bg-transparent' : 'bg-background'}`}>
                 {/* Context Bar - Hidden on mobile, shown on desktop */}
                 {!hideContextBar && (
                     <div className="hidden lg:block">

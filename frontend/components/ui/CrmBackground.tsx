@@ -38,16 +38,73 @@ export function mixHex(baseHex: string, accentHex: string, t: number): string {
     return rgbToHex(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
 }
 
-// Inline CSS vars that tint every bg-surface element (sidebar + cards) toward
-// the accent. Mixes against the active theme's real surface colors so it works
-// in both light and dark mode. Returns undefined when there's nothing to tint.
-export function surfaceTintVars(accent: string, isDark: boolean): CSSProperties | undefined {
-    if (!accent || !hexToRgb(accent)) return undefined;
-    const base = isDark ? '#121a1d' : '#ffffff';
-    const elevated = isDark ? '#1c2629' : '#f8fafc';
+// ── Chameleon theme spec ──────────────────────────────────────────────────────
+// Numbers from a full-hue-sweep, WCAG-verified design pass. Primary L=0.381 is
+// the most-immersive lightness whose worst hue (yellow, H=60) still keeps
+// white-on-primary >= 3:1 — used in BOTH light and dark so white-text buttons
+// stay legible everywhere (a deliberate, button-safe deviation from a lighter
+// dark primary). Text is tinted only slightly so body copy stays near-neutral.
+const PRIMARY_S = 0.58;
+const PRIMARY_L = 0.381;
+const PRIMARY_LIGHT_DL = 0.12;
+const PRIMARY_DARK_DL = -0.11;
+const TEXT_TINT_PRIMARY = 0.08;
+const TEXT_TINT_SECONDARY = 0.16;
+
+function clamp(n: number, lo: number, hi: number): number {
+    return Math.max(lo, Math.min(hi, n));
+}
+
+function hslHex(h: number, s: number, l: number): string {
+    const [r, g, b] = hslToRgb(h, clamp(s, 0, 1), clamp(l, 0.06, 0.94));
+    return rgbToHex(r, g, b);
+}
+
+// Full chameleon theme derived from the wallpaper accent: surfaces (sidebar +
+// cards), the brand primary family (buttons, links, icons, active states) and
+// the text hierarchy. Applied on the CRM shell root only, so it's route-scoped.
+export function crmThemeVars(accent: string, isDark: boolean): CSSProperties | undefined {
+    const accentRgb = hexToRgb(accent);
+    if (!accent || !accentRgb) return undefined;
+    const [h] = rgbToHsl(accentRgb[0], accentRgb[1], accentRgb[2]);
+
+    // Primary family — keep accent hue/sat, contrast-safe lightness.
+    const primary = hslHex(h, PRIMARY_S, PRIMARY_L);
+    const primaryLight = hslHex(h, PRIMARY_S, PRIMARY_L + PRIMARY_LIGHT_DL);
+    const primaryDark = hslHex(h, PRIMARY_S, PRIMARY_L + PRIMARY_DARK_DL);
+    const pRgb = hexToRgb(primary)!;
+
+    // Surfaces: 8% toward accent over the active theme's real surface color.
+    const surfBase = isDark ? '#121a1d' : '#ffffff';
+    const surfElev = isDark ? '#1c2629' : '#f8fafc';
+
+    // Text: tint the base color only; preserve the existing alpha ramp.
+    const textBase: [number, number, number] = isDark ? [230, 235, 238] : [26, 35, 50];
+    const tintText = (strength: number): [number, number, number] => [
+        Math.round(textBase[0] + (accentRgb[0] - textBase[0]) * strength),
+        Math.round(textBase[1] + (accentRgb[1] - textBase[1]) * strength),
+        Math.round(textBase[2] + (accentRgb[2] - textBase[2]) * strength),
+    ];
+    const tp = tintText(TEXT_TINT_PRIMARY);
+    const ts = tintText(TEXT_TINT_SECONDARY);
+    const rgba = (c: [number, number, number], a: number) => `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})`;
+
     return {
-        ['--surface' as any]: mixHex(base, accent, TINT_STRENGTH),
-        ['--surface-elevated' as any]: mixHex(elevated, accent, TINT_STRENGTH),
+        ['--surface' as any]: mixHex(surfBase, accent, TINT_STRENGTH),
+        ['--surface-elevated' as any]: mixHex(surfElev, accent, TINT_STRENGTH),
+        // Brand primary / accent (buttons, links, icons, active nav, glows)
+        ['--primary' as any]: primary,
+        ['--primary-light' as any]: primaryLight,
+        ['--primary-dark' as any]: primaryDark,
+        ['--primary-rgb' as any]: `${pRgb[0]}, ${pRgb[1]}, ${pRgb[2]}`,
+        ['--accent' as any]: primary,
+        ['--accent-light' as any]: primaryLight,
+        ['--accent-dark' as any]: primaryDark,
+        // Text hierarchy (subtle hue whisper, readability preserved)
+        ['--text-primary' as any]: rgba(tp, 0.92),
+        ['--text-secondary' as any]: rgba(ts, 0.62),
+        ['--text-tertiary' as any]: rgba(ts, 0.42),
+        ['--text-muted' as any]: rgba(ts, 0.42),
     };
 }
 
