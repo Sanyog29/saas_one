@@ -137,12 +137,14 @@ async function findExistingLead(orgId: string, phone: string | null, email: stri
     return data;
 }
 
-async function notifyNewLead(config: any, lead: any, assignedTo: string, formName: string | null) {
+async function notifyNewLead(config: any, lead: any, assignedTo: string | null, formName: string | null) {
     try {
-        const { data: users } = await supabaseAdmin
-            .from('users')
-            .select('id, email, full_name')
-            .in('id', [assignedTo]);
+        const { data: users } = assignedTo
+            ? await supabaseAdmin
+                .from('users')
+                .select('id, email, full_name')
+                .in('id', [assignedTo])
+            : { data: [] as any[] };
         const { data: admins } = await supabaseAdmin
             .from('organization_memberships')
             .select('user_id, users:user_id(email, full_name)')
@@ -238,7 +240,8 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         const campaignName = formName || value.campaign_name || null;
         const distributionAssignee = await resolveDistributionAssignee(
             config.organization_id,
-            campaignName
+            campaignName,
+            city
         );
 
         const { data: def } = await supabaseAdmin
@@ -253,7 +256,8 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
             sourceId = metaSrc?.id ?? null;
         }
 
-        const assignedTo = distributionAssignee ?? config.default_assignee ?? createdBy;
+        // Unmatched leads stay unassigned (null) rather than dumping on an admin.
+        const assignedTo = distributionAssignee ?? config.default_assignee ?? null;
         const leadData = {
             organization_id: config.organization_id,
             created_by: createdBy,

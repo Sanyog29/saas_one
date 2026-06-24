@@ -151,8 +151,8 @@ export async function syncLinkedInLeadsForOrg(cfg: LinkedInConfig): Promise<Lead
         }
 
         const campaignName = resp.campaignName || resp.campaign || urnId(resp.campaign) || 'LinkedIn Lead Gen';
-        const assignedTo = (await resolveDistributionAssignee(cfg.organization_id, campaignName).catch(() => null))
-            ?? cfg.default_assignee ?? createdBy;
+        const assignedTo = (await resolveDistributionAssignee(cfg.organization_id, campaignName, city).catch(() => null))
+            ?? cfg.default_assignee ?? null;
 
         const requirement = [
             seatsRaw ? `Seats: ${seatsRaw}` : null,

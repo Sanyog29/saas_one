@@ -145,8 +145,10 @@ export async function syncMetaLeadsForOrg(orgId: string, opts: { perFormCap?: nu
                 }
             }
 
-            const distributionAssignee = await resolveDistributionAssignee(orgId, form.name).catch(() => null);
-            const assignedTo = distributionAssignee ?? config.default_assignee ?? createdBy;
+            const distributionAssignee = await resolveDistributionAssignee(orgId, form.name, city).catch(() => null);
+            // No fallback to a default admin — unmatched leads stay unassigned (null)
+            // so they surface in the pool instead of dumping on one person.
+            const assignedTo = distributionAssignee ?? config.default_assignee ?? null;
 
             try {
                 const { data: newLead } = await supabaseAdmin.from('crm_leads').insert({
