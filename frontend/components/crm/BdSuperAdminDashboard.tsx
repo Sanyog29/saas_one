@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
+import RepTimeGridCalendar from '@/frontend/components/crm/RepTimeGridCalendar';
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -604,8 +605,8 @@ export default function BdSuperAdminDashboard() {
             </div>
 
             {/* Row 3 */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[500px] lg:min-h-[600px]">
-                <div className="lg:col-span-4 flex flex-col">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-4">
                     <Panel title="Team Performance" href={`/${orgId}/crm/performance`} linkLabel="View full team report" right={<MiniSelect label={period} options={[...PERIODS]} onSelect={v => setPeriod(v as Period)} />}>
                         {team.length === 0 ? <Empty msg="No rep activity yet" /> : (
                             <div className="px-3 pb-2 overflow-x-auto">
@@ -638,84 +639,11 @@ export default function BdSuperAdminDashboard() {
                 </div>
 
                 <div className="lg:col-span-8 flex flex-col">
-                    <Panel title="Rep Calendar" right={<MiniSelect label="This Week" />}>
-                        <div className="px-3 pb-3 flex flex-col h-full min-h-[450px]">
-                            {/* Rep Profile Headers - Always Show */}
-                            <div className="mb-4 pb-4 border-b border-border">
-                                <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2.5">Team Schedule</p>
-                                {eventReps.length > 0 ? (
-                                    <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                                        {eventReps.map((rep: any) => (
-                                            <div
-                                                key={rep.id}
-                                                className="group flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer transition-transform duration-200 hover:scale-110"
-                                                title={`${rep.name} (${rep.eventCount} event${rep.eventCount !== 1 ? 's' : ''})`}
-                                            >
-                                                <div className="relative">
-                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border-2 border-primary/20 group-hover:border-primary group-hover:shadow-lg group-hover:shadow-primary/20 transition-all duration-200">
-                                                        {rep.avatar ? (
-                                                            <img src={rep.avatar} alt={rep.name} className="w-full h-full rounded-full object-cover" />
-                                                        ) : (
-                                                            <span className="text-xs font-black text-primary">{(rep.name || '?').charAt(0).toUpperCase()}</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border border-surface flex items-center justify-center text-[9px] font-black text-white">{rep.eventCount}</div>
-                                                </div>
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 absolute top-full mt-8 z-10 bg-text-primary text-surface rounded-lg px-2.5 py-1.5 text-[10px] font-bold whitespace-nowrap shadow-lg">
-                                                    {rep.name}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-[11px] text-text-secondary font-medium py-2">No scheduled events yet</p>
-                                )}
-                            </div>
-
-                            {/* Calendar Events or Empty State */}
-                            {!calendarHasEvents ? (
-                                <div className="flex flex-col items-center justify-center py-12 gap-3 flex-1">
-                                    <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                                        <CalendarDays className="w-7 h-7 text-primary" />
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-sm font-bold text-text-primary mb-1">No events scheduled</p>
-                                        <p className="text-xs text-text-tertiary">Create meetings, calls, or site visits to fill your week</p>
-                                    </div>
-                                    <Link href={`/${orgId}/crm/calendar`} className="text-xs font-bold text-primary hover:underline mt-2 flex items-center gap-1">
-                                        Schedule event <ArrowRight className="w-3 h-3" />
-                                    </Link>
-                                </div>
-                            ) : (
-                                <>
-                                    <p className="text-[10px] text-text-tertiary font-medium px-1 mb-3">{calendar[0]?.label} {calendar[0]?.date} – {calendar[6]?.label} {calendar[6]?.date}</p>
-                                    <div className="space-y-2 max-h-[350px] overflow-y-auto flex-1">
-                                        {calendar.filter(d => d.events.length).map(d => (
-                                            <div key={d.key} className="flex gap-3">
-                                                <div className="w-12 flex-shrink-0 text-center"><p className="text-[9px] text-text-tertiary font-bold uppercase">{d.label}</p><p className="text-base font-black text-text-primary leading-none">{d.date}</p></div>
-                                                <div className="flex-1 space-y-1.5">
-                                                    {d.events.map((e: any, i: number) => {
-                                                        const userInfo = Array.isArray(e.user) ? e.user[0] : e.user;
-                                                        return (
-                                                            <div key={i} className={`px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 ${calColor(e.color)}`}>
-                                                                {userInfo?.user_photo_url || userInfo?.avatar_url ? (
-                                                                    <img src={userInfo.user_photo_url || userInfo.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
-                                                                ) : (
-                                                                    <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[7px]">{(userInfo?.full_name || '?').charAt(0)}</div>
-                                                                )}
-                                                                <span className="flex-1">{e.title}</span>
-                                                                <span className="font-medium opacity-70 text-xs whitespace-nowrap">{e.time}</span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </Panel>
+                    <RepTimeGridCalendar
+                        events={events}
+                        reps={eventReps}
+                        orgId={orgId}
+                    />
                 </div>
             </div>
 
