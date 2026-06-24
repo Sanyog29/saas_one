@@ -112,7 +112,8 @@ export default function BdSuperAdminDashboard() {
     const [customTo, setCustomTo] = useState('');
     const [city, setCity] = useState('All Cities');
     const [cityOpen, setCityOpen] = useState(false);
-    const [trendMonths, setTrendMonths] = useState(12);
+    const [trendKey, setTrendKey] = useState<'15d' | '3m' | '6m' | '12m' | 'custom'>('12m');
+    const [trendCustom, setTrendCustom] = useState<{ from: string; to: string }>({ from: '', to: '' });
     const cityRef = useRef<HTMLDivElement>(null);
 
     const [impactPeriod, setImpactPeriod] = useState<any>(null);
@@ -144,14 +145,24 @@ export default function BdSuperAdminDashboard() {
             ? { from: customFrom, to: customTo }
             : periodRange(period);
         const pp = prevPeriodRange(period);
-        const yearFrom = fmtDate(new Date(Date.now() - trendMonths * 30 * 86400000));
+        // Trend range + granularity. 15d → daily points; months → monthly;
+        // custom → daily if ≤ 31 days else monthly.
+        let trendFrom: string, trendTo = fmtDate(new Date()), trendGroup: 'day' | 'month' = 'month';
+        if (trendKey === '15d') { trendFrom = fmtDate(new Date(Date.now() - 14 * 86400000)); trendGroup = 'day'; }
+        else if (trendKey === 'custom' && trendCustom.from && trendCustom.to) {
+            trendFrom = trendCustom.from; trendTo = trendCustom.to;
+            trendGroup = (new Date(trendTo).getTime() - new Date(trendFrom).getTime()) <= 31 * 86400000 ? 'day' : 'month';
+        } else {
+            const m = trendKey === '3m' ? 3 : trendKey === '6m' ? 6 : 12;
+            trendFrom = fmtDate(new Date(Date.now() - m * 30 * 86400000));
+        }
         const wk = weekBounds();
         const j = (url: string) => fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
 
         Promise.all([
             j(`/api/crm/reports/impact?from=${pr.from}&to=${pr.to}&group_by=month${org}`),
             j(`/api/crm/reports/impact?from=${pp.from}&to=${pp.to}&group_by=month${org}`),
-            j(`/api/crm/reports/impact?from=${yearFrom}&to=${pr.to}&group_by=month${org}`),
+            j(`/api/crm/reports/impact?from=${trendFrom}&to=${trendTo}&group_by=${trendGroup}${org}`),
             j(`/api/crm/stats?type=admin&period=${statsPeriod}${cityParam}${org}`),
             j(`/api/crm/campaigns?${org.slice(1)}`),
             j(`/api/crm/leads?sort_by=created_at&sort_order=desc&page_size=8${org}`),
@@ -172,7 +183,7 @@ export default function BdSuperAdminDashboard() {
             setLoading(false);
         });
         return () => { active = false; };
-    }, [orgId, period, city, customFrom, customTo, trendMonths]);
+    }, [orgId, period, city, customFrom, customTo, trendKey, trendCustom]);
 
     /* ---- Derived (100% real data) ---- */
 
@@ -483,12 +494,32 @@ export default function BdSuperAdminDashboard() {
                     )}
                 </Panel>
 
-                <Panel title="Leads Received Trend" right={<MiniSelect label={`Last ${trendMonths} mo`} options={['Last 3 mo', 'Last 6 mo', 'Last 12 mo']} onSelect={v => setTrendMonths(parseInt((v.match(/\d+/) || ['12'])[0]) || 12)} />}>
+                <Panel
+                    title="Leads Received Trend"
+                    right={
+                        <div className="flex items-center gap-2">
+                            {trendKey === 'custom' && (
+                                <span className="flex items-center gap-1">
+                                    <input type="date" value={trendCustom.from} onChange={e => setTrendCustom(c => ({ ...c, from: e.target.value }))}
+                                        className="border border-border rounded-lg px-2 py-1 text-[11px] bg-surface" />
+                                    <span className="text-text-tertiary text-[11px]">–</span>
+                                    <input type="date" value={trendCustom.to} onChange={e => setTrendCustom(c => ({ ...c, to: e.target.value }))}
+                                        className="border border-border rounded-lg px-2 py-1 text-[11px] bg-surface" />
+                                </span>
+                            )}
+                            <MiniSelect
+                                label={{ '15d': 'Last 15 days', '3m': 'Last 3 mo', '6m': 'Last 6 mo', '12m': 'Last 12 mo', custom: 'Custom' }[trendKey]}
+                                options={['Last 15 days', 'Last 3 mo', 'Last 6 mo', 'Last 12 mo', 'Custom']}
+                                onSelect={v => setTrendKey(v === 'Last 15 days' ? '15d' : v === 'Last 3 mo' ? '3m' : v === 'Last 6 mo' ? '6m' : v === 'Custom' ? 'custom' : '12m')}
+                            />
+                        </div>
+                    }
+                >
                     {trend.length === 0 ? <Empty msg="No lead history" /> : (
                         <div className="px-5 py-3">
                             <div className="flex items-baseline gap-2 mb-2">
                                 <span className="text-2xl font-black text-text-primary">{compactNum(trendTotal)}</span>
-                                <span className="text-[11px] text-text-tertiary font-medium">leads · last 12 months</span>
+                                <span className="text-[11px] text-text-tertiary font-medium">leads · {{ '15d': 'last 15 days', '3m': 'last 3 months', '6m': 'last 6 months', '12m': 'last 12 months', custom: 'custom range' }[trendKey]}</span>
                             </div>
                             <ResponsiveContainer width="100%" height={150}>
                                 <AreaChart data={trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>

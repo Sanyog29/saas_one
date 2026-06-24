@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const campaignIds = url.searchParams.getAll('campaign_id');
     const propertyIds = url.searchParams.getAll('property_id');
     const userId = url.searchParams.get('user_id');
-    const groupBy = (url.searchParams.get('group_by') || 'month') as 'month' | 'week';
+    const groupBy = (url.searchParams.get('group_by') || 'month') as 'month' | 'week' | 'day';
     const targetWinRate = Math.max(
         0,
         Math.min(100, Number(url.searchParams.get('target_win_rate') || DEFAULT_TARGET_WIN_RATE))
@@ -328,7 +328,7 @@ interface AggInput {
     totalSpend: number;
     fromMs: number;
     toMs: number;
-    groupBy: 'month' | 'week';
+    groupBy: 'month' | 'week' | 'day';
     targetWinRate: number;
     orgId: string;
     staleDays: number;
@@ -739,9 +739,20 @@ function aggregate(input: AggInput) {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildBuckets(fromMs: number, toMs: number, groupBy: 'month' | 'week'): Array<{ key: string; label: string; startMs: number; endMs: number }> {
+function buildBuckets(fromMs: number, toMs: number, groupBy: 'month' | 'week' | 'day'): Array<{ key: string; label: string; startMs: number; endMs: number }> {
     const buckets: Array<{ key: string; label: string; startMs: number; endMs: number }> = [];
-    if (groupBy === 'week') {
+    if (groupBy === 'day') {
+        const start = new Date(fromMs);
+        start.setUTCHours(0, 0, 0, 0);
+        while (start.getTime() <= toMs) {
+            const end = new Date(start);
+            end.setUTCDate(end.getUTCDate() + 1);
+            const key = start.toISOString().slice(0, 10);
+            const label = `${start.getUTCDate()} ${shortMonth(start)}`;
+            buckets.push({ key, label, startMs: start.getTime(), endMs: end.getTime() - 1 });
+            start.setUTCDate(start.getUTCDate() + 1);
+        }
+    } else if (groupBy === 'week') {
         const start = new Date(fromMs);
         start.setUTCHours(0, 0, 0, 0);
         // align to Monday
