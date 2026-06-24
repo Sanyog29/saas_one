@@ -7,7 +7,6 @@ import { createClient } from '@/frontend/utils/supabase/client';
 // Per-user wallpaper for the CRM shell. The URL + opacity live on
 // users.metadata (so they sync across devices, including the mobile app) and
 // are mirrored into localStorage for an instant, flash-free first paint.
-export const WALLPAPER_KEY = 'crm:wallpaper';
 export const WALLPAPER_EVENT = 'crm-wallpaper-changed';
 export const DEFAULT_WALLPAPER_OPACITY = 0.25;
 
@@ -16,44 +15,58 @@ export interface WallpaperState {
     opacity: number;
 }
 
-export function readWallpaper(): WallpaperState {
-    if (typeof window === 'undefined') return { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
+// Storage is namespaced by user id so a wallpaper is strictly personal: on a
+// shared device, signing in as someone else never shows the previous user's
+// background (each id has its own key, and no id => no wallpaper).
+function keyFor(userId: string | null | undefined): string | null {
+    return userId ? `crm:wallpaper:${userId}` : null;
+}
+
+export function readWallpaper(userId: string | null | undefined): WallpaperState {
+    const empty = { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
+    const key = keyFor(userId);
+    if (typeof window === 'undefined' || !key) return empty;
     try {
-        const raw = localStorage.getItem(WALLPAPER_KEY);
-        if (!raw) return { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
+        const raw = localStorage.getItem(key);
+        if (!raw) return empty;
         const parsed = JSON.parse(raw);
         return {
             url: typeof parsed.url === 'string' ? parsed.url : '',
             opacity: typeof parsed.opacity === 'number' ? parsed.opacity : DEFAULT_WALLPAPER_OPACITY,
         };
     } catch {
-        return { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
+        return empty;
     }
 }
 
-export function saveWallpaperLocal(state: WallpaperState) {
-    if (typeof window === 'undefined') return;
+export function saveWallpaperLocal(userId: string | null | undefined, state: WallpaperState) {
+    const key = keyFor(userId);
+    if (typeof window === 'undefined' || !key) return;
     try {
-        localStorage.setItem(WALLPAPER_KEY, JSON.stringify(state));
+        localStorage.setItem(key, JSON.stringify(state));
     } catch {
         /* ignore quota / private-mode errors */
     }
     window.dispatchEvent(new CustomEvent(WALLPAPER_EVENT));
 }
 
-// Subscribe to the current wallpaper. Updates live when the settings panel
-// saves (same tab via custom event) or another tab changes it (storage event).
+// Subscribe to the signed-in user's wallpaper. Updates live when the settings
+// panel saves (same tab via custom event) or another tab changes it (storage
+// event). Returns the standard (empty) background when signed out.
 export function useWallpaper(): WallpaperState {
-    const [wp, setWp] = useState<WallpaperState>(() => readWallpaper());
+    const { user } = useAuth();
+    const userId = user?.id ?? null;
+    const [wp, setWp] = useState<WallpaperState>(() => readWallpaper(userId));
     useEffect(() => {
-        const handler = () => setWp(readWallpaper());
-        window.addEventListener(WALLPAPER_EVENT, handler);
-        window.addEventListener('storage', handler);
+        const sync = () => setWp(readWallpaper(userId));
+        sync(); // re-read immediately when the active user changes
+        window.addEventListener(WALLPAPER_EVENT, sync);
+        window.addEventListener('storage', sync);
         return () => {
-            window.removeEventListener(WALLPAPER_EVENT, handler);
-            window.removeEventListener('storage', handler);
+            window.removeEventListener(WALLPAPER_EVENT, sync);
+            window.removeEventListener('storage', sync);
         };
-    }, []);
+    }, [userId]);
     return wp;
 }
 
@@ -82,9 +95,9 @@ export default function CrmBackground() {
                             ? (meta.crm_background_opacity as number)
                             : DEFAULT_WALLPAPER_OPACITY,
                 };
-                const cur = readWallpaper();
+                const cur = readWallpaper(user.id);
                 if (cur.url !== next.url || cur.opacity !== next.opacity) {
-                    saveWallpaperLocal(next);
+                    saveWallpaperLocal(user.id, next);
                 }
             });
         return () => {

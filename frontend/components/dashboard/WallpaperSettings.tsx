@@ -22,7 +22,7 @@ export default function WallpaperSettings({ showToast }: WallpaperSettingsProps)
     const supabase = createClient();
     const fileRef = useRef<HTMLInputElement>(null);
 
-    const initial = typeof window !== 'undefined' ? readWallpaper() : { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
+    const initial = typeof window !== 'undefined' ? readWallpaper(user?.id) : { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
     const [preview, setPreview] = useState<string>(initial.url);
     const [opacity, setOpacity] = useState<number>(initial.opacity);
     const [file, setFile] = useState<File | null>(null);
@@ -47,7 +47,7 @@ export default function WallpaperSettings({ showToast }: WallpaperSettingsProps)
         const nextMeta = { ...meta, crm_background_url: url, crm_background_opacity: op };
         const { error } = await supabase.from('users').update({ metadata: nextMeta }).eq('id', user.id);
         if (error) throw error;
-        saveWallpaperLocal({ url, opacity: op });
+        saveWallpaperLocal(user.id, { url, opacity: op });
     };
 
     const handleSave = async () => {
