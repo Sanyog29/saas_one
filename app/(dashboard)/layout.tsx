@@ -88,7 +88,7 @@ export default function DashboardLayout({
                     </div>
                 )}
 
-                <main className="flex-1 overflow-y-auto touch-scroll responsive-container py-4 lg:py-6">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden max-w-full min-w-0 touch-scroll responsive-container py-4 lg:py-6">
                     {children}
                 </main>
             </div>

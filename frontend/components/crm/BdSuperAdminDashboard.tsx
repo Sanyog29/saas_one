@@ -302,17 +302,17 @@ export default function BdSuperAdminDashboard() {
     }
 
     return (
-        <div className="space-y-6 -mt-2">
+        <div className="space-y-6 -mt-2 w-full min-w-0">
             {/* Top header strip */}
-            <div className="flex items-center gap-4">
-                <div className="flex-1 max-w-2xl relative">
+            <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1 min-w-0 sm:max-w-2xl relative order-2 sm:order-1 basis-full sm:basis-auto">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
                     <input placeholder="Search leads, companies, campaigns..." className="w-full pl-11 pr-12 py-2.5 bg-surface-elevated border border-border rounded-full text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/20" />
                     <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-text-tertiary bg-surface border border-border rounded px-1.5 py-0.5">⌘K</kbd>
                 </div>
-                <div className="flex items-center gap-3 ml-auto">
+                <div className="flex items-center gap-3 ml-auto order-1 sm:order-2 shrink-0">
                     <Link href={`/${orgId}/crm/ai`} className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-violet-500/10 to-indigo-500/10 border border-violet-300/40 dark:border-violet-700/40 text-violet-700 dark:text-violet-300 hover:from-violet-500/20 hover:to-indigo-500/20 transition-colors">
-                        <Sparkles className="w-4 h-4" /><span className="text-xs font-bold">AI Agent</span>
+                        <Sparkles className="w-4 h-4" /><span className="text-xs font-bold hidden sm:inline">AI Agent</span>
                     </Link>
                     <button className="relative w-9 h-9 rounded-full bg-surface-elevated border border-border flex items-center justify-center hover:bg-muted transition-colors">
                         <Bell className="w-4 h-4 text-text-secondary" />
