@@ -234,7 +234,11 @@ export default function BdSuperAdminDashboard() {
     }, [impactPeriod]);
 
     const team = useMemo(() => {
-        const rp = impactPeriod?.rep_performance || impactYear?.rep_performance || [];
+        // Prefer current period data; fallback to year data if period is empty.
+        // This ensures we show SOMETHING even if the selected period has no leads.
+        const rp = (impactPeriod?.rep_performance && impactPeriod.rep_performance.length > 0)
+            ? impactPeriod.rep_performance
+            : (impactYear?.rep_performance || []);
         const meetingsByName: Record<string, number> = {};
         (stats?.user_performance || []).forEach((u: any) => { meetingsByName[(u.user_name || '').toLowerCase()] = u.meetings || 0; });
         return rp.filter((r: any) => r.name)
