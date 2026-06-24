@@ -8,6 +8,7 @@ import DashboardSidebar, { MobileHeader } from "@/frontend/components/layout/Das
 import Loader from "@/frontend/components/ui/Loader";
 import ModuleSwitch from "@/frontend/components/layout/ModuleSwitch";
 import { isBdSuperAdmin } from "@/frontend/constants/bdSuperAdmins";
+import CrmBackground, { useWallpaper } from "@/frontend/components/ui/CrmBackground";
 
 export default function DashboardLayout({
     children,
@@ -19,6 +20,8 @@ export default function DashboardLayout({
     const params = useParams();
     const pathname = usePathname();
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+    const wallpaper = useWallpaper();
+    const hasWallpaper = !!wallpaper.url;
     useEffect(() => {
         if (!isLoading && !user) {
             router.push('/login');
@@ -69,7 +72,10 @@ export default function DashboardLayout({
         && isBdSuperAdmin(user?.email, membership?.org_role);
 
     return (
-        <div className="flex min-h-screen bg-[#fafbfc]">
+        <div className={`flex min-h-screen ${hasWallpaper ? '' : 'bg-[#fafbfc]'}`}>
+            {/* Per-user CRM wallpaper (renders nothing unless the user set one) */}
+            <CrmBackground />
+
             {/* Mobile Header */}
             <MobileHeader onMenuToggle={() => setIsMobileSidebarOpen(true)} />
 
@@ -80,7 +86,7 @@ export default function DashboardLayout({
             />
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col min-w-0 pt-[56px] lg:pt-0 border-l border-slate-300 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)] bg-background relative z-10">
+            <div className={`flex-1 flex flex-col min-w-0 pt-[56px] lg:pt-0 border-l border-slate-300 shadow-[-4px_0_12px_-4px_rgba(0,0,0,0.05)] relative z-10 ${hasWallpaper ? 'bg-transparent' : 'bg-background'}`}>
                 {/* Context Bar - Hidden on mobile, shown on desktop */}
                 {!hideContextBar && (
                     <div className="hidden lg:block">

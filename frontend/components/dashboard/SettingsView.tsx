@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import imageCompression from 'browser-image-compression';
+import WallpaperSettings from '@/frontend/components/dashboard/WallpaperSettings';
 
 interface RoleInfo {
     role: string;
@@ -642,6 +643,9 @@ export default function SettingsView({ onUpdate }: SettingsViewProps) {
                     </button>
                 </div>
             </form>
+
+            {/* Appearance / personal wallpaper — self-contained, saves independently */}
+            <WallpaperSettings showToast={showToast} />
 
             <AnimatePresence>
                 {toast && (
