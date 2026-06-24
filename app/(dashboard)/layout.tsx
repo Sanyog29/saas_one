@@ -24,7 +24,7 @@ export default function DashboardLayout({
     const isDark = useIsDark();
     // Wallpaper + chameleon theming are gated to CRM routes for now (test here,
     // then go global). Non-CRM modules keep the standard chrome.
-    const isCrmRoute = pathname?.includes('/crm') ?? false;
+    const isCrmRoute = pathname?.split('/').includes('crm') ?? false;
     const wallpaperActive = !!wallpaper.url && isCrmRoute;
     // Chameleon theme: shift sidebar, cards, buttons + text toward the accent.
     const tintStyle = wallpaperActive ? crmThemeVars(wallpaper.accent, isDark) : undefined;

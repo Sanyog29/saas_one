@@ -41,9 +41,13 @@ export function mixHex(baseHex: string, accentHex: string, t: number): string {
 // ── Chameleon theme spec ──────────────────────────────────────────────────────
 // Numbers from a full-hue-sweep, WCAG-verified design pass. Primary L=0.381 is
 // the most-immersive lightness whose worst hue (yellow, H=60) still keeps
-// white-on-primary >= 3:1 — used in BOTH light and dark so white-text buttons
-// stay legible everywhere (a deliberate, button-safe deviation from a lighter
-// dark primary). Text is tinted only slightly so body copy stays near-neutral.
+// white-on-primary >= 3:1. Text is tinted only slightly so body copy stays
+// near-neutral and readable (>=13:1 on the tinted surface).
+//
+// LIGHT MODE ONLY for now: dark mode has a different text-alpha ramp and needs
+// a lighter accent to stay legible on dark surfaces, so applying these (light)
+// values there would regress dark text/buttons. Dark mode keeps its standard,
+// already-tuned palette until that's handled — revisit before the global rollout.
 const PRIMARY_S = 0.58;
 const PRIMARY_L = 0.381;
 const PRIMARY_LIGHT_DL = 0.12;
@@ -64,6 +68,9 @@ function hslHex(h: number, s: number, l: number): string {
 // cards), the brand primary family (buttons, links, icons, active states) and
 // the text hierarchy. Applied on the CRM shell root only, so it's route-scoped.
 export function crmThemeVars(accent: string, isDark: boolean): CSSProperties | undefined {
+    // Light mode only for now (see spec note above): dark mode keeps its tuned palette.
+    if (isDark) return undefined;
+
     const accentRgb = hexToRgb(accent);
     if (!accent || !accentRgb) return undefined;
     const [h] = rgbToHsl(accentRgb[0], accentRgb[1], accentRgb[2]);
@@ -74,12 +81,12 @@ export function crmThemeVars(accent: string, isDark: boolean): CSSProperties | u
     const primaryDark = hslHex(h, PRIMARY_S, PRIMARY_L + PRIMARY_DARK_DL);
     const pRgb = hexToRgb(primary)!;
 
-    // Surfaces: 8% toward accent over the active theme's real surface color.
-    const surfBase = isDark ? '#121a1d' : '#ffffff';
-    const surfElev = isDark ? '#1c2629' : '#f8fafc';
+    // Surfaces: 8% toward accent over white/elevated-white.
+    const surfBase = '#ffffff';
+    const surfElev = '#f8fafc';
 
     // Text: tint the base color only; preserve the existing alpha ramp.
-    const textBase: [number, number, number] = isDark ? [230, 235, 238] : [26, 35, 50];
+    const textBase: [number, number, number] = [26, 35, 50];
     const tintText = (strength: number): [number, number, number] => [
         Math.round(textBase[0] + (accentRgb[0] - textBase[0]) * strength),
         Math.round(textBase[1] + (accentRgb[1] - textBase[1]) * strength),
