@@ -188,46 +188,43 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
 
                     {/* BD Super Admin (CEO) — grouped Overview / Tools sections */}
                     {isBdSuperAdmin && (
-                        <CapabilityWrapper domain="crm" action="view">
-                            <div className="space-y-5">
-                                {BD_SUPER_NAV_SECTIONS.map((section) => (
-                                    <div key={section.title}>
-                                        <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body uppercase">
-                                            {section.title}
-                                        </p>
-                                        <div className="space-y-1">
-                                            {section.items.map((item) => {
-                                                const isActive = item.href.endsWith('/crm')
-                                                    ? pathname === item.href
-                                                    : pathname?.startsWith(item.href);
-                                                return (
-                                                    <Link
-                                                        key={item.href}
-                                                        href={item.href}
-                                                        onClick={handleLinkClick}
-                                                        className={`
-                                                            flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
-                                                            ${isActive
-                                                                ? 'bg-primary text-text-inverse shadow-sm'
-                                                                : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
-                                                            }
-                                                        `}
-                                                    >
-                                                        <item.icon className="w-5 h-5 transition-smooth group-hover:scale-105 shrink-0" />
-                                                        <span className="font-body font-medium text-sm">{item.label}</span>
-                                                    </Link>
-                                                );
-                                            })}
-                                        </div>
+                        <div className="space-y-5">
+                            {BD_SUPER_NAV_SECTIONS.map((section) => (
+                                <div key={section.title}>
+                                    <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body uppercase">
+                                        {section.title}
+                                    </p>
+                                    <div className="space-y-1">
+                                        {section.items.map((item) => {
+                                            const isActive = item.href.endsWith('/crm')
+                                                ? pathname === item.href
+                                                : pathname?.startsWith(item.href);
+                                            return (
+                                                <Link
+                                                    key={item.href}
+                                                    href={item.href}
+                                                    onClick={handleLinkClick}
+                                                    className={`
+                                                        flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
+                                                        ${isActive
+                                                            ? 'bg-primary text-text-inverse shadow-sm'
+                                                            : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                                                        }
+                                                    `}
+                                                >
+                                                    <item.icon className="w-5 h-5 transition-smooth group-hover:scale-105 shrink-0" />
+                                                    <span className="font-body font-medium text-sm">{item.label}</span>
+                                                </Link>
+                                            );
+                                        })}
                                     </div>
-                                ))}
-                            </div>
-                        </CapabilityWrapper>
+                                </div>
+                            ))}
+                        </div>
                     )}
 
                     {/* CRM Section (standard rep/admin) */}
                     {!isBdSuperAdmin && (
-                    <CapabilityWrapper domain="crm" action="view">
                         <div className={isBDRole ? '' : 'pt-4 mt-4 border-t border-border'}>
                             <p className="px-3 text-[10px] font-medium text-text-tertiary tracking-wider mb-3 font-body">
                                 CRM
@@ -237,25 +234,24 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                                     ? pathname === item.href
                                     : pathname?.startsWith(item.href);
                                 return (
-                                <Link
-                                    key={item.href}
-                                    href={item.href}
-                                    onClick={handleLinkClick}
-                                    className={`
-                                        flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
-                                        ${isActive
-                                            ? 'bg-primary text-text-inverse shadow-sm'
-                                            : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
-                                        }
-                                    `}
-                                >
-                                    <item.icon className={`w-5 h-5 transition-smooth group-hover:scale-105 shrink-0`} />
-                                    <span className="font-body font-medium text-sm">{item.label}</span>
-                                </Link>
+                                    <Link
+                                        key={item.href}
+                                        href={item.href}
+                                        onClick={handleLinkClick}
+                                        className={`
+                                            flex items-center gap-3 px-3 py-3 lg:py-2.5 rounded-[var(--radius-md)] transition-smooth group
+                                            ${isActive
+                                                ? 'bg-primary text-text-inverse shadow-sm'
+                                                : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary'
+                                            }
+                                        `}
+                                    >
+                                        <item.icon className={`w-5 h-5 transition-smooth group-hover:scale-105 shrink-0`} />
+                                        <span className="font-body font-medium text-sm">{item.label}</span>
+                                    </Link>
                                 );
                             })}
                         </div>
-                    </CapabilityWrapper>
                     )}
                 </nav>
 
