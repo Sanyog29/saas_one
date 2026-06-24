@@ -12,15 +12,27 @@ import {
 } from '@/frontend/components/ui/CrmBackground';
 
 interface WallpaperSettingsProps {
-    showToast: (message: string, type?: 'success' | 'error') => void;
+    // Optional: when embedded in a page that already has a toast, reuse it.
+    // Otherwise the component shows its own lightweight toast.
+    showToast?: (message: string, type?: 'success' | 'error') => void;
 }
 
 const ACCEPTED = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
-export default function WallpaperSettings({ showToast }: WallpaperSettingsProps) {
+export default function WallpaperSettings({ showToast: externalToast }: WallpaperSettingsProps) {
     const { user } = useAuth();
     const supabase = createClient();
     const fileRef = useRef<HTMLInputElement>(null);
+
+    const [localToast, setLocalToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+    const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+        if (externalToast) {
+            externalToast(message, type);
+        } else {
+            setLocalToast({ message, type });
+            setTimeout(() => setLocalToast(null), 3000);
+        }
+    };
 
     const initial = typeof window !== 'undefined' ? readWallpaper(user?.id) : { url: '', opacity: DEFAULT_WALLPAPER_OPACITY };
     const [preview, setPreview] = useState<string>(initial.url);
@@ -179,6 +191,17 @@ export default function WallpaperSettings({ showToast }: WallpaperSettingsProps)
                     </div>
                 </div>
             </div>
+
+            {/* Internal toast (only used when no external toast was provided) */}
+            {localToast && (
+                <div
+                    className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] px-4 py-2.5 rounded-xl text-sm font-semibold text-white shadow-lg ${
+                        localToast.type === 'error' ? 'bg-rose-600' : 'bg-emerald-600'
+                    }`}
+                >
+                    {localToast.message}
+                </div>
+            )}
         </section>
     );
 }
