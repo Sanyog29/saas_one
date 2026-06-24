@@ -17,9 +17,11 @@ const BASE_FIELDS = [
     'location', 'city', 'requirement', 'property_interest', 'lead_source',
     'status', 'priority', 'next_followup_date', 'followup_notes', 'remarks',
     'lost_reason', 'lost_reason_notes', 'seats', 'move_in_timeline',
+    // Reassignment is allowed for reps AND admins (validated against org members below).
+    'assigned_to',
 ];
-// Fields restricted to admins (reassignment / archival / commercial value).
-const ADMIN_FIELDS = ['assigned_to', 'is_archived', 'deal_value'];
+// Fields restricted to admins (archival / commercial value).
+const ADMIN_FIELDS = ['is_archived', 'deal_value'];
 
 async function loadLead(id: string) {
     const { data } = await supabaseAdmin
@@ -65,6 +67,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const updateData: Record<string, any> = {};
     for (const f of BASE_FIELDS) if (body[f] !== undefined) updateData[f] = body[f];
+
+    // Validate reassignment target: must be an active BD member of this org (or null).
+    if (body.assigned_to !== undefined && body.assigned_to !== null) {
+        const [{ data: om }, { data: pm }] = await Promise.all([
+            supabaseAdmin.from('organization_memberships').select('user_id')
+                .eq('organization_id', lead0.organization_id).eq('user_id', body.assigned_to).eq('is_active', true).maybeSingle(),
+            supabaseAdmin.from('property_memberships').select('user_id')
+                .eq('organization_id', lead0.organization_id).eq('user_id', body.assigned_to).eq('is_active', true).maybeSingle(),
+        ]);
+        if (!om && !pm) {
+            return NextResponse.json({ error: 'Cannot assign to a user outside this organization' }, { status: 400 });
+        }
+    }
 
     // Restricted fields only for admins. Reps attempting them are rejected (not silently dropped).
     const attemptedAdmin = ADMIN_FIELDS.filter((f) => body[f] !== undefined);
