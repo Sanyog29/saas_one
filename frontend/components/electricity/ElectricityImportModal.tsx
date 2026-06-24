@@ -24,6 +24,7 @@ interface ElectricityImportModalProps {
     onClose: () => void;
     propertyId: string;
     meters: ElectricityMeter[];
+    meterLayoutMap?: Record<string, { sheetName: string, locationName: string }>;
     onSuccess: (count: number) => void;
 }
 
@@ -105,7 +106,7 @@ function downloadTemplate() {
 }
 
 const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
-    isOpen, onClose, propertyId, meters, onSuccess
+    isOpen, onClose, propertyId, meters, meterLayoutMap = {}, onSuccess
 }) => {
     const [selectedMeterId, setSelectedMeterId] = useState('');
     const [meterConstant, setMeterConstant] = useState(1.0);
@@ -226,11 +227,14 @@ const ElectricityImportModal: React.FC<ElectricityImportModalProps> = ({
                             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500 bg-white"
                         >
                             <option value="">— Select a meter —</option>
-                            {meters.map(m => (
+                            {meters.map(m => {
+                                const layout = meterLayoutMap[m.id];
+                                const prefix = layout ? `${layout.sheetName} > ${layout.locationName} > ` : '';
+                                return (
                                 <option key={m.id} value={m.id}>
-                                    {m.name}{m.meter_number ? ` (${m.meter_number})` : ''}{m.meter_type ? ` · ${m.meter_type}` : ''}
+                                    {prefix}{m.name}{m.meter_number ? ` (${m.meter_number})` : ''}{m.meter_type ? ` · ${m.meter_type}` : ''}
                                 </option>
-                            ))}
+                            )})}
                         </select>
                     </div>
 

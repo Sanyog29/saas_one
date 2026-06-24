@@ -64,6 +64,8 @@ interface ElectricityLoggerCardProps {
         closing_reading: number;
         photo_url?: string;
     };
+    sheetName?: string;
+    locationName?: string;
 }
 
 /**
@@ -84,7 +86,9 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
     onDelete,
     isSubmitting = false,
     isDark = false,
-    retakeTask
+    retakeTask,
+    sheetName,
+    locationName
 }) => {
     const [openingReading, setOpeningReading] = useState<number>(retakeTask ? retakeTask.opening_reading : (previousClosing || meter.last_reading || 0));
     const [closingReading, setClosingReading] = useState<string>('');
@@ -391,7 +395,7 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                             <div className="min-w-0">
                                 <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-slate-900'} leading-tight truncate`}>{meter.name}</h2>
                                 <p className={`text-sm font-medium ${isDark ? 'text-slate-500' : 'text-slate-400'} truncate`}>
-                                    {meter.meter_type === 'main' ? 'Main Grid' : meter.meter_type || 'Meter'} · {meter.meter_number || 'No #'}
+                                    {locationName && sheetName ? `${locationName} · ${sheetName}` : (meter.meter_type === 'main' ? 'Main Grid' : meter.meter_type || 'Meter') + ' · ' + (meter.meter_number || 'No #')}
                                 </p>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">

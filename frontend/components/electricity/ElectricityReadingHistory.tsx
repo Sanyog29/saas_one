@@ -18,6 +18,7 @@ interface ReadingLog {
     closing_reading: number;
     computed_units: number;
     final_units?: number;
+    multiplier_value_used?: number;
     ocr_status?: string;
     meter: {
         id: string;
@@ -194,7 +195,7 @@ const ElectricityReadingHistory: React.FC<ElectricityReadingHistoryProps> = ({
                 let query = supabase
                     .from('electricity_readings')
                     .select(`
-                        id, reading_date, opening_reading, closing_reading, computed_units, final_units, notes, computed_cost, created_at, ocr_status,
+                        id, reading_date, opening_reading, closing_reading, computed_units, final_units, multiplier_value_used, notes, computed_cost, created_at, ocr_status,
                         meter:electricity_meters(id, name, meter_number),
                         creator:users!created_by(full_name)
                     `)
@@ -493,9 +494,11 @@ const ElectricityReadingHistory: React.FC<ElectricityReadingHistoryProps> = ({
                                                 {log.computed_units.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })}
                                             </td>
                                             <td className="px-6 py-4 text-right font-mono text-xs opacity-50">
-                                                {log.final_units && log.computed_units > 0
-                                                    ? (log.final_units / log.computed_units).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })
-                                                    : '1.0'}
+                                                {log.multiplier_value_used !== undefined && log.multiplier_value_used !== null 
+                                                    ? log.multiplier_value_used.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })
+                                                    : (log.final_units && log.computed_units > 0
+                                                        ? (log.final_units / log.computed_units).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 3 })
+                                                        : '1.0')}
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <span className={`inline-flex items-center px-3 py-1 rounded-lg text-xs font-black ${((log.final_units ?? log.computed_units ?? 0)) > 0
