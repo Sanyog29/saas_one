@@ -340,15 +340,8 @@ export function MobileHeader({ onMenuToggle }: { onMenuToggle: () => void }) {
                 <Menu className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                    <svg viewBox="0 0 32 40" fill="currentColor" className="h-4 text-white">
-                        <path d="M0 40 L16 0 L32 40 L24 40 L16 16 L8 40 Z" />
-                    </svg>
-                </div>
-                <span className="font-display font-semibold text-sm text-text-primary">
-                    Autopilot
-                </span>
+            <div className="flex items-center">
+                <img src="/autopilot-logo-new.png" alt="Autopilot" className="h-7 w-auto object-contain" />
             </div>
 
             <div className="w-11" /> {/* Spacer for centering */}

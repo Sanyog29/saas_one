@@ -194,9 +194,14 @@ export default function BdSuperAdminDashboard() {
             setChannelMix(Array.isArray(perf?.by_channel) ? perf.by_channel : []);
             setEvents(Array.isArray(ev?.events) ? ev.events : []);
             setAccounts(Array.isArray(ac?.accounts) ? ac.accounts : []);
-            // Real city list from territory performance.
-            const tp = s?.territory_performance || [];
-            if (tp.length) setCities(['All Cities', ...tp.map((t: any) => t.city).filter(Boolean)]);
+            // Real city list from territory performance — only rebuild from the
+            // UNFILTERED ("All Cities") dataset. When a specific city is selected the
+            // stats are filtered to that one city, so territory_performance would
+            // otherwise collapse the dropdown to just that city + All Cities.
+            if (city === 'All Cities') {
+                const tp = s?.territory_performance || [];
+                if (tp.length) setCities(['All Cities', ...Array.from(new Set<string>(tp.map((t: any) => t.city).filter(Boolean)))]);
+            }
             setLoading(false);
         });
         return () => { active = false; };
@@ -255,6 +260,20 @@ export default function BdSuperAdminDashboard() {
             .slice(0, 7)
             .map((c: any) => ({ name: c.name, spend: c.spend || 0, leads: c.leads || 0, cpl: c.cpl || (c.leads ? (c.spend || 0) / c.leads : 0) }));
     }, [impactPeriod]);
+
+    // Color-grade CPL relative to the displayed rows' median, so "good/bad" is
+    // judged against this dataset rather than a hardcoded INR threshold.
+    const cplTone = useMemo(() => {
+        const vals = campaignSpend.filter((c: any) => c.leads).map((c: any) => c.cpl).sort((a: number, b: number) => a - b);
+        const median = vals.length ? vals[Math.floor(vals.length / 2)] : 0;
+        return (v: number) => {
+            if (!median) return 'text-text-primary';
+            if (v <= median * 0.75) return 'text-emerald-600';  // efficient — good
+            if (v >= median * 1.5) return 'text-rose-500';      // expensive — bad
+            if (v >= median * 1.15) return 'text-amber-600';    // slightly high — watch
+            return 'text-text-primary';                          // around median
+        };
+    }, [campaignSpend]);
 
     const team = useMemo(() => {
         // Prefer current period data; fallback to year data if period is empty.
@@ -485,7 +504,7 @@ export default function BdSuperAdminDashboard() {
                     <KpiCard key="pipe" icon={TrendingUp} tint="emerald" label="Pipeline Generated" value={inrCompact(kpis.pipeline_generated)} delta={kpis.pipeline_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />,
                     <KpiCard key="sql" icon={Target} tint="pink" label="SQLs" value={compactNum(kpis.sqls)} delta={null} sub="warm + MQL" href={`/${orgId}/crm/leads`} />,
                 ].map((card, i) => (
-                    reduceMotion ? card : <motion.div key={i} variants={KPI_ITEM_VARIANTS}>{card}</motion.div>
+                    reduceMotion ? card : <motion.div key={i} variants={KPI_ITEM_VARIANTS} className="h-full">{card}</motion.div>
                 ))}
             </motion.div>
 
@@ -647,9 +666,9 @@ export default function BdSuperAdminDashboard() {
                                     {campaignSpend.map((c: any) => (
                                         <tr key={c.name}>
                                             <td className="py-2 px-2 font-bold text-text-primary truncate max-w-[150px]">{c.name}</td>
-                                            <td className="py-2 px-2 text-right text-text-secondary">{inrCompact(c.spend)}</td>
-                                            <td className="py-2 px-2 text-right text-text-secondary">{c.leads}</td>
-                                            <td className="py-2 px-2 text-right text-text-secondary">{c.leads ? inrCompact(c.cpl) : '—'}</td>
+                                            <td className="py-2 px-2 text-right font-bold tabular-nums text-text-primary">{inrCompact(c.spend)}</td>
+                                            <td className="py-2 px-2 text-right font-bold tabular-nums text-primary">{c.leads}</td>
+                                            <td className={`py-2 px-2 text-right font-bold tabular-nums ${c.leads ? cplTone(c.cpl) : 'text-text-tertiary'}`}>{c.leads ? inrCompact(c.cpl) : '—'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -680,10 +699,10 @@ export default function BdSuperAdminDashboard() {
                                                     <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-black text-primary flex-shrink-0">{(t.name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>
                                                     <span className="font-bold text-text-primary whitespace-nowrap">{t.name}</span>
                                                 </div></td>
-                                                <td className="py-2 px-1 text-right text-text-secondary whitespace-nowrap font-bold text-primary">{t.leads}</td>
-                                                <td className="py-2 px-1 text-right text-text-secondary">{t.meetings}</td>
-                                                <td className="py-2 px-1 text-right text-text-secondary">{t.sqls}</td>
-                                                <td className="py-2 px-1 text-right font-bold text-emerald-600">{t.winRate}%</td>
+                                                <td className="py-2 px-1 text-right whitespace-nowrap font-bold tabular-nums text-primary">{t.leads}</td>
+                                                <td className="py-2 px-1 text-right font-bold tabular-nums text-text-primary">{t.meetings}</td>
+                                                <td className="py-2 px-1 text-right font-bold tabular-nums text-violet-600">{t.sqls}</td>
+                                                <td className="py-2 px-1 text-right font-bold tabular-nums text-emerald-600">{t.winRate}%</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -789,10 +808,10 @@ function KpiCard({ icon: Icon, tint, label, value, delta, deltaLabel, sub, href 
             ) : sub ? <p className="text-[10px] text-text-tertiary mt-1.5">{sub}</p> : <p className="text-[10px] text-text-tertiary mt-1.5 opacity-0">·</p>}
         </>
     );
-    const cls = `crm-card bg-surface rounded-2xl border border-border p-4 ${href ? 'hover:border-primary cursor-pointer' : ''}`;
+    const cls = `crm-card bg-surface rounded-2xl border border-border p-4 h-full ${href ? 'hover:border-primary cursor-pointer' : ''}`;
     if (!href) return <div className={cls}>{inner}</div>;
     return (
-        <motion.div whileTap={reduce ? undefined : { scale: 0.97 }}>
+        <motion.div whileTap={reduce ? undefined : { scale: 0.97 }} className="h-full">
             <Link href={href} className={`${cls} block`}>{inner}</Link>
         </motion.div>
     );
