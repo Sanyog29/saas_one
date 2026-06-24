@@ -37,7 +37,7 @@ function inrCompact(n: number | null | undefined): string {
 
 const compactNum = (n: number | null | undefined) => (n == null || isNaN(n)) ? '0' : n.toLocaleString('en-IN');
 const pct = (c?: number, p?: number) => (c != null && p != null && p > 0) ? Math.round(((c - p) / p) * 100) : null;
-const fmtDate = (d: Date) => d.toISOString().split('T')[0];
+const fmtDate = (d: Date) => (isNaN(d.getTime()) ? new Date() : d).toISOString().split('T')[0];
 
 function periodRange(period: Period): { from: string; to: string } {
     const now = new Date();
@@ -400,7 +400,7 @@ export default function BdSuperAdminDashboard() {
                                     return `${Math.floor(h / 24)}d ago`;
                                 })();
                                 return (
-                                    <div key={l.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-surface-elevated transition-colors">
+                                    <Link key={l.id} href={`/${orgId}/crm/leads?lead=${l.id}`} className="px-4 py-2.5 flex items-center gap-3 hover:bg-surface-elevated transition-colors">
                                         <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary flex-shrink-0">
                                             {(l.name || '?').charAt(0).toUpperCase()}
                                         </div>
@@ -411,14 +411,14 @@ export default function BdSuperAdminDashboard() {
                                             </p>
                                         </div>
                                         <span className="text-[10px] text-text-tertiary whitespace-nowrap">{ago}</span>
-                                    </div>
+                                    </Link>
                                 );
                             })}
                         </div>
                     )}
                 </Panel>
 
-                <Panel title="Leads Received Trend" right={<MiniSelect label={`Last ${trendMonths} mo`} options={['Last 3 mo', 'Last 6 mo', 'Last 12 mo']} onSelect={v => setTrendMonths(parseInt(v))} />}>
+                <Panel title="Leads Received Trend" right={<MiniSelect label={`Last ${trendMonths} mo`} options={['Last 3 mo', 'Last 6 mo', 'Last 12 mo']} onSelect={v => setTrendMonths(parseInt((v.match(/\d+/) || ['12'])[0]) || 12)} />}>
                     {trend.length === 0 ? <Empty msg="No lead history" /> : (
                         <div className="px-5 py-3">
                             <div className="flex items-baseline gap-2 mb-2">
