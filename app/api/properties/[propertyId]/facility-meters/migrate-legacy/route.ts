@@ -52,6 +52,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
             const { data: newMeter, error: newMeterErr } = await supabase
                 .from('facility_meters')
                 .insert({
+                    id: lm.id, // CRITICAL FIX: Ensure identical ID
                     group_id: group.id,
                     name: lm.name,
                     meter_constant: constant

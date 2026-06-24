@@ -20,6 +20,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         // we will do it sequentially. If it fails midway, some data might be orphaned, but we can clean it up.
         // Or we use an RPC, but doing it in Node is fine for bootstrapping.
 
+        const { data: assignedMeters } = await supabase.from('facility_meters').select('id');
+        const assignedMeterIds = new Set(assignedMeters?.map(m => m.id) || []);
+
         let totalMetersCreated = 0;
 
         for (let i = 0; i < hierarchy.length; i++) {
@@ -64,10 +67,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
                         .select('id')
                         .eq('property_id', propertyId)
                         .ilike('name', meter.name) // Case-insensitive match
-                        .order('created_at', { ascending: true }) // Get the oldest original one
-                        .limit(1);
+                        .order('created_at', { ascending: true }); // Get the oldest original one
                         
-                    let legacyMeter = legacyMeters && legacyMeters.length > 0 ? legacyMeters[0] : null;
+                    let legacyMeter = null;
+                    if (legacyMeters && legacyMeters.length > 0) {
+                        legacyMeter = legacyMeters.find(m => !assignedMeterIds.has(m.id)) || null;
+                    }
 
                     // If it doesn't exist, create it
                     if (!legacyMeter) {
@@ -98,6 +103,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
                             });
                             
                         if (multErr) throw multErr;
+                        assignedMeterIds.add(legacyMeter.id);
+                    } else {
+                        assignedMeterIds.add(legacyMeter.id);
                     }
 
                     // 3. Write to the new facility_meters using EXACT SAME ID (UPSERT for idempotency)

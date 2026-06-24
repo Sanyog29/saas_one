@@ -71,8 +71,38 @@ export async function PUT(request: Request, { params }: { params: Promise<{ prop
         if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         
         const body = await request.json();
-        const { meterId, meterConstant } = body;
+        const { action, targetId, newName, meterId, meterConstant } = body;
         
+        // Handle Renaming
+        if (action === 'rename_sheet') {
+            if (!targetId || !newName) return NextResponse.json({ error: 'Missing targetId or newName' }, { status: 400 });
+            const { error } = await supabase.from('facility_meter_categories').update({ name: newName }).eq('id', targetId);
+            if (error) throw error;
+            return NextResponse.json({ success: true });
+        }
+
+        if (action === 'rename_group') {
+            if (!targetId || !newName) return NextResponse.json({ error: 'Missing targetId or newName' }, { status: 400 });
+            const { error } = await supabase.from('facility_meter_groups').update({ name: newName }).eq('id', targetId);
+            if (error) throw error;
+            return NextResponse.json({ success: true });
+        }
+
+        if (action === 'rename_meter') {
+            if (!targetId || !newName) return NextResponse.json({ error: 'Missing targetId or newName' }, { status: 400 });
+            
+            // Update Spreadsheet UI name
+            const { error: fmError } = await supabase.from('facility_meters').update({ name: newName }).eq('id', targetId);
+            if (fmError) throw fmError;
+            
+            // Dual-Write: Update core Cards UI name
+            const { error: emError } = await supabase.from('electricity_meters').update({ name: newName }).eq('id', targetId);
+            if (emError) console.warn("Could not update core electricity meter name:", emError); // Warn but don't fail
+
+            return NextResponse.json({ success: true });
+        }
+
+        // Handle Meter Constant Update (Legacy default behavior)
         if (!meterId || meterConstant === undefined) {
             return NextResponse.json({ error: 'Missing meterId or meterConstant' }, { status: 400 });
         }
@@ -127,16 +157,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
             return NextResponse.json({ error: 'Missing groupId or meterName' }, { status: 400 });
         }
 
+        const { data: assignedMeters } = await supabase.from('facility_meters').select('id');
+        const assignedMeterIds = new Set(assignedMeters?.map(m => m.id) || []);
+
         // 1. Dual Write: Check if legacy electricity_meter already exists
         let { data: legacyMeters } = await supabase
             .from('electricity_meters')
             .select('id')
             .eq('property_id', propertyId)
             .ilike('name', meterName) // Case-insensitive match
-            .order('created_at', { ascending: true })
-            .limit(1);
+            .order('created_at', { ascending: true });
 
-        let legacyMeter = legacyMeters && legacyMeters.length > 0 ? legacyMeters[0] : null;
+        let legacyMeter = null;
+        if (legacyMeters && legacyMeters.length > 0) {
+            legacyMeter = legacyMeters.find(m => !assignedMeterIds.has(m.id)) || null;
+        }
 
         if (!legacyMeter) {
             const { data: newLegacy, error: legacyError } = await supabase

@@ -41,7 +41,8 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
     });
     
     const [categories, setCategories] = useState<Category[]>([]);
-    const [activeTabId, setActiveTabId] = useState<string>('');
+    const [activeTabId, setActiveTabId] = useState<string | null>(null);
+    const [editingEntity, setEditingEntity] = useState<{ id: string, type: 'sheet' | 'group' | 'meter', currentName: string } | null>(null);
     const [readings, setReadings] = useState<Record<string, Record<string, Reading>>>({}); // { '2026-06-01': { 'meter-1': Reading } }
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -167,6 +168,16 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                 });
                 
                 setReadings(newReadings);
+                
+                // Auto-scroll to today
+                setTimeout(() => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const todayRow = document.getElementById(`row-${todayStr}`);
+                    if (todayRow) {
+                        todayRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 300);
+
             } catch (error) {
                 console.error("Error fetching readings", error);
             } finally {
@@ -432,6 +443,38 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
         }
     };
 
+    const handleRenameSubmit = async (newName: string) => {
+        if (!editingEntity || !newName.trim() || newName.trim() === editingEntity.currentName) {
+            setEditingEntity(null);
+            return;
+        }
+
+        const actionMap = {
+            'sheet': 'rename_sheet',
+            'group': 'rename_group',
+            'meter': 'rename_meter'
+        };
+
+        try {
+            const res = await fetch(`/api/properties/${propertyId}/facility-meters`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: actionMap[editingEntity.type],
+                    targetId: editingEntity.id,
+                    newName: newName.trim()
+                })
+            });
+            
+            if (!res.ok) throw new Error("Rename failed");
+            await fetchConfig();
+        } catch (error: any) {
+            alert("Error renaming.");
+        } finally {
+            setEditingEntity(null);
+        }
+    };
+
     if (isLoading && categories.length === 0) {
         return <div className="p-12 text-center">Loading Spreadsheet...</div>;
     }
@@ -463,7 +506,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
     }
 
     return (
-        <div className={`flex flex-col h-[calc(100vh-120px)] rounded-2xl overflow-hidden border ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`flex flex-col h-[calc(100vh-190px)] min-h-[400px] rounded-2xl overflow-hidden border ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-slate-50 border-slate-200'}`}>
             
             {/* Unified Custom Modal */}
             {modalConfig?.isOpen && (
@@ -570,8 +613,24 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                             </th>
                             {activeCategory?.groups.map(grp => (
                                 <th key={grp.id} colSpan={Math.max(grp.meters.length * 3, 3)} className={`border-r border-b p-2 text-center text-sm font-black tracking-wider ${isDark ? 'bg-[#161b22] border-[#30363d] text-white' : 'bg-slate-100/50 border-slate-200 text-black'}`}>
-                                    <div className="flex items-center justify-center gap-2 uppercase">
-                                        {grp.name}
+                                    <div className="flex items-center justify-center gap-2 uppercase group/grp relative">
+                                        {editingEntity?.id === grp.id ? (
+                                            <input 
+                                                autoFocus
+                                                defaultValue={grp.name}
+                                                onBlur={(e) => handleRenameSubmit(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleRenameSubmit(e.currentTarget.value)}
+                                                className={`text-center bg-transparent border-b outline-none ${isDark ? 'border-emerald-500/50 text-white' : 'border-emerald-500 text-black'}`}
+                                            />
+                                        ) : (
+                                            <span 
+                                                onDoubleClick={() => setEditingEntity({ id: grp.id, type: 'group', currentName: grp.name })}
+                                                className="cursor-text"
+                                                title="Double-click to rename"
+                                            >
+                                                {grp.name}
+                                            </span>
+                                        )}
                                         <button 
                                             onClick={() => handleAddMeter(grp.id, grp.name)} 
                                             className={`p-1 rounded-md border shadow-sm transition-colors flex items-center justify-center ${isDark ? 'bg-[#21262d] border-slate-700 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50' : 'bg-white border-slate-200 text-emerald-600 hover:bg-emerald-50 hover:border-emerald-300'}`}
@@ -596,9 +655,25 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                             {activeCategory?.groups.map(grp => (
                                 grp.meters.map(meter => (
                                     <th key={meter.id} colSpan={3} className={`border-r border-b p-1 text-center font-bold bg-blue-500/5 border-blue-500/20 whitespace-nowrap`}>
-                                        <div className="flex flex-col items-center">
+                                        <div className="flex flex-col items-center group/meter">
                                             <div className="flex items-center gap-1.5">
-                                                <span className={`text-[13px] leading-tight font-black ${isDark ? 'text-white' : 'text-black'}`}>{meter.name}</span>
+                                                {editingEntity?.id === meter.id ? (
+                                                    <input 
+                                                        autoFocus
+                                                        defaultValue={meter.name}
+                                                        onBlur={(e) => handleRenameSubmit(e.target.value)}
+                                                        onKeyDown={(e) => e.key === 'Enter' && handleRenameSubmit(e.currentTarget.value)}
+                                                        className={`text-center text-[13px] leading-tight font-black bg-transparent border-b outline-none w-24 ${isDark ? 'border-emerald-500/50 text-white' : 'border-emerald-500 text-black'}`}
+                                                    />
+                                                ) : (
+                                                    <span 
+                                                        onDoubleClick={() => setEditingEntity({ id: meter.id, type: 'meter', currentName: meter.name })}
+                                                        className={`text-[13px] leading-tight font-black cursor-text ${isDark ? 'text-white' : 'text-black'}`}
+                                                        title="Double-click to rename"
+                                                    >
+                                                        {meter.name}
+                                                    </span>
+                                                )}
                                                 <button 
                                                     onClick={() => handleDelete('delete_meter', meter.id, meter.name)}
                                                     className={`p-0.5 rounded border shadow-sm transition-colors opacity-0 group-hover:opacity-100 flex items-center justify-center ${isDark ? 'bg-[#21262d] border-slate-700 text-red-400 hover:bg-red-500/20' : 'bg-white border-slate-200 text-red-500 hover:bg-red-50'}`}
@@ -622,8 +697,8 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                         </tr>
                         {/* Columns Header Row */}
                         <tr>
-                            <th className={`sticky left-0 z-50 border-r border-b p-1 w-10 text-center text-[10px] ${isDark ? 'bg-[#161b22] border-[#30363d]' : 'bg-white border-slate-200'}`}>Date</th>
-                            <th className={`sticky left-[40px] z-50 border-r border-b p-1 w-12 text-center text-[10px] ${isDark ? 'bg-[#161b22] border-[#30363d]' : 'bg-white border-slate-200'}`}>Day</th>
+                            <th className={`sticky left-0 z-50 border-r border-b p-1 w-20 text-center text-[10px] ${isDark ? 'bg-[#161b22] border-[#30363d]' : 'bg-white border-slate-200'}`}>Date</th>
+                            <th className={`sticky left-[80px] z-50 border-r border-b p-1 w-12 text-center text-[10px] ${isDark ? 'bg-[#161b22] border-[#30363d]' : 'bg-white border-slate-200'}`}>Day</th>
                             {activeCategory?.groups.map(grp => (
                                 grp.meters.map(meter => (
                                     <React.Fragment key={meter.id}>
@@ -641,11 +716,11 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                             const rowBg = isWeekend ? (isDark ? 'bg-[#21262d]/50' : 'bg-slate-50') : (isDark ? 'bg-[#0d1117]' : 'bg-white');
                             
                             return (
-                                <tr key={day.dateStr} className={`hover:bg-primary/5 transition-colors ${rowBg}`}>
-                                    <td className={`sticky left-0 z-30 border-r border-b p-1 text-center text-xs font-medium ${isDark ? 'border-[#30363d] bg-inherit' : 'border-slate-200 bg-inherit'}`}>
-                                        {day.dateNum}
+                                <tr key={day.dateStr} id={`row-${day.dateStr}`} className={`hover:bg-primary/5 transition-colors ${rowBg}`}>
+                                    <td className={`sticky left-0 z-30 border-r border-b p-1 text-center text-xs font-medium whitespace-nowrap ${isDark ? 'border-[#30363d] bg-inherit' : 'border-slate-200 bg-inherit'}`}>
+                                        {day.dateStr.split('-').reverse().join('/')}
                                     </td>
-                                    <td className={`sticky left-[40px] z-30 border-r border-b p-1 text-center text-[10px] font-medium text-slate-500 ${isDark ? 'border-[#30363d] bg-inherit' : 'border-slate-200 bg-inherit'}`}>
+                                    <td className={`sticky left-[80px] z-30 border-r border-b p-1 text-center text-[10px] font-medium text-slate-500 ${isDark ? 'border-[#30363d] bg-inherit' : 'border-slate-200 bg-inherit'}`}>
                                         {day.dayName}
                                     </td>
                                     
@@ -682,18 +757,30 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
             </div>
 
             {/* Excel-style Bottom Sheet Tabs */}
-            <div className={`flex items-center border-t px-2 h-10 shrink-0 ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-[#f3f2f1] border-slate-300'}`}>
+            <div className={`sticky bottom-0 z-50 flex items-center border-t px-2 h-10 shrink-0 ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-[#f3f2f1] border-slate-300'}`}>
                 <div className="flex items-center h-full pt-1">
                     {categories.map(cat => (
                         <div key={cat.id} className="relative flex items-center group h-full">
-                            <button
-                                onClick={() => setActiveTabId(cat.id)}
-                                className={`h-full px-5 text-sm transition-all border-x border-t rounded-t-lg -ml-px ${isDark ? 'border-[#30363d]' : 'border-slate-300'} ${activeTabId === cat.id ? `bg-white dark:bg-[#161b22] font-bold text-emerald-600 dark:text-emerald-400 border-b-0 shadow-sm pr-10 relative z-10` : 'text-slate-600 bg-slate-200/50 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-[#161b22] dark:bg-[#12161c] font-medium border-b'}`}
-                                style={{ marginBottom: activeTabId === cat.id ? '-1px' : '0' }}
-                            >
-                                {cat.name}
-                            </button>
-                            {activeTabId === cat.id && (
+                            {editingEntity?.id === cat.id ? (
+                                <input 
+                                    autoFocus
+                                    defaultValue={cat.name}
+                                    onBlur={(e) => handleRenameSubmit(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleRenameSubmit(e.currentTarget.value)}
+                                    className={`h-full px-5 text-sm font-bold border-x border-t rounded-t-lg outline-none ${isDark ? 'bg-[#161b22] border-[#30363d] text-emerald-400' : 'bg-white border-slate-300 text-emerald-600'}`}
+                                />
+                            ) : (
+                                <button
+                                    onClick={() => setActiveTabId(cat.id)}
+                                    onDoubleClick={() => setEditingEntity({ id: cat.id, type: 'sheet', currentName: cat.name })}
+                                    className={`h-full px-5 text-sm transition-all border-x border-t rounded-t-lg -ml-px ${isDark ? 'border-[#30363d]' : 'border-slate-300'} ${activeTabId === cat.id ? `bg-white dark:bg-[#161b22] font-bold text-emerald-600 dark:text-emerald-400 border-b-0 shadow-sm pr-10 relative z-10 cursor-text` : 'text-slate-600 bg-slate-200/50 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-[#161b22] dark:bg-[#12161c] font-medium border-b'}`}
+                                    style={{ marginBottom: activeTabId === cat.id ? '-1px' : '0' }}
+                                    title={activeTabId === cat.id ? "Double-click to rename" : ""}
+                                >
+                                    {cat.name}
+                                </button>
+                            )}
+                            {activeTabId === cat.id && editingEntity?.id !== cat.id && (
                                 <button 
                                     onClick={() => handleDelete('delete_sheet', cat.id, cat.name)}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 p-1 z-20 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/20 rounded transition-colors"

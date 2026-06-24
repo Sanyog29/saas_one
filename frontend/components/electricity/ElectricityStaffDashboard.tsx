@@ -68,13 +68,14 @@ interface ElectricityStaffDashboardProps {
     isDark?: boolean;
     propertyId?: string;
     isEmbedded?: boolean;
+    initialViewMode?: 'cards' | 'spreadsheet';
 }
 
 /**
  * Staff Dashboard for daily electricity logging
  * v2.1: Simplified logger with per-card save and no cost display.
  */
-const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ isDark = false, propertyId: propIdFromProps, isEmbedded = false }) => {
+const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ isDark = false, propertyId: propIdFromProps, isEmbedded = false, initialViewMode = 'cards' }) => {
     const params = useParams();
     const router = useRouter();
     const propertyId = propIdFromProps || (params?.propertyId as string);
@@ -92,7 +93,9 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
     const [showConfigModal, setShowConfigModal] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [viewMode, setViewMode] = useState<'cards' | 'spreadsheet'>('cards');
+    const [viewMode, setViewMode] = useState<'cards' | 'spreadsheet'>(initialViewMode);
+    const [categories, setCategories] = useState<any[]>([]);
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
     const [error, setError] = useState<string | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'error', visible: boolean }>({
@@ -105,6 +108,18 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
     const [multipliersMap, setMultipliersMap] = useState<Record<string, MeterMultiplier[]>>({});
     const [activeTariff, setActiveTariff] = useState<GridTariff | null>(null);
     const [retakeTasks, setRetakeTasks] = useState<Record<string, any>>({});
+
+    const meterLayoutMap = React.useMemo(() => {
+        const map: Record<string, { sheetName: string, locationName: string }> = {};
+        categories.forEach(cat => {
+            (cat.groups || []).forEach((group: any) => {
+                (group.meters || []).forEach((m: any) => {
+                    map[m.id] = { sheetName: cat.name, locationName: group.name };
+                });
+            });
+        });
+        return map;
+    }, [categories]);
 
 
 
@@ -158,7 +173,20 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
 
             if (metersError) throw metersError;
 
-            const fetchedMeters = metersData || [];
+            // Fetch facility layout to get sheets (categories)
+            try {
+                const layoutRes = await fetch(`/api/properties/${propertyId}/facility-meters`);
+                if (layoutRes.ok) {
+                    const layoutData = await layoutRes.json();
+                    if (Array.isArray(layoutData)) {
+                        setCategories(layoutData);
+                    }
+                }
+            } catch (err) {
+                console.warn("Failed to fetch facility layout", err);
+            }
+
+            const fetchedMeters = (metersData || []) as ElectricityMeter[];
             setMeters(fetchedMeters);
             
 
@@ -519,24 +547,40 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
 
 
             {/* Main Content */}
-            <main className={`flex-1 w-full ${isEmbedded ? 'px-2 py-4' : 'max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8'}`}>
+            <main className={`flex-1 w-full transition-all duration-300 ${isEmbedded ? 'px-2 py-4' : (viewMode === 'spreadsheet' ? 'max-w-full px-4 sm:px-6 lg:px-8 py-8' : 'max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8')}`}>
                 {/* Action Buttons */}
-                <div className={`${isEmbedded ? 'mb-6' : 'mb-6'} flex items-center gap-1.5`}>
-                    <button
-                        onClick={() => setShowImportModal(true)}
-                        className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' : 'text-emerald-600 bg-emerald-50 border-emerald-100'} rounded-lg border transition-all hover:scale-105 active:scale-95`}
-                    >
-                        <Upload className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">Import CSV</span>
-                    </button>
-                    <button onClick={() => setShowHistory(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
-                        <History className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">View History</span>
-                    </button>
-                    <button onClick={() => setShowConfigModal(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
-                        <Settings className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">Config</span>
-                    </button>
-                    <div className={`ml-auto flex items-center bg-slate-100 dark:bg-[#161b22] p-1 rounded-lg border ${isDark ? 'border-[#30363d]' : 'border-slate-200'}`}>
-                        <button onClick={() => setViewMode('cards')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'cards' ? 'bg-white dark:bg-[#30363d] shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}>Cards</button>
-                        <button onClick={() => setViewMode('spreadsheet')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'spreadsheet' ? 'bg-white dark:bg-[#30363d] shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}>Spreadsheet</button>
+                <div className={`${isEmbedded ? 'mb-6' : 'mb-6'} flex flex-wrap items-center justify-between gap-3`}>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setShowImportModal(true)}
+                            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30' : 'text-emerald-600 bg-emerald-50 border-emerald-100'} rounded-lg border transition-all hover:scale-105 active:scale-95`}
+                        >
+                            <Upload className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">Import CSV</span>
+                        </button>
+                        <button onClick={() => setShowHistory(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
+                            <History className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">View History</span>
+                        </button>
+                        <button onClick={() => setShowConfigModal(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
+                            <Settings className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">Config</span>
+                        </button>
+                    </div>
+                    <div className={`flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between sm:justify-end gap-2 w-full sm:w-auto`}>
+                        {viewMode === 'cards' && categories.length > 0 && (
+                            <select
+                                value={selectedCategoryId}
+                                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                                className={`h-10 sm:h-8 px-2 text-sm font-semibold rounded-lg border focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all w-full sm:w-auto ${isDark ? 'bg-[#161b22] border-[#30363d] text-slate-200' : 'bg-white border-slate-200 text-slate-700'}`}
+                            >
+                                <option value="all">All Sheets</option>
+                                {categories.map(cat => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
+                        )}
+                        <div className={`flex items-center justify-center bg-slate-100 dark:bg-[#161b22] p-1 rounded-lg border w-full sm:w-auto ${isDark ? 'border-[#30363d]' : 'border-slate-200'}`}>
+                            <button onClick={() => setViewMode('cards')} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'cards' ? 'bg-white dark:bg-[#30363d] shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}>Cards</button>
+                            <button onClick={() => setViewMode('spreadsheet')} className={`flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'spreadsheet' ? 'bg-white dark:bg-[#30363d] shadow-sm text-primary' : 'text-slate-500 hover:text-slate-700'}`}>Spreadsheet</button>
+                        </div>
                     </div>
                 </div>
 
@@ -545,6 +589,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                     onClose={() => setShowImportModal(false)}
                     propertyId={propertyId}
                     meters={meters}
+                    meterLayoutMap={meterLayoutMap}
                     onSuccess={(count) => {
                         setToast({ message: `${count} readings imported successfully!`, type: 'success', visible: true });
                         fetchData();
@@ -559,7 +604,9 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                 />
 
                 {viewMode === 'spreadsheet' ? (
-                    <ElectricitySpreadsheetLogger propertyId={propertyId} isDark={isDark} />
+                    <div className={`mt-6 ${isEmbedded ? '-mx-2' : '-mx-4 sm:-mx-6 lg:-mx-8'}`}>
+                        <ElectricitySpreadsheetLogger propertyId={propertyId} isDark={isDark} />
+                    </div>
                 ) : (
                     <>
                         {/* Meters Grid */}
@@ -569,12 +616,30 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                                 <h3 className="text-xl font-bold mb-2">No Meters Configured</h3>
                                 <button onClick={() => setShowConfigModal(true)} className="px-6 py-3 bg-primary text-white font-bold rounded-xl shadow-lg">+ Add Meter</button>
                             </div>
-                        ) : (
-                            <div className={`grid gap-6 ${isEmbedded ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
-                                {meters.map((meter) => (
-                                    <ElectricityLoggerCard
-                                        key={meter.id}
-                                        meter={meter}
+                        ) : (() => {
+                            const filteredMeters = selectedCategoryId === 'all' 
+                                ? meters 
+                                : meters.filter(m => {
+                                    const category = categories.find(c => c.id === selectedCategoryId);
+                                    if (!category) return true;
+                                    const categoryMeterIds = category.groups.flatMap((g: any) => g.meters.map((cm: any) => cm.id));
+                                    return categoryMeterIds.includes(m.id);
+                                });
+
+                            return filteredMeters.length === 0 ? (
+                                <div className={`rounded-3xl p-12 text-center border ${isDark ? 'bg-[#161b22] border-[#30363d]' : 'bg-white border-slate-100'} shadow-sm`}>
+                                    <Zap className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+                                    <h3 className={`text-xl font-bold mb-2 ${isDark ? 'text-white' : 'text-slate-800'}`}>No Meters Found in Sheet</h3>
+                                    <p className="text-slate-500">There are no meters assigned to the selected sheet.</p>
+                                </div>
+                            ) : (
+                                <div className={`grid gap-6 ${isEmbedded ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
+                                    {filteredMeters.map((meter) => (
+                                        <ElectricityLoggerCard
+                                            key={meter.id}
+                                            meter={meter}
+                                            sheetName={meterLayoutMap[meter.id]?.sheetName}
+                                            locationName={meterLayoutMap[meter.id]?.locationName}
                                         previousClosing={previousClosings[meter.id]}
                                         averageConsumption={averages[meter.id]}
                                         multipliers={multipliersMap[meter.id] || []}
@@ -588,8 +653,9 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                                         retakeTask={retakeTasks[meter.id]}
                                     />
                                 ))}
-                            </div>
-                        )}
+                                </div>
+                            );
+                        })()}
                     </>
                 )}
             </main>
