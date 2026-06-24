@@ -13,6 +13,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
+import LatestLeadsCard, { type LatestLead } from '@/frontend/components/crm/LatestLeadsCard';
 
 interface DashboardStats {
     total_leads: number;
@@ -31,6 +32,17 @@ interface DashboardStats {
     priority_leads: PriorityLead[];
     action_leads: ActionLead[];
     todays_followups?: FollowupLead[];
+    latest_leads?: LatestLead[];
+    stale_leads?: StaleLead[];
+}
+
+interface StaleLead {
+    id: string;
+    full_name: string;
+    company_name: string | null;
+    status_name: string;
+    last_activity: string | null;
+    next_followup_date: string | null;
 }
 
 interface PriorityLead {
@@ -166,6 +178,7 @@ export default function CRMDashboard() {
         overdue_followups: 0, action_required: 0, meetings_today: 0,
         new_leads: 0, new_leads_by_campaign: [], followups_needed: 0,
         priority_leads: [], action_leads: [], todays_followups: [],
+        latest_leads: [], stale_leads: [],
     };
 
     const todaysFollowups = s.todays_followups || [];
@@ -474,6 +487,9 @@ export default function CRMDashboard() {
                     </div>
                 </div>
             </div>
+
+            {/* Latest Leads — newest first, so reps catch fresh leads fast */}
+            <LatestLeadsCard orgId={orgId} leads={s.latest_leads || []} />
 
             {/* Bottom Row: Recent Activity + Performance */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
