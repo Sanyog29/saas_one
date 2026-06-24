@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
     Users, Phone, Calendar, TrendingUp, ArrowRight, Plus,
-    Flame, CheckCircle2, Clock, MapPin, ChevronRight, ChevronDown,
+    Flame, CheckCircle2, Check, Clock, MapPin, ChevronRight, ChevronDown,
     MessageSquare, Sparkles, PhoneCall, Mail, Send, CalendarDays,
     AlertTriangle, Eye, FileText, UserPlus, Target, BarChart3,
     BellRing, ClipboardList, ExternalLink, PlusCircle,
@@ -140,6 +140,24 @@ export default function CRMDashboard() {
     const [statPeriod, setStatPeriod] = useState<StatPeriod>('today');
     const cityRef = useRef<HTMLDivElement>(null);
 
+    // Pending-task tick-off: optimistically clear a row and mark the lead
+    // contacted (and clear its follow-up if it was a follow-up task).
+    const [dismissedTasks, setDismissedTasks] = useState<Set<string>>(new Set());
+    const completeTask = async (leadId: string, clearFollowup: boolean) => {
+        setDismissedTasks((prev) => new Set(prev).add(leadId));
+        try {
+            const body: Record<string, any> = { last_contacted: new Date().toISOString() };
+            if (clearFollowup) body.next_followup_date = null;
+            await fetch(`/api/crm/leads/${leadId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+        } catch {
+            /* keep the optimistic removal; the next stats refresh reconciles */
+        }
+    };
+
     const firstName = (user?.user_metadata?.full_name || user?.email || 'User').split(' ')[0];
 
     useEffect(() => {
@@ -182,6 +200,37 @@ export default function CRMDashboard() {
     };
 
     const todaysFollowups = s.todays_followups || [];
+
+    // Unified pending-task feed: new leads → due follow-ups → status actions →
+    // stale leads. Deduped by lead, with the tick-off filtering applied.
+    const daysAgo = (iso?: string | null) => {
+        if (!iso) return '';
+        const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+        return d <= 0 ? 'today' : d === 1 ? '1 day' : `${d} days`;
+    };
+    const isFresh = (iso?: string | null) =>
+        !!iso && Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000;
+    type TaskItem = { id: string; title: string; sub: string | null; tag: string; tagClass: string; clearFollowup: boolean };
+    const pendingTasks: TaskItem[] = (() => {
+        const out: TaskItem[] = [];
+        const seen = new Set<string>();
+        const push = (t: TaskItem) => { if (!seen.has(t.id) && !dismissedTasks.has(t.id)) { seen.add(t.id); out.push(t); } };
+        // New leads (arrived <24h, not yet contacted)
+        (s.latest_leads || [])
+            .filter((l) => isFresh(l.created_at) && !l.last_contacted)
+            .forEach((l) => push({ id: l.id, title: l.full_name, sub: l.company_name || 'New lead — reach out', tag: 'New', tagClass: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40', clearFollowup: false }));
+        // Follow-ups due today
+        todaysFollowups.forEach((fu) => push({ id: fu.id, title: `Follow up with ${fu.company_name || fu.full_name}`, sub: fu.followup_notes || null, tag: 'Due Today', tagClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40', clearFollowup: true }));
+        // Status-action leads (hold / no status), overdue flagged
+        (s.action_leads || []).forEach((l) => {
+            const overdue = !!l.next_followup_date && new Date(l.next_followup_date) < new Date();
+            push({ id: l.id, title: l.company_name || l.full_name, sub: l.status_name || 'Needs attention', tag: overdue ? 'Overdue' : 'Open', tagClass: overdue ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/40' : 'text-text-secondary bg-muted', clearFollowup: true });
+        });
+        // Stale — quiet beyond the timeframe
+        (s.stale_leads || []).forEach((l) => push({ id: l.id, title: l.company_name || l.full_name, sub: `No update · ${daysAgo(l.last_activity)}`, tag: 'Stale', tagClass: 'text-orange-600 bg-orange-50 dark:bg-orange-950/40', clearFollowup: false }));
+        return out;
+    })();
+
     const callsRemaining = Math.max(0, s.total_leads - s.deals_closed - s.lost_leads);
     const hotLeads = s.priority_leads.filter(l => /hot/i.test(l.status_name));
     const topHotLead = hotLeads[0];
@@ -446,43 +495,37 @@ export default function CRMDashboard() {
                     <div className="flex items-center justify-between px-5 py-4 border-b border-border">
                         <div className="flex items-center gap-3">
                             <h2 className="text-sm font-black text-text-primary">Pending Tasks</h2>
-                            <span className="text-xs font-bold text-text-secondary">{s.action_required} <span className="text-[10px] text-text-tertiary">Open</span></span>
+                            <span className="text-xs font-bold text-text-secondary">{pendingTasks.length} <span className="text-[10px] text-text-tertiary">Open</span></span>
                             {s.overdue_followups > 0 && (
                                 <span className="text-xs font-bold text-rose-500">{s.overdue_followups} <span className="text-[10px]">Overdue</span></span>
                             )}
                         </div>
                     </div>
                     <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
-                        {s.action_leads.length === 0 && todaysFollowups.length === 0 ? (
+                        {pendingTasks.length === 0 ? (
                             <div className="py-8 text-center">
                                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
                                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">All caught up!</p>
                             </div>
                         ) : (
-                            <>
-                                {todaysFollowups.slice(0, 3).map((fu) => (
-                                    <Link key={fu.id} href={`/${orgId}/crm/leads?lead=${fu.id}`} className="flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors">
-                                        <div className="w-4 h-4 rounded border-2 border-border mt-0.5 flex-shrink-0" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-bold text-text-primary truncate">Follow up with {fu.company_name || fu.full_name}</p>
-                                            {fu.followup_notes && <p className="text-[10px] text-text-tertiary truncate mt-0.5">{fu.followup_notes}</p>}
-                                        </div>
-                                        <span className="text-[9px] font-bold text-amber-500 flex-shrink-0">Due Today</span>
+                            pendingTasks.map((t) => (
+                                <div key={t.id} className="group flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors">
+                                    {/* Tick-off: marks the lead contacted and clears the row */}
+                                    <button
+                                        type="button"
+                                        aria-label="Mark done"
+                                        onClick={() => completeTask(t.id, t.clearFollowup)}
+                                        className="w-4 h-4 rounded border-2 border-border mt-0.5 flex-shrink-0 flex items-center justify-center text-transparent hover:border-emerald-500 hover:text-emerald-500 transition-colors"
+                                    >
+                                        <Check className="w-3 h-3" />
+                                    </button>
+                                    <Link href={`/${orgId}/crm/leads?lead=${t.id}`} className="flex-1 min-w-0">
+                                        <p className="text-xs font-bold text-text-primary truncate">{t.title}</p>
+                                        {t.sub && <p className="text-[10px] text-text-tertiary truncate mt-0.5">{t.sub}</p>}
                                     </Link>
-                                ))}
-                                {s.action_leads.slice(0, 3).map((lead) => (
-                                    <Link key={lead.id} href={`/${orgId}/crm/leads?lead=${lead.id}`} className="flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors">
-                                        <div className="w-4 h-4 rounded border-2 border-border mt-0.5 flex-shrink-0" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-bold text-text-primary truncate">{lead.company_name || lead.full_name}</p>
-                                            <p className="text-[10px] text-text-tertiary truncate mt-0.5">{lead.status_name || 'Needs attention'}</p>
-                                        </div>
-                                        {lead.next_followup_date && new Date(lead.next_followup_date) < new Date() && (
-                                            <span className="text-[9px] font-bold text-rose-500 flex-shrink-0">Overdue</span>
-                                        )}
-                                    </Link>
-                                ))}
-                            </>
+                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 ${t.tagClass}`}>{t.tag}</span>
+                                </div>
+                            ))
                         )}
                     </div>
                 </div>
