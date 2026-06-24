@@ -1,7 +1,12 @@
 'use client';
 
 import { CrmOnboardingGate } from '@/frontend/components/crm/onboarding';
+import { SoundProvider } from '@/frontend/context/SoundContext';
 
 export default function CrmLayout({ children }: { children: React.ReactNode }) {
-    return <CrmOnboardingGate>{children}</CrmOnboardingGate>;
+    return (
+        <SoundProvider>
+            <CrmOnboardingGate>{children}</CrmOnboardingGate>
+        </SoundProvider>
+    );
 }

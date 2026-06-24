@@ -10,8 +10,10 @@ import {
     AlertTriangle, Eye, FileText, UserPlus, Target, BarChart3,
     BellRing, ClipboardList, ExternalLink, PlusCircle,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
+import { useSound } from '@/frontend/context/SoundContext';
+import { useCountUp } from '@/frontend/hooks/useCountUp';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
 import LatestLeadsCard, { type LatestLead } from '@/frontend/components/crm/LatestLeadsCard';
 
@@ -98,6 +100,8 @@ function StatCard({ icon: Icon, iconBg, label, value, sub, accent, href }: {
     icon: React.ElementType; iconBg: string; label: string; value: string | number;
     sub?: string; accent?: string; href?: string;
 }) {
+    const reduce = useReducedMotion();
+    const animatedValue = useCountUp(String(value), !reduce);
     const inner = (
         <>
             <div className="flex items-center justify-between">
@@ -107,12 +111,12 @@ function StatCard({ icon: Icon, iconBg, label, value, sub, accent, href }: {
                 <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">{label}</span>
             </div>
             <div>
-                <p className="text-2xl font-black text-text-primary">{value}</p>
+                <p className="text-2xl font-black text-text-primary tabular-nums">{animatedValue}</p>
                 {sub && <p className={`text-xs font-medium mt-0.5 ${accent || 'text-text-secondary'}`}>{sub}</p>}
             </div>
         </>
     );
-    const cls = `bg-surface rounded-2xl border border-border p-5 flex flex-col gap-3${href ? ' hover:border-primary hover:shadow-sm transition-all cursor-pointer' : ''}`;
+    const cls = `crm-card bg-surface rounded-2xl border border-border p-5 flex flex-col gap-3${href ? ' hover:border-primary cursor-pointer' : ''}`;
     return href
         ? <Link href={href} className={cls}>{inner}</Link>
         : <div className={cls}>{inner}</div>;
@@ -139,11 +143,14 @@ export default function CRMDashboard() {
     const [isCityOpen, setIsCityOpen] = useState(false);
     const [statPeriod, setStatPeriod] = useState<StatPeriod>('today');
     const cityRef = useRef<HTMLDivElement>(null);
+    const reduceMotion = useReducedMotion();
+    const { play } = useSound();
 
     // Pending-task tick-off: optimistically clear a row and mark the lead
     // contacted (and clear its follow-up if it was a follow-up task).
     const [dismissedTasks, setDismissedTasks] = useState<Set<string>>(new Set());
     const completeTask = async (leadId: string, clearFollowup: boolean) => {
+        play('success');
         setDismissedTasks((prev) => new Set(prev).add(leadId));
         try {
             const body: Record<string, any> = { last_contacted: new Date().toISOString() };
@@ -360,12 +367,12 @@ export default function CRMDashboard() {
             {/* Stat Tiles — period picker + 3 cards */}
             <div data-tour="crm-stat-tiles" className="space-y-3">
                 {/* Period pills */}
-                <div className="flex items-center gap-1 bg-surface-elevated rounded-xl p-1 w-fit border border-border">
+                <div className="flex items-center gap-1 bg-surface-elevated rounded-xl p-1 w-fit max-w-full overflow-x-auto no-scrollbar border border-border">
                     {STAT_PERIODS.map(p => (
                         <button
                             key={p.key}
-                            onClick={() => setStatPeriod(p.key)}
-                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${statPeriod === p.key ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
+                            onClick={() => { setStatPeriod(p.key); play('toggle'); }}
+                            className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${statPeriod === p.key ? 'bg-surface text-text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
                         >{p.label}</button>
                     ))}
                 </div>
@@ -508,24 +515,34 @@ export default function CRMDashboard() {
                                 <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">All caught up!</p>
                             </div>
                         ) : (
-                            pendingTasks.map((t) => (
-                                <div key={t.id} className="group flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors">
-                                    {/* Tick-off: marks the lead contacted and clears the row */}
-                                    <button
-                                        type="button"
-                                        aria-label="Mark done"
-                                        onClick={() => completeTask(t.id, t.clearFollowup)}
-                                        className="w-4 h-4 rounded border-2 border-border mt-0.5 flex-shrink-0 flex items-center justify-center text-transparent hover:border-emerald-500 hover:text-emerald-500 transition-colors"
+                            <AnimatePresence initial={false}>
+                                {pendingTasks.map((t) => (
+                                    <motion.div
+                                        key={t.id}
+                                        layout={!reduceMotion}
+                                        initial={false}
+                                        exit={reduceMotion ? undefined : { opacity: 0, x: 24, height: 0, marginTop: 0, marginBottom: 0 }}
+                                        transition={{ duration: 0.25, ease: 'easeOut' }}
+                                        className="group flex items-start gap-3 px-5 py-3 hover:bg-surface-elevated transition-colors overflow-hidden"
                                     >
-                                        <Check className="w-3 h-3" />
-                                    </button>
-                                    <Link href={`/${orgId}/crm/leads?lead=${t.id}`} className="flex-1 min-w-0">
-                                        <p className="text-xs font-bold text-text-primary truncate">{t.title}</p>
-                                        {t.sub && <p className="text-[10px] text-text-tertiary truncate mt-0.5">{t.sub}</p>}
-                                    </Link>
-                                    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 ${t.tagClass}`}>{t.tag}</span>
-                                </div>
-                            ))
+                                        {/* Tick-off: marks the lead contacted and clears the row */}
+                                        <motion.button
+                                            type="button"
+                                            aria-label="Mark done"
+                                            onClick={() => completeTask(t.id, t.clearFollowup)}
+                                            whileTap={reduceMotion ? undefined : { scale: 0.8 }}
+                                            className="w-4 h-4 rounded border-2 border-border mt-0.5 flex-shrink-0 flex items-center justify-center text-transparent hover:border-emerald-500 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                                        >
+                                            <Check className="w-3 h-3" />
+                                        </motion.button>
+                                        <Link href={`/${orgId}/crm/leads?lead=${t.id}`} className="flex-1 min-w-0">
+                                            <p className="text-xs font-bold text-text-primary truncate">{t.title}</p>
+                                            {t.sub && <p className="text-[10px] text-text-tertiary truncate mt-0.5">{t.sub}</p>}
+                                        </Link>
+                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 ${t.tagClass}`}>{t.tag}</span>
+                                    </motion.div>
+                                ))}
+                            </AnimatePresence>
                         )}
                     </div>
                 </div>

@@ -4,13 +4,14 @@ import React, { useRef, useState } from 'react';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { createClient } from '@/frontend/utils/supabase/client';
 import imageCompression from 'browser-image-compression';
-import { Image as ImageIcon, Save, Loader2, RotateCcw, UploadCloud } from 'lucide-react';
+import { Image as ImageIcon, Save, Loader2, RotateCcw, UploadCloud, Volume2, VolumeX } from 'lucide-react';
 import {
     readWallpaper,
     saveWallpaperLocal,
     extractAccentFromSrc,
     DEFAULT_WALLPAPER_OPACITY,
 } from '@/frontend/components/ui/CrmBackground';
+import { useSound } from '@/frontend/context/SoundContext';
 
 interface WallpaperSettingsProps {
     // Optional: when embedded in a page that already has a toast, reuse it.
@@ -24,6 +25,7 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
     const { user } = useAuth();
     const supabase = createClient();
     const fileRef = useRef<HTMLInputElement>(null);
+    const { soundEnabled, setSoundEnabled } = useSound();
 
     const [localToast, setLocalToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -189,6 +191,29 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
                             </div>
                         </div>
                     )}
+
+                    {/* Sound effects toggle — off by default, persisted per device */}
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <span className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${soundEnabled ? 'bg-primary/10 text-primary' : 'bg-slate-200 text-slate-500'}`}>
+                                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                            </span>
+                            <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-700">Sound effects</p>
+                                <p className="text-xs text-slate-500">Subtle cues for ticking off tasks, switching filters &amp; success toasts.</p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-checked={soundEnabled}
+                            aria-label="Toggle sound effects"
+                            onClick={() => setSoundEnabled(!soundEnabled)}
+                            className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${soundEnabled ? 'bg-primary' : 'bg-slate-300'}`}
+                        >
+                            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${soundEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
+                    </div>
 
                     <div className="flex flex-wrap items-center gap-3">
                         <button

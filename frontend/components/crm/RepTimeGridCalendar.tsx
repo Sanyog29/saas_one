@@ -138,7 +138,7 @@ export default function RepTimeGridCalendar({
     };
 
     return (
-        <div className="flex flex-col h-full bg-white rounded-2xl border border-border overflow-hidden">
+        <div className="crm-card flex flex-col h-full bg-white rounded-2xl border border-border overflow-hidden">
             {/* Header */}
             <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-gradient-to-r from-surface to-surface-elevated">
                 <div>

@@ -41,7 +41,7 @@ export default function ReportsPage() {
                 </div>
             </div>
 
-            <div className="flex overflow-x-auto gap-2 pb-2">
+            <div className="flex overflow-x-auto no-scrollbar gap-2 pb-2">
                 <button
                     onClick={() => setTab('funnel')}
                     className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${

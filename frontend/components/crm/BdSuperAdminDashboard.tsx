@@ -12,7 +12,10 @@ import {
     PieChart, Pie, Cell, ResponsiveContainer,
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
+import { useSound } from '@/frontend/context/SoundContext';
+import { useCountUp } from '@/frontend/hooks/useCountUp';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
 import RepTimeGridCalendar from '@/frontend/components/crm/RepTimeGridCalendar';
 
@@ -98,6 +101,16 @@ type Period = typeof PERIODS[number];
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Staggered entrance for the KPI grid (gated by reduced-motion at call sites).
+const KPI_GRID_VARIANTS = {
+    hidden: {},
+    show: { transition: { staggerChildren: 0.06 } },
+};
+const KPI_ITEM_VARIANTS = {
+    hidden: { opacity: 0, y: 12 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
+};
+
 /* ------------------------------------------------------------------ */
 /* Main component                                                      */
 /* ------------------------------------------------------------------ */
@@ -106,6 +119,8 @@ export default function BdSuperAdminDashboard() {
     const { user } = useAuth();
     const params = useParams();
     const orgId = params?.orgId as string;
+    const reduceMotion = useReducedMotion();
+    const { play } = useSound();
 
     const [loading, setLoading] = useState(true);
     const [period, setPeriod] = useState<Period>('This Month');
@@ -416,25 +431,25 @@ export default function BdSuperAdminDashboard() {
                     <h1 className="text-2xl font-black text-text-primary tracking-tight flex items-center gap-2">{getGreeting()}, {firstName} <span className="text-xl">👋</span></h1>
                     <p className="text-sm text-text-secondary mt-0.5">Here's what's happening across your GTM engine today.</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div ref={cityRef} className="relative">
+                <div className="flex flex-wrap items-center gap-3 min-w-0">
+                    <div ref={cityRef} className="relative shrink-0">
                         <button onClick={() => setCityOpen(o => !o)} className="flex items-center gap-2 px-4 py-2 bg-surface border border-border rounded-full hover:border-primary transition-all text-sm font-bold text-text-primary">
                             <MapPin className="w-4 h-4 text-primary" />{city}<ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform ${cityOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {cityOpen && (
                             <div className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-xl z-50 min-w-[160px] overflow-hidden max-h-72 overflow-y-auto">
                                 {cities.map(c => (
-                                    <button key={c} onClick={() => { setCity(c); setCityOpen(false); }} className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${city === c ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-muted'}`}>
+                                    <button key={c} onClick={() => { setCity(c); setCityOpen(false); play('toggle'); }} className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${city === c ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-muted'}`}>
                                         <MapPin className="w-3.5 h-3.5" /> {c}
                                     </button>
                                 ))}
                             </div>
                         )}
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-0.5 bg-surface-elevated rounded-full p-1 border border-border">
+                    <div className="flex flex-col items-end gap-2 min-w-0 max-w-full">
+                        <div className="flex items-center gap-0.5 bg-surface-elevated rounded-full p-1 border border-border max-w-full overflow-x-auto no-scrollbar">
                             {PERIODS.map(p => (
-                                <button key={p} onClick={() => setPeriod(p)} className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${period === p ? 'bg-amber-400 text-slate-900' : 'text-text-secondary hover:text-text-primary'}`}>{p}</button>
+                                <button key={p} onClick={() => { setPeriod(p); play('toggle'); }} className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${period === p ? 'bg-amber-400 text-slate-900' : 'text-text-secondary hover:text-text-primary'}`}>{p}</button>
                             ))}
                         </div>
                         {period === 'Custom' && (
@@ -456,14 +471,23 @@ export default function BdSuperAdminDashboard() {
             </div>
 
             {/* 6 KPI cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                <KpiCard icon={Users} tint="violet" label="Leads Received" value={compactNum(kpis.leads_received)} delta={kpis.leads_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />
-                <KpiCard icon={Megaphone} tint="rose" label="Campaigns Active" value={compactNum(kpis.campaigns_active)} delta={null} sub={`of ${campaignTotal} total`} href={`/${orgId}/crm/campaigns`} />
-                <KpiCard icon={Wallet} tint="amber" label="Total Spend" value={inrCompact(kpis.total_spend)} delta={kpis.spend_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/campaigns`} />
-                <KpiCard icon={CalendarCheck} tint="blue" label="Meetings Booked" value={compactNum(kpis.meetings_booked)} delta={null} href={`/${orgId}/crm/calendar`} />
-                <KpiCard icon={TrendingUp} tint="emerald" label="Pipeline Generated" value={inrCompact(kpis.pipeline_generated)} delta={kpis.pipeline_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />
-                <KpiCard icon={Target} tint="pink" label="SQLs" value={compactNum(kpis.sqls)} delta={null} sub="warm + MQL" href={`/${orgId}/crm/leads`} />
-            </div>
+            <motion.div
+                className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4"
+                variants={reduceMotion ? undefined : KPI_GRID_VARIANTS}
+                initial={reduceMotion ? undefined : 'hidden'}
+                animate={reduceMotion ? undefined : 'show'}
+            >
+                {[
+                    <KpiCard key="leads" icon={Users} tint="violet" label="Leads Received" value={compactNum(kpis.leads_received)} delta={kpis.leads_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />,
+                    <KpiCard key="camp" icon={Megaphone} tint="rose" label="Campaigns Active" value={compactNum(kpis.campaigns_active)} delta={null} sub={`of ${campaignTotal} total`} href={`/${orgId}/crm/campaigns`} />,
+                    <KpiCard key="spend" icon={Wallet} tint="amber" label="Total Spend" value={inrCompact(kpis.total_spend)} delta={kpis.spend_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/campaigns`} />,
+                    <KpiCard key="mtg" icon={CalendarCheck} tint="blue" label="Meetings Booked" value={compactNum(kpis.meetings_booked)} delta={null} href={`/${orgId}/crm/calendar`} />,
+                    <KpiCard key="pipe" icon={TrendingUp} tint="emerald" label="Pipeline Generated" value={inrCompact(kpis.pipeline_generated)} delta={kpis.pipeline_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />,
+                    <KpiCard key="sql" icon={Target} tint="pink" label="SQLs" value={compactNum(kpis.sqls)} delta={null} sub="warm + MQL" href={`/${orgId}/crm/leads`} />,
+                ].map((card, i) => (
+                    reduceMotion ? card : <motion.div key={i} variants={KPI_ITEM_VARIANTS}>{card}</motion.div>
+                ))}
+            </motion.div>
 
             {/* Blended channel performance (Meta / LinkedIn / Google) */}
             {channelMix.length > 0 && (
@@ -575,7 +599,7 @@ export default function BdSuperAdminDashboard() {
                             ] as const).map(c => (
                                 <button
                                     key={c.key}
-                                    onClick={() => setTrendChannel(c.key)}
+                                    onClick={() => { setTrendChannel(c.key); play('toggle'); }}
                                     className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-colors ${trendChannel === c.key ? 'text-white' : 'text-text-secondary hover:text-text-primary'}`}
                                     style={trendChannel === c.key ? { backgroundColor: c.color } : undefined}
                                 >
@@ -747,13 +771,15 @@ const TINTS: Record<string, string> = {
 };
 
 function KpiCard({ icon: Icon, tint, label, value, delta, deltaLabel, sub, href }: { icon: React.ElementType; tint: string; label: string; value: string; delta: number | null; deltaLabel?: string; sub?: string; href?: string; }) {
+    const reduce = useReducedMotion();
+    const animatedValue = useCountUp(value, !reduce);
     const inner = (
         <>
             <div className="flex items-start justify-between mb-3">
                 <p className="text-[11px] font-bold text-text-secondary">{label}</p>
                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${TINTS[tint]}`}><Icon className="w-4 h-4" /></div>
             </div>
-            <p className="text-2xl font-black text-text-primary tracking-tight">{value}</p>
+            <p className="text-2xl font-black text-text-primary tracking-tight tabular-nums">{animatedValue}</p>
             {delta != null ? (
                 <div className="flex items-center gap-1 mt-1.5">
                     {delta >= 0 ? <ArrowUpRight className="w-3 h-3 text-emerald-500" /> : <ArrowDownRight className="w-3 h-3 text-rose-500" />}
@@ -763,13 +789,18 @@ function KpiCard({ icon: Icon, tint, label, value, delta, deltaLabel, sub, href 
             ) : sub ? <p className="text-[10px] text-text-tertiary mt-1.5">{sub}</p> : <p className="text-[10px] text-text-tertiary mt-1.5 opacity-0">·</p>}
         </>
     );
-    const cls = `bg-surface rounded-2xl border border-border p-4 ${href ? 'hover:border-primary hover:shadow-sm transition-all cursor-pointer' : ''}`;
-    return href ? <Link href={href} className={cls}>{inner}</Link> : <div className={cls}>{inner}</div>;
+    const cls = `crm-card bg-surface rounded-2xl border border-border p-4 ${href ? 'hover:border-primary cursor-pointer' : ''}`;
+    if (!href) return <div className={cls}>{inner}</div>;
+    return (
+        <motion.div whileTap={reduce ? undefined : { scale: 0.97 }}>
+            <Link href={href} className={`${cls} block`}>{inner}</Link>
+        </motion.div>
+    );
 }
 
 function Panel({ title, href, linkLabel, right, children }: { title: string; href?: string; linkLabel?: string; right?: React.ReactNode; children: React.ReactNode; }) {
     return (
-        <div className="bg-surface rounded-2xl border border-border overflow-hidden flex flex-col h-full">
+        <div className="crm-card bg-surface rounded-2xl border border-border overflow-hidden flex flex-col h-full">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
                 <h2 className="text-sm font-black text-text-primary">{title}</h2>
                 {right || (href && (

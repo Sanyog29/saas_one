@@ -29,7 +29,7 @@ function agoLabel(iso?: string | null): string {
 // (< 24h) are badged NEW.
 export default function LatestLeadsCard({ orgId, leads }: { orgId: string; leads: LatestLead[] }) {
     return (
-        <div className="bg-surface rounded-2xl border border-border overflow-hidden">
+        <div className="crm-card bg-surface rounded-2xl border border-border overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
                 <h2 className="text-sm font-black text-text-primary flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-primary" /> Latest Leads

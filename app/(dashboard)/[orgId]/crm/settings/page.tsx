@@ -389,7 +389,7 @@ export default function CRMSettingsPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex overflow-x-auto gap-2 pb-2">
+            <div className="flex overflow-x-auto no-scrollbar gap-2 pb-2">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
