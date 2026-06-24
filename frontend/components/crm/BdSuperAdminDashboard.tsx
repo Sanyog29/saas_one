@@ -606,7 +606,7 @@ export default function BdSuperAdminDashboard() {
 
             {/* Row 3 */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-4">
+                <div className="lg:col-span-5">
                     <Panel title="Team Performance" href={`/${orgId}/crm/performance`} linkLabel="View full team report" right={<MiniSelect label={period} options={[...PERIODS]} onSelect={v => setPeriod(v as Period)} />}>
                         {team.length === 0 ? <Empty msg="No rep activity yet" /> : (
                             <div className="px-3 pb-2 overflow-x-auto">
@@ -638,7 +638,7 @@ export default function BdSuperAdminDashboard() {
                     </Panel>
                 </div>
 
-                <div className="lg:col-span-8 flex flex-col">
+                <div className="lg:col-span-7 flex flex-col">
                     <RepTimeGridCalendar
                         events={events}
                         reps={eventReps}

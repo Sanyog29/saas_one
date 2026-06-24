@@ -158,13 +158,13 @@ export default function RepTimeGridCalendar({
             )}
 
             {/* Calendar Grid */}
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 overflow-auto max-h-[380px]">
                 <div className="flex min-w-full">
                     {/* Time Column */}
-                    <div className="w-20 border-r border-border bg-surface-elevated flex-shrink-0">
-                        <div className="h-20 border-b border-border"></div>
+                    <div className="w-16 border-r border-border bg-surface-elevated flex-shrink-0">
+                        <div className="h-16 border-b border-border"></div>
                         {TIME_SLOTS.map((time) => (
-                            <div key={time} className="h-20 border-b border-border flex items-start justify-end pr-2 pt-1 text-[10px] font-bold text-text-tertiary">
+                            <div key={time} className="h-16 border-b border-border flex items-start justify-end pr-1.5 pt-0.5 text-[9px] font-bold text-text-tertiary">
                                 {time}
                             </div>
                         ))}
@@ -175,7 +175,7 @@ export default function RepTimeGridCalendar({
                         {weekDays.map((day) => (
                             <div key={day.label} className="flex-1 border-r border-border min-w-[140px]">
                                 {/* Day Header */}
-                                <div className={`h-20 border-b border-border p-3 flex flex-col items-center justify-center ${day.isToday ? 'bg-primary/5' : 'bg-surface'}`}>
+                                <div className={`h-16 border-b border-border p-2 flex flex-col items-center justify-center ${day.isToday ? 'bg-primary/5' : 'bg-surface'}`}>
                                     <p className="text-[11px] font-medium text-text-tertiary uppercase">{day.label}</p>
                                     <p className={`text-xl font-black ${day.isToday ? 'w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center' : 'text-text-primary'}`}>
                                         {day.date}
@@ -185,7 +185,7 @@ export default function RepTimeGridCalendar({
                                 {/* Time Slots */}
                                 <div className="relative">
                                     {TIME_SLOTS.map((time, idx) => (
-                                        <div key={time} className={`h-20 border-b border-border p-1 relative ${day.isToday && idx === Math.floor((new Date().getHours() - 8)) ? 'bg-primary/5' : ''}`}>
+                                        <div key={time} className={`h-16 border-b border-border p-1 relative ${day.isToday && idx === Math.floor((new Date().getHours() - 8)) ? 'bg-primary/5' : ''}`}>
                                             {day.events.map((event) => {
                                                 const startHour = parseInt(event.startTime.split(':')[0]);
                                                 const startMinute = parseInt(event.startTime.split(':')[1]);
