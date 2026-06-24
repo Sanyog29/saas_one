@@ -273,14 +273,16 @@ export async function GET(request: NextRequest) {
         }
     }
 
-    // One query for completed meetings this month, counted per user in JS.
+    // One query for completed meetings, counted per user in JS.
+    // Use the same period window as the rest of the stats so metrics align.
     const { data: meetings } = await supabaseAdmin
         .from('crm_events')
         .select('user_id')
         .eq('organization_id', org)
         .eq('event_type', 'meeting')
         .eq('status', 'completed')
-        .gte('start_datetime', startOfMonth);
+        .gte('start_datetime', periodWindow.from)
+        .lte('start_datetime', periodWindow.to);
     const meetingsByUser: Record<string, number> = {};
     for (const m of meetings || []) meetingsByUser[(m as any).user_id] = (meetingsByUser[(m as any).user_id] || 0) + 1;
 
