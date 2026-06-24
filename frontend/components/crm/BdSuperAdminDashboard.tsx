@@ -298,11 +298,35 @@ export default function BdSuperAdminDashboard() {
                 title: e.title || e.event_type || 'Event',
                 time: dt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }),
                 color: e.event_type === 'meeting' ? 'violet' : e.event_type === 'call' ? 'blue' : e.event_type === 'site_visit' ? 'emerald' : 'amber',
+                user: e.user_info,
             });
         }
         return days;
     }, [events]);
     const calendarHasEvents = calendar.some(d => d.events.length);
+
+    // Extract unique reps from events for profile header
+    const eventReps = useMemo(() => {
+        const repsMap = new Map<string, any>();
+        for (const e of events) {
+            if (e.user_id && !repsMap.has(e.user_id)) {
+                const userInfo = Array.isArray(e.user_info) ? e.user_info[0] : e.user_info;
+                repsMap.set(e.user_id, {
+                    id: e.user_id,
+                    name: userInfo?.full_name || 'Unknown',
+                    avatar: userInfo?.user_photo_url || userInfo?.avatar_url,
+                    eventCount: 0,
+                });
+            }
+        }
+        // Count events per rep
+        for (const e of events) {
+            if (e.user_id && repsMap.has(e.user_id)) {
+                repsMap.get(e.user_id)!.eventCount++;
+            }
+        }
+        return Array.from(repsMap.values()).sort((a: any, b: any) => b.eventCount - a.eventCount);
+    }, [events]);
 
     const aiInsights = useMemo(() => {
         const hot = stats?.hot_leads ?? 0;
@@ -598,16 +622,56 @@ export default function BdSuperAdminDashboard() {
                 <div className="lg:col-span-8">
                     <Panel title="Rep Calendar" right={<MiniSelect label="This Week" />}>
                         {!calendarHasEvents ? <Empty msg="No events this week" /> : (
-                            <div className="px-3 pb-3">
-                                <p className="text-[10px] text-text-tertiary font-medium px-1 mb-2">{calendar[0]?.label} {calendar[0]?.date} – {calendar[6]?.label} {calendar[6]?.date}</p>
-                                <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+                            <div className="px-3 pb-3 flex flex-col h-full">
+                                {/* Rep Profile Headers */}
+                                {eventReps.length > 0 && (
+                                    <div className="mb-4 pb-4 border-b border-border">
+                                        <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider mb-2.5">Team Schedule</p>
+                                        <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                                            {eventReps.map((rep: any) => (
+                                                <div
+                                                    key={rep.id}
+                                                    className="group flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer transition-transform duration-200 hover:scale-110"
+                                                    title={`${rep.name} (${rep.eventCount} event${rep.eventCount !== 1 ? 's' : ''})`}
+                                                >
+                                                    <div className="relative">
+                                                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border-2 border-primary/20 group-hover:border-primary group-hover:shadow-lg group-hover:shadow-primary/20 transition-all duration-200">
+                                                            {rep.avatar ? (
+                                                                <img src={rep.avatar} alt={rep.name} className="w-full h-full rounded-full object-cover" />
+                                                            ) : (
+                                                                <span className="text-xs font-black text-primary">{(rep.name || '?').charAt(0).toUpperCase()}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border border-surface flex items-center justify-center text-[9px] font-black text-white">{rep.eventCount}</div>
+                                                    </div>
+                                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 absolute top-full mt-8 z-10 bg-text-primary text-surface rounded-lg px-2.5 py-1.5 text-[10px] font-bold whitespace-nowrap shadow-lg">
+                                                        {rep.name}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                <p className="text-[10px] text-text-tertiary font-medium px-1 mb-3">{calendar[0]?.label} {calendar[0]?.date} – {calendar[6]?.label} {calendar[6]?.date}</p>
+                                <div className="space-y-2 max-h-[330px] overflow-y-auto flex-1">
                                     {calendar.filter(d => d.events.length).map(d => (
                                         <div key={d.key} className="flex gap-3">
                                             <div className="w-12 flex-shrink-0 text-center"><p className="text-[9px] text-text-tertiary font-bold uppercase">{d.label}</p><p className="text-base font-black text-text-primary leading-none">{d.date}</p></div>
-                                            <div className="flex-1 space-y-2">
-                                                {d.events.map((e: any, i: number) => (
-                                                    <div key={i} className={`px-3 py-2 rounded-lg text-sm font-bold ${calColor(e.color)}`}>{e.title} <span className="font-medium opacity-70 text-xs">{e.time}</span></div>
-                                                ))}
+                                            <div className="flex-1 space-y-1.5">
+                                                {d.events.map((e: any, i: number) => {
+                                                    const userInfo = Array.isArray(e.user) ? e.user[0] : e.user;
+                                                    return (
+                                                        <div key={i} className={`px-3 py-2 rounded-lg text-sm font-bold flex items-center gap-2 ${calColor(e.color)}`}>
+                                                            {userInfo?.user_photo_url || userInfo?.avatar_url ? (
+                                                                <img src={userInfo.user_photo_url || userInfo.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" />
+                                                            ) : (
+                                                                <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[7px]">{(userInfo?.full_name || '?').charAt(0)}</div>
+                                                            )}
+                                                            <span className="flex-1">{e.title}</span>
+                                                            <span className="font-medium opacity-70 text-xs whitespace-nowrap">{e.time}</span>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     ))}
