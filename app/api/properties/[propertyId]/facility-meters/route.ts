@@ -116,10 +116,31 @@ export async function PUT(request: Request, { params }: { params: Promise<{ prop
 
         // --- TWO WAY SYNC: Update Legacy Meter Multipliers ---
         // This ensures the Cards UI and Mobile Apps see the updated constant instantly
-        await supabase
+        const { data: existingMultiplier } = await supabase
             .from('meter_multipliers')
-            .update({ meter_constant: meterConstant, multiplier_value: meterConstant })
-            .eq('meter_id', meterId);
+            .select('id')
+            .eq('meter_id', meterId)
+            .limit(1)
+            .maybeSingle();
+
+        if (existingMultiplier) {
+            await supabase
+                .from('meter_multipliers')
+                .update({ meter_constant: meterConstant })
+                .eq('id', existingMultiplier.id);
+        } else {
+            await supabase
+                .from('meter_multipliers')
+                .insert({
+                    meter_id: meterId,
+                    ct_ratio_primary: 200,
+                    ct_ratio_secondary: 5,
+                    pt_ratio_primary: 11000,
+                    pt_ratio_secondary: 110,
+                    meter_constant: meterConstant,
+                    effective_from: new Date().toISOString().split('T')[0]
+                });
+        }
         // -----------------------------------------------------
 
         return NextResponse.json({ success: true });

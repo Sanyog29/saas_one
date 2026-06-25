@@ -11,8 +11,7 @@ export async function GET(request: NextRequest) {
     try {
         // 1. Verify Authentication & Master Admin Status
         const supabase = await createClient()
-        const { data: { session }, error: authError } = await supabase.auth.getSession()
-        const currentUser = session?.user
+        const { data: { user: currentUser }, error: authError } = await supabase.auth.getUser()
 
         if (authError || !currentUser) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

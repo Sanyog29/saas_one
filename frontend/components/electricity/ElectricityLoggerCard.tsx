@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings2, RotateCcw, Save, Trash2, Camera, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, Zap, X } from 'lucide-react';
+import { Settings2, RotateCcw, Save, Trash2, Camera, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon, Zap, X, Pencil } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { compressImage } from '@/frontend/utils/image-compression';
 import CameraCaptureModal from '../shared/CameraCaptureModal';
@@ -55,6 +55,7 @@ interface ElectricityLoggerCardProps {
     onSave?: (meterId: string) => Promise<void>;
     onMultiplierSave?: (meterId: string, multiplierData: any) => Promise<void>;
     onDelete?: (meterId: string) => void;
+    onEdit?: (meter: ElectricityMeter) => void;
     isSubmitting?: boolean;
     isDark?: boolean;
     retakeTask?: {
@@ -84,6 +85,7 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
     onSave,
     onMultiplierSave,
     onDelete,
+    onEdit,
     isSubmitting = false,
     isDark = false,
     retakeTask,
@@ -399,6 +401,15 @@ const ElectricityLoggerCard: React.FC<ElectricityLoggerCardProps> = ({
                                 </p>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
+                                {onEdit && (
+                                    <button
+                                        onClick={() => onEdit(meter)}
+                                        className={`${isDark ? 'text-slate-600 hover:text-blue-400 bg-[#21262d]' : 'text-slate-400 hover:text-blue-600 bg-blue-50 hover:bg-blue-100'} p-2 rounded-lg transition-colors`}
+                                        title="Edit Meter"
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                    </button>
+                                )}
                                 <button
                                     onClick={handleDelete}
                                     className={`${isDark ? 'text-red-400 hover:text-red-300 bg-[#21262d]' : 'text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100'} p-2 rounded-lg transition-colors`}

@@ -175,3 +175,40 @@ export async function DELETE(
     console.log('[ElectricityMeters] Deleted meter:', meterId);
     return NextResponse.json({ success: true });
 }
+
+// PUT: Update an existing electricity meter
+export async function PUT(
+    request: NextRequest,
+    { params }: { params: Promise<{ propertyId: string }> }
+) {
+    const { propertyId } = await params;
+    const supabase = await createClient();
+    const body = await request.json();
+
+    console.log('[ElectricityMeters] PUT request for property:', propertyId, 'body:', body);
+
+    if (!body.id) {
+        return NextResponse.json({ error: 'Meter ID required for update' }, { status: 400 });
+    }
+
+    const { data: meter, error } = await supabase
+        .from('electricity_meters')
+        .update({
+            name: body.name,
+            meter_number: body.meter_number || null,
+            meter_type: body.meter_type,
+            updated_at: new Date().toISOString()
+        })
+        .eq('id', body.id)
+        .eq('property_id', propertyId)
+        .select()
+        .single();
+
+    if (error) {
+        console.error('[ElectricityMeters] Error updating meter:', error.message);
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    console.log('[ElectricityMeters] Updated meter:', meter.id);
+    return NextResponse.json(meter);
+}

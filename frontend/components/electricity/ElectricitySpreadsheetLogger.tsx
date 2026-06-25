@@ -257,7 +257,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
             const payload: Reading[] = [];
             Object.values(readings).forEach(dayObj => {
                 Object.values(dayObj).forEach(reading => {
-                    if (reading.initial_reading !== null || reading.final_reading !== null) {
+                    if (reading.initial_reading !== null && reading.final_reading !== null) {
                         payload.push(reading);
                     }
                 });
@@ -330,6 +330,27 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                     });
                     if (!res.ok) throw new Error("Failed to update meter constant");
                     fetchConfig(); 
+                    
+                    setReadings(prev => {
+                        const newState = { ...prev };
+                        Object.keys(newState).forEach(dateStr => {
+                            if (newState[dateStr][meter.id]) {
+                                const reading = { ...newState[dateStr][meter.id] };
+                                reading.meter_constant_used = parsed;
+                                if (reading.initial_reading !== null && reading.final_reading !== null) {
+                                    let diff = reading.final_reading - reading.initial_reading;
+                                    if (diff >= 0) {
+                                        reading.consumption = Number((diff * parsed).toFixed(2));
+                                        reading.is_rollover = false;
+                                    } else {
+                                        reading.is_rollover = true;
+                                    }
+                                }
+                                newState[dateStr] = { ...newState[dateStr], [meter.id]: reading };
+                            }
+                        });
+                        return newState;
+                    });
                 } catch (error) {
                     console.error(error);
                     alert("Error updating meter constant.");
@@ -506,7 +527,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
     }
 
     return (
-        <div className={`flex flex-col h-[calc(100vh-190px)] min-h-[400px] rounded-2xl overflow-hidden border ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-slate-50 border-slate-200'}`}>
+        <div className={`flex flex-col h-[calc(100vh-120px)] min-h-[400px] rounded-2xl overflow-hidden border ${isDark ? 'bg-[#0d1117] border-[#30363d]' : 'bg-slate-50 border-slate-200'}`}>
             
             {/* Unified Custom Modal */}
             {modalConfig?.isOpen && (

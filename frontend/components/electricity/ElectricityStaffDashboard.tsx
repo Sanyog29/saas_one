@@ -22,6 +22,7 @@ interface ElectricityMeter {
     status: string;
     last_reading?: number;
     property_id: string;
+    multipliers?: any[];
 }
 
 interface Property {
@@ -91,6 +92,7 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showConfigModal, setShowConfigModal] = useState(false);
+    const [editingMeter, setEditingMeter] = useState<ElectricityMeter | null>(null);
     const [showHistory, setShowHistory] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [viewMode, setViewMode] = useState<'cards' | 'spreadsheet'>(initialViewMode);
@@ -425,22 +427,24 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
         setTimeout(() => setSuccessMessage(null), 3000);
     };
 
-    // Add meter
-    const handleAddMeter = async (data: any) => {
+    // Add or Edit meter
+    const handleSaveMeter = async (data: any) => {
+        const isUpdate = !!data.id;
+        const method = isUpdate ? 'PUT' : 'POST';
         
-
         const res = await fetch(`/api/properties/${propertyId}/electricity-meters`, {
-            method: 'POST',
+            method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
 
         if (!res.ok) {
             const errData = await res.json();
-            throw new Error(errData.error || 'Failed to add meter');
+            throw new Error(errData.error || `Failed to ${isUpdate ? 'update' : 'add'} meter`);
         }
 
-        setToast({ message: 'Meter added successfully!', type: 'success', visible: true });
+        setToast({ message: `Meter ${isUpdate ? 'updated' : 'added'} successfully!`, type: 'success', visible: true });
+        setEditingMeter(null);
         invalidateCache(`electricity-data-${propertyId}`);
         fetchData();
     };
@@ -543,11 +547,11 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
     );
 
     return (
-        <div className={`${isEmbedded ? '' : 'min-h-screen'} bg-background pb-8 transition-colors duration-300`}>
+        <div className={`${isEmbedded ? '' : 'min-h-screen'} bg-background ${viewMode === 'spreadsheet' ? '' : 'pb-8'} transition-colors duration-300`}>
 
 
             {/* Main Content */}
-            <main className={`flex-1 w-full transition-all duration-300 ${isEmbedded ? 'px-2 py-4' : (viewMode === 'spreadsheet' ? 'max-w-full px-4 sm:px-6 lg:px-8 py-8' : 'max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8')}`}>
+            <main className={`flex-1 w-full transition-all duration-300 ${isEmbedded ? 'px-2 py-4' : (viewMode === 'spreadsheet' ? 'max-w-full px-4 sm:px-6 lg:px-8 pt-6 pb-0' : 'max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8')}`}>
                 {/* Action Buttons */}
                 <div className={`${isEmbedded ? 'mb-6' : 'mb-6'} flex flex-wrap items-center justify-between gap-3`}>
                     <div className="flex items-center gap-1.5">
@@ -560,7 +564,13 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                         <button onClick={() => setShowHistory(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
                             <History className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">View History</span>
                         </button>
-                        <button onClick={() => setShowConfigModal(true)} className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}>
+                        <button 
+                            onClick={() => {
+                                setEditingMeter(null);
+                                setShowConfigModal(true);
+                            }} 
+                            className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-4 py-2 text-xs sm:text-sm font-bold ${isDark ? 'text-slate-300 bg-[#161b22] border-[#30363d]' : 'text-slate-600 bg-white border-slate-200'} rounded-lg border transition-all hover:scale-105 active:scale-95`}
+                        >
                             <Settings className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline whitespace-nowrap">Config</span>
                         </button>
                     </div>
@@ -648,6 +658,14 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
                                         onSave={handleSaveSingleReading}
                                         onMultiplierSave={handleSaveMultiplier}
                                         onDelete={handleDeleteMeter}
+                                        onEdit={(meter) => {
+                                            const activeMultiplier = multipliersMap[meter.id]?.[0];
+                                            setEditingMeter({
+                                                ...meter,
+                                                multipliers: multipliersMap[meter.id] || []
+                                            });
+                                            setShowConfigModal(true);
+                                        }}
                                         isSubmitting={isSubmitting}
                                         isDark={isDark}
                                         retakeTask={retakeTasks[meter.id]}
@@ -662,9 +680,18 @@ const ElectricityStaffDashboard: React.FC<ElectricityStaffDashboardProps> = ({ i
 
             <ElectricityMeterConfigModal
                 isOpen={showConfigModal}
-                onClose={() => setShowConfigModal(false)}
-                onSubmit={handleAddMeter}
+                onClose={() => {
+                    setShowConfigModal(false);
+                    setEditingMeter(null);
+                }}
+                onSubmit={async (data) => {
+                    if (editingMeter) {
+                        data.id = editingMeter.id;
+                    }
+                    await handleSaveMeter(data);
+                }}
                 isDark={isDark}
+                initialData={editingMeter || undefined}
             />
 
             {showHistory && (

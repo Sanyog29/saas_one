@@ -31,8 +31,9 @@ import { MessageSquareCode } from 'lucide-react';
 import WhatsAppTemplatesManager from '@/frontend/components/admin/WhatsAppTemplatesManager';
 import WhatsAppSystemControl from '@/frontend/components/ops/WhatsAppSystemControl';
 import IssueTrackingDashboard from '@/frontend/components/master-admin/IssueTrackingDashboard';
+import DailyProgressDashboard from './DailyProgressDashboard';
 
-type Tab = 'overview' | 'bd-pipeline' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
+type Tab = 'overview' | 'bd-pipeline' | 'analytics' | 'daily-progress' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
 
 // Shape returned by GET /api/admin/bd-stats (cross-org BD pipeline metrics).
 interface BDStats {
@@ -140,7 +141,7 @@ const MasterAdminDashboard = () => {
     // Restore tab from URL and handle back navigation
     useEffect(() => {
         const tab = searchParams.get('tab');
-if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
+        if (tab && ['overview', 'bd-pipeline', 'analytics', 'daily-progress', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -372,6 +373,7 @@ if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 
         { id: 'overview', label: 'Console', icon: ShieldCheck },
         { id: 'bd-pipeline', label: 'BD Pipeline', icon: TrendingUp },
         { id: 'analytics', label: 'Engagement', icon: Activity },
+        { id: 'daily-progress', label: 'Daily Progress', icon: LayoutGrid },
         { id: 'resolvers', label: 'Resolvers', icon: Wrench },
         { id: 'organizations', label: 'Organizations', icon: Building2 },
         { id: 'tickets', label: 'Support Tickets', icon: Ticket },
@@ -514,6 +516,7 @@ if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 
                         {activeTab === 'overview' && <OverviewGrid stats={stats} />}
                         {activeTab === 'bd-pipeline' && <BDPipelineTab router={router} />}
                         {activeTab === 'analytics' && <AnalyticsTab />}
+                        {activeTab === 'daily-progress' && <DailyProgressDashboard isDark={theme === 'dark'} />}
                         {activeTab === 'organizations' && (
                             selectedOrg ? (
                                 <OrgPropertyDashboard

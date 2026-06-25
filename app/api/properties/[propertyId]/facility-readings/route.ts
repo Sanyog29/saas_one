@@ -156,27 +156,60 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
         if (isElectricity) {
             // Write to electricity_readings ONLY (unified table)
-            const legacyPayload = readings.map((r: any) => ({
-                property_id: propertyId,
-                meter_id: r.meter_id,
-                reading_date: r.reading_date,
-                opening_reading: r.initial_reading,
-                closing_reading: r.final_reading,
-                final_units: r.consumption,
-                computed_units: r.consumption,
-                multiplier_value_used: r.meter_constant_used || 1.0,
-                created_by: user.id,
-                updated_at: new Date().toISOString()
+            const legacyPayload = await Promise.all(readings.map(async (r: any) => {
+                let tariffRate = 0;
+                let tariffId = null;
+                
+                try {
+                    const { data: tariffData } = await supabase.rpc('get_active_grid_tariff', {
+                        p_property_id: propertyId,
+                        p_date: r.reading_date
+                    });
+                    if (tariffData && tariffData.length > 0) {
+                        tariffId = tariffData[0].id;
+                        tariffRate = tariffData[0].rate_per_unit || 0;
+                    }
+                } catch (e) {
+                    console.warn('Tariff lookup failed', e);
+                }
+
+                return {
+                    property_id: propertyId,
+                    meter_id: r.meter_id,
+                    reading_date: r.reading_date,
+                    opening_reading: r.initial_reading,
+                    closing_reading: r.final_reading,
+                    final_units: r.consumption,
+                    multiplier_value_used: r.meter_constant_used || 1.0,
+                    tariff_id: tariffId,
+                    tariff_rate_used: tariffRate,
+                    computed_cost: (r.consumption || 0) * tariffRate,
+                    created_by: user.id,
+                    updated_at: new Date().toISOString()
+                };
             }));
 
-            const { error: elecErr } = await supabase
-                .from('electricity_readings')
-                .upsert(legacyPayload, {
-                    onConflict: 'meter_id,reading_date',
-                    ignoreDuplicates: false
-                });
+            for (const reading of legacyPayload) {
+                const { data: existingReading } = await supabase
+                    .from('electricity_readings')
+                    .select('id')
+                    .eq('meter_id', reading.meter_id)
+                    .eq('reading_date', reading.reading_date)
+                    .maybeSingle();
 
-            if (elecErr) throw elecErr;
+                if (existingReading) {
+                    const { error: updateError } = await supabase
+                        .from('electricity_readings')
+                        .update(reading)
+                        .eq('id', existingReading.id);
+                    if (updateError) throw updateError;
+                } else {
+                    const { error: insertError } = await supabase
+                        .from('electricity_readings')
+                        .insert(reading);
+                    if (insertError) throw insertError;
+                }
+            }
 
             // Update last_reading on electricity_meters
             for (const r of readings) {

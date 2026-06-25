@@ -70,8 +70,7 @@ function extractLocation(description: string): string | null {
 export async function GET(request: NextRequest) {
     try {
         const supabase = await createClient();
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        const user = session?.user;
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
         if (authError || !user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

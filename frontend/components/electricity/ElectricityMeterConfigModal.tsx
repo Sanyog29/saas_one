@@ -10,6 +10,7 @@ interface ElectricityMeterConfigModalProps {
     onSubmit: (data: any) => Promise<void>;
     isDark?: boolean;
     propertyId?: string;
+    initialData?: { id: string; name: string; meter_number?: string; meter_type?: string; status?: string; multipliers?: any[] };
 }
 
 /**
@@ -23,7 +24,8 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
     onClose,
     onSubmit,
     isDark = false,
-    propertyId
+    propertyId,
+    initialData
 }) => {
     // Basic meter info
     const [name, setName] = useState('');
@@ -41,6 +43,35 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        if (isOpen && initialData) {
+            setName(initialData.name || '');
+            setMeterNumber(initialData.meter_number || '');
+            setMeterType(initialData.meter_type || 'main');
+            setShowMultiplier(false);
+
+            if (initialData.multipliers && initialData.multipliers.length > 0) {
+                const active = initialData.multipliers[0];
+                setCtPrimary(active.ct_ratio_primary?.toString() || '200');
+                setCtSecondary(active.ct_ratio_secondary?.toString() || '5');
+                setPtPrimary(active.pt_ratio_primary?.toString() || '11000');
+                setPtSecondary(active.pt_ratio_secondary?.toString() || '110');
+                setMeterConstant(active.meter_constant?.toString() || '1');
+            } else {
+                setCtPrimary('200');
+                setCtSecondary('5');
+                setPtPrimary('11000');
+                setPtSecondary('110');
+                setMeterConstant('1');
+            }
+        } else if (isOpen) {
+            setName('');
+            setMeterNumber('');
+            setMeterType('main');
+            setShowMultiplier(true);
+        }
+    }, [isOpen, initialData]);
 
     // Calculate multiplier preview
     const computedMultiplier = () => {
@@ -71,10 +102,10 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                 meter_number: meterNumber.trim() || null,
                 meter_type: meterType,
                 last_reading: parseFloat(lastReading) || 0,
-                status: 'active',
+                status: initialData ? initialData.status || 'active' : 'active',
                 // v2: Include initial multiplier config
                 // Note: multiplier_value is a GENERATED column, database calculates it automatically
-                initial_multiplier: {
+                initial_multiplier: initialData ? undefined : {
                     ct_ratio_primary: parseFloat(ctPrimary) || 200,
                     ct_ratio_secondary: parseFloat(ctSecondary) || 5,
                     pt_ratio_primary: parseFloat(ptPrimary) || 11000,
@@ -126,7 +157,7 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                             <div className={`${isDark ? 'bg-primary/10' : 'bg-primary/10'} p-2 rounded-xl`}>
                                 <Zap className="w-5 h-5 text-primary" />
                             </div>
-                            <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Add Electricity Meter</h2>
+                            <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{initialData ? 'Edit Meter' : 'Add Electricity Meter'}</h2>
                         </div>
                         <button
                             onClick={onClose}
@@ -184,6 +215,7 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                                 className={`${isDark ? 'bg-[#0d1117] border-[#21262d] text-white focus:border-primary' : 'bg-white border-slate-200 focus:border-primary'} border rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 ${isDark ? 'focus:ring-primary/20' : 'focus:ring-primary/20'}`}
                             >
                                 <option value="main">Main Grid</option>
+                                <option value="db">Distribution Board (DB)</option>
                                 <option value="dg">DG Backup</option>
                                 <option value="solar">Solar</option>
                                 <option value="backup">Backup</option>
@@ -331,8 +363,8 @@ const ElectricityMeterConfigModal: React.FC<ElectricityMeterConfigModalProps> = 
                             disabled={isSubmitting}
                             className={`w-full ${isDark ? 'bg-primary hover:bg-primary-dark shadow-primary/40' : 'bg-primary hover:bg-primary-dark shadow-primary/20'} text-white font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50`}
                         >
-                            <Plus className="w-5 h-5" />
-                            {isSubmitting ? 'Adding...' : 'Add Meter'}
+                            {initialData ? null : <Plus className="w-5 h-5" />}
+                            {isSubmitting ? 'Saving...' : (initialData ? 'Save Changes' : 'Add Meter')}
                         </button>
                     </form>
                 </motion.div>

@@ -38,9 +38,9 @@ export async function GET(request: Request) {
             console.error('Auth Error:', error.message);
             
             // Check if session already exists (e.g., if code was consumed by a browser prefetch)
-            const { data: { session: existingSession } } = await supabase.auth.getSession();
+            const { data: { user: existingUser } } = await supabase.auth.getUser();
             
-            if (existingSession) {
+            if (existingUser) {
                 console.log('Session already exists (likely from prefetch). Proceeding.');
                 if (decodedNext) {
                     return NextResponse.redirect(`${requestUrl.origin}${decodedNext}`);

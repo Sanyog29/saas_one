@@ -166,6 +166,16 @@ export async function POST(
             await updateReadingsWithNewMultiplier(supabase, body.meter_id, effectiveFromDate, computedMultiplierValue);
         }
 
+        // Sync the new computed multiplier to the facility_meters table for the spreadsheet view
+        const { error: syncError } = await supabase
+            .from('facility_meters')
+            .update({ meter_constant: computedMultiplierValue })
+            .eq('id', body.meter_id);
+        
+        if (syncError) {
+            console.warn('[MeterMultipliers] Could not sync facility_meters:', syncError);
+        }
+
         return NextResponse.json(data);
     }
 
@@ -257,6 +267,16 @@ export async function POST(
     // Optionally retroactively update existing readings
     if (body.retroactivelyUpdate) {
         await updateReadingsWithNewMultiplier(supabase, body.meter_id, effectiveFromDate, computedMultiplierValue);
+    }
+
+    // Sync the new computed multiplier to the facility_meters table for the spreadsheet view
+    const { error: syncError } = await supabase
+        .from('facility_meters')
+        .update({ meter_constant: computedMultiplierValue })
+        .eq('id', body.meter_id);
+    
+    if (syncError) {
+        console.warn('[MeterMultipliers] Could not sync facility_meters:', syncError);
     }
 
     return NextResponse.json(data, { status: 201 });

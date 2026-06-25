@@ -58,7 +58,7 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
     const { getCachedData, setCachedData, invalidateCache } = useDataCache();
 
     // UI State
-    const [viewMode, setViewMode] = useState<'combined' | 'meter'>('combined');
+    const [viewMode, setViewMode] = useState<'main' | 'meter'>('main');
     const [selectedMeterId, setSelectedMeterId] = useState<string>('all');
     const [costTimeframe, setCostTimeframe] = useState<'today' | 'month'>('month');
     const [unitsTimeframe, setUnitsTimeframe] = useState<'today' | 'month'>('month');
@@ -71,6 +71,7 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
     // Data State
     const [property, setProperty] = useState<{ name: string } | null>(null);
     const [meters, setMeters] = useState<ElectricityMeter[]>([]);
+    const [categories, setCategories] = useState<any[]>([]);
     const [rawReadings, setRawReadings] = useState<{
         today: ElectricityReading[];
         month: ElectricityReading[];
@@ -104,6 +105,7 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
             console.log('[ElectricityAnalytics] Loading from cache:', propertyId || orgId);
             setProperty(cached.property);
             setMeters(cached.meters);
+            setCategories(cached.categories || []);
             setActiveTariff(cached.activeTariff);
             setRawReadings(cached.rawReadings);
             setIsLoading(false);
@@ -137,6 +139,23 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                 metersData = await metersRes.json();
                 if (Array.isArray(metersData)) {
                     setMeters(metersData);
+                }
+            }
+
+            // 2.5 Categories (for Sheet/Location mapping)
+            let categoriesData: any[] = [];
+            if (isValidId(propertyId)) {
+                try {
+                    const layoutRes = await fetch(`/api/properties/${propertyId}/facility-meters`);
+                    if (layoutRes.ok) {
+                        const layoutData = await layoutRes.json();
+                        if (Array.isArray(layoutData)) {
+                            categoriesData = layoutData;
+                            setCategories(categoriesData);
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Failed to fetch facility layout", err);
                 }
             }
 
@@ -196,6 +215,7 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
             setCachedData(cacheKey, {
                 property: propData || property,
                 meters: metersData,
+                categories: categoriesData,
                 activeTariff: activeTariffValue || activeTariff,
                 rawReadings: readingsData
             });
@@ -212,10 +232,28 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
         fetchData();
     }, [fetchData]);
 
+    const meterLayoutMap = useMemo(() => {
+        const map: Record<string, { sheetName: string, locationName: string }> = {};
+        categories.forEach(cat => {
+            (cat.groups || []).forEach((group: any) => {
+                (group.meters || []).forEach((m: any) => {
+                    map[m.id] = { sheetName: cat.name, locationName: group.name };
+                });
+            });
+        });
+        return map;
+    }, [categories]);
+
     // Derived Metrics based on View Filters
     const metrics = useMemo(() => {
+        const mainMeterIds = new Set(meters.filter(m => m.meter_type === 'main').map(m => m.id));
         const filterFn = (r: ElectricityReading) => {
-            if (viewMode === 'combined') return true;
+            if (viewMode === 'main') {
+                if (mainMeterIds.size > 0) {
+                    return mainMeterIds.has(r.meter_id);
+                }
+                return false; // Strict fallback: if no main meters, show nothing.
+            }
             return r.meter_id === selectedMeterId;
         };
 
@@ -258,8 +296,14 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
 
     // Derived Trend Data
     const chartData = useMemo(() => {
+        const mainMeterIds = new Set(meters.filter(m => m.meter_type === 'main').map(m => m.id));
         const filterFn = (r: ElectricityReading) => {
-            if (viewMode === 'combined') return true;
+            if (viewMode === 'main') {
+                if (mainMeterIds.size > 0) {
+                    return mainMeterIds.has(r.meter_id);
+                }
+                return false;
+            }
             return r.meter_id === selectedMeterId;
         };
 
@@ -537,17 +581,25 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                 {/* Scope Toggle */}
                 <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200">
                     <button
-                        onClick={() => { setViewMode('combined'); setSelectedMeterId('all'); }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'combined' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        onClick={() => { setViewMode('main'); setSelectedMeterId('all'); }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${viewMode === 'main' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        Combined
+                        Main
                     </button>
                     <div className="relative">
                         <button
                             onClick={() => { setViewMode('meter'); if (meters.length && selectedMeterId === 'all') setSelectedMeterId(meters[0].id); }}
                             className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center gap-1 ${viewMode === 'meter' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                         >
-                            Meter-wise
+                            {viewMode === 'meter' && selectedMeterId !== 'all' 
+                                ? (() => {
+                                    const m = meters.find(m => m.id === selectedMeterId);
+                                    if (!m) return 'Meter-wise';
+                                    const layout = meterLayoutMap[m.id];
+                                    return layout ? `${m.name} (${layout.sheetName} - ${layout.locationName})` : m.name;
+                                })()
+                                : 'Meter-wise'
+                            }
                             {viewMode === 'meter' && <ChevronDown className="w-3 h-3" />}
                         </button>
                         {/* Meter Dropdown (Simple implementation) */}
@@ -557,9 +609,13 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                                 value={selectedMeterId}
                                 onChange={(e) => setSelectedMeterId(e.target.value)}
                             >
-                                {meters.map(m => (
-                                    <option key={m.id} value={m.id}>{m.name}</option>
-                                ))}
+                                {meters.map(m => {
+                                    const layout = meterLayoutMap[m.id];
+                                    const displayName = layout ? `${m.name} (${layout.sheetName} - ${layout.locationName})` : m.name;
+                                    return (
+                                        <option key={m.id} value={m.id}>{displayName}</option>
+                                    );
+                                })}
                             </select>
                         )}
                     </div>

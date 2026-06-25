@@ -104,9 +104,8 @@ export async function proxy(request: NextRequest) {
         }
     )
 
-    // 3. AUTH CHECK: getSession is ~0ms after the first load
-    const { data: { session } } = await supabase.auth.getSession()
-    const user = session?.user ?? null
+    // 3. AUTH CHECK: getUser is more secure than getSession on the server
+    const { data: { user } } = await supabase.auth.getUser()
 
     // Redirect to login if user is not authenticated on a protected route
     if (!isPublicRoute && !user) {

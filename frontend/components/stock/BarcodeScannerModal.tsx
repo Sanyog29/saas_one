@@ -14,7 +14,7 @@ interface BarcodeScannerModalProps {
 
 type ScanMode = 'camera' | 'gallery' | 'manual';
 
-interface IdentifiedItem {
+interface CartItem {
     id: string;
     item_code: string;
     name: string;
@@ -22,7 +22,9 @@ interface IdentifiedItem {
     category?: string;
     unit?: string;
     barcode?: string;
+    cartQuantity: number;
 }
+
 
 export default function BarcodeScannerModal({
     isOpen,
@@ -47,7 +49,10 @@ export default function BarcodeScannerModal({
     const isMounted = useRef(true);
 
     // Identification & Update States
-    const [identifiedItem, setIdentifiedItem] = useState<IdentifiedItem | null>(null);
+    const [scannedItems, setScannedItems] = useState<CartItem[]>([]);
+    const recentScansRef = useRef<Record<string, number>>({});
+    const beepAudio = useRef<HTMLAudioElement | null>(null);
+    useEffect(() => { beepAudio.current = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"); }, []);
     const [action, setAction] = useState<'IN' | 'OUT'>('IN');
     const [quantity, setQuantity] = useState(1);
     const [isUpdatingStock, setIsUpdatingStock] = useState(false);
@@ -83,11 +88,18 @@ export default function BarcodeScannerModal({
         setScanMode('camera');
         setGalleryPreview(null);
         setGalleryProcessing(false);
-        setIdentifiedItem(null);
+        setScannedItems([]);
         onClose();
     }, [stopCamera, onClose]);
 
+    
     const fetchItemByBarcode = async (barcode: string) => {
+        const now = Date.now();
+        if (recentScansRef.current[barcode] && now - recentScansRef.current[barcode] < 3000) {
+            return; // Ignore duplicate scan within 3 seconds
+        }
+        recentScansRef.current[barcode] = now;
+
         try {
             setLoading(true);
             const res = await fetch(`/api/properties/${propertyId}/stock/items?barcode=${barcode}`);
@@ -96,10 +108,18 @@ export default function BarcodeScannerModal({
             if (data.success && data.items.length > 0) {
                 if (onScanSuccess) {
                     onScanSuccess(barcode, 'unknown');
-                    handleClose();
                 } else {
-                    setIdentifiedItem(data.items[0]);
-                    await stopCamera();
+                    const item = data.items[0];
+                    setScannedItems(prev => {
+                        const existing = prev.find(i => i.id === item.id);
+                        if (existing) {
+                            return prev.map(i => i.id === item.id ? { ...i, cartQuantity: i.cartQuantity + 1 } : i);
+                        }
+                        return [...prev, { ...item, cartQuantity: 1 }];
+                    });
+                    if (beepAudio.current) {
+                        beepAudio.current.play().catch(() => {});
+                    }
                 }
             } else {
                 setError(`No item found for code: ${barcode}`);
@@ -110,6 +130,7 @@ export default function BarcodeScannerModal({
             setLoading(false);
         }
     };
+
 
     // Initialize or get the Html5Qrcode instance
     const getScanner = useCallback(() => {
@@ -137,7 +158,7 @@ export default function BarcodeScannerModal({
     }, [isOpen]);
 
     const startCamera = async (isRetry = false) => {
-        if (cameraActive || identifiedItem || !isOpen) return;
+        if (cameraActive || !isOpen) return;
 
         // Robust recursive check for container dimensions
         const checkContainer = async (retries = 15): Promise<boolean> => {
@@ -259,33 +280,36 @@ export default function BarcodeScannerModal({
         }
     }, [manualInput, scanMode]);
 
+    
     const handleStockUpdate = async () => {
-        if (!identifiedItem) return;
+        if (scannedItems.length === 0) return;
 
         setIsUpdatingStock(true);
         setError(null);
 
         try {
-            const res = await fetch(`/api/properties/${propertyId}/stock/scan`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    itemId: identifiedItem.id,
-                    action: action.toLowerCase(),
-                    quantity,
-                    notes: `Scanned via ${scanMode.toUpperCase()} mode`
-                })
-            });
+            const promises = scannedItems.map(item => 
+                fetch(`/api/properties/${propertyId}/stock/scan`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        itemId: item.id,
+                        action: action.toLowerCase(),
+                        quantity: item.cartQuantity,
+                        notes: `Scanned via ${scanMode.toUpperCase()} mode (Batch)`
+                    })
+                }).then(res => res.json())
+            );
 
-            const data = await res.json();
+            const results = await Promise.all(promises);
+            const failed = results.filter(r => !r.success);
 
-            if (data.success) {
-                // Success feedback
-                setIdentifiedItem(null);
-                if (onScanSuccess) onScanSuccess(identifiedItem.barcode || identifiedItem.id, scanMode.toUpperCase());
+            if (failed.length === 0) {
+                setScannedItems([]);
+                if (onScanSuccess) onScanSuccess('batch', scanMode.toUpperCase());
                 handleClose();
             } else {
-                setError(data.error || 'Update failed');
+                setError(`${failed.length} items failed to update.`);
             }
         } catch (err) {
             setError('Network error updating stock.');
@@ -293,6 +317,20 @@ export default function BarcodeScannerModal({
             setIsUpdatingStock(false);
         }
     };
+
+    const updateCartQuantity = (id: string, delta: number) => {
+        setScannedItems(prev => prev.map(item => {
+            if (item.id === id) {
+                return { ...item, cartQuantity: Math.max(1, item.cartQuantity + delta) };
+            }
+            return item;
+        }));
+    };
+    
+    const removeCartItem = (id: string) => {
+        setScannedItems(prev => prev.filter(item => item.id !== id));
+    };
+
 
     const handleGallerySelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -429,196 +467,132 @@ export default function BarcodeScannerModal({
                     </button>
                 </div>
 
-                {!identifiedItem ? (
-                    <>
-                        {/* Mode Tabs */}
-                        <div className="flex gap-1.5 p-1.5 mx-6 mt-4 bg-gray-100/80 rounded-2xl">
+                
+                <div className="flex-1 overflow-y-auto flex flex-col">
+                    {/* Scanner Section */}
+                    <div className="p-6 pb-2">
+                        <div className="flex gap-1.5 p-1.5 mb-4 bg-gray-100/80 rounded-2xl">
                             <button
                                 onClick={() => setScanMode('camera')}
-                                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 rounded-xl transition-all ${scanMode === 'camera' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-all ${scanMode === 'camera' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                             >
-                                <Camera size={20} />
-                                <span className="text-[10px] font-bold uppercase tracking-wider">Camera Scan</span>
+                                <Camera size={16} />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Camera</span>
                             </button>
                             <button
                                 onClick={() => setScanMode('gallery')}
-                                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 rounded-xl transition-all ${scanMode === 'gallery' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-all ${scanMode === 'gallery' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                             >
-                                <ImagePlus size={20} />
-                                <span className="text-[10px] font-bold uppercase tracking-wider">Photo Upload</span>
+                                <ImagePlus size={16} />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Photo</span>
                             </button>
                             <button
                                 onClick={() => setScanMode('manual')}
-                                className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 rounded-xl transition-all ${scanMode === 'manual' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                className={`flex-1 flex flex-col items-center justify-center gap-1 py-2 rounded-xl transition-all ${scanMode === 'manual' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                             >
-                                <Keyboard size={20} />
-                                <span className="text-[10px] font-bold uppercase tracking-wider">Manual ID</span>
+                                <Keyboard size={16} />
+                                <span className="text-[10px] font-bold uppercase tracking-wider">Manual</span>
                             </button>
                         </div>
 
-                        {/* Content Area */}
-                        <div className="flex-1 overflow-y-auto p-6 flex flex-col">
-                            {error && (
-                                <div className="mb-4 bg-rose-50 border border-rose-100 rounded-2xl p-4 flex gap-3 animate-in fade-in slide-in-from-top-2">
-                                    <AlertCircle size={20} className="text-rose-500 flex-shrink-0" />
-                                    <p className="text-sm text-rose-700 font-medium">{error}</p>
+                        {error && (
+                            <div className="mb-4 bg-rose-50 border border-rose-100 rounded-2xl p-4 flex gap-3">
+                                <AlertCircle size={20} className="text-rose-500 flex-shrink-0" />
+                                <p className="text-sm text-rose-700 font-medium">{error}</p>
+                            </div>
+                        )}
+
+                        {/* Scanner UI */}
+                        <div className={`${scanMode === 'camera' ? 'block' : 'hidden'} relative group max-h-[300px] overflow-hidden rounded-3xl border-4 border-gray-100 shadow-inner`}>
+                            {loading && (
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-50/80 backdrop-blur-[2px]">
+                                    <Loader2 size={32} className="animate-spin text-indigo-600" />
                                 </div>
                             )}
+                            <div id={SCANNER_ID} className="w-full" />
+                        </div>
 
-                            {/* Scanner Container - Always kept in DOM for lifecycle stability, but hidden when not in camera mode */}
-                            <div className={`${scanMode === 'camera' ? 'block' : 'hidden'} space-y-6`}>
-                                <div className="relative group">
-                                    {loading && (
-                                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-50/80 rounded-3xl backdrop-blur-[2px]">
-                                            <div className="text-center">
-                                                <Loader2 size={32} className="animate-spin text-indigo-600 mx-auto mb-3" />
-                                                <p className="text-gray-500 text-sm font-semibold">Readying Camera...</p>
+                        {scanMode === 'manual' && (
+                            <div className="space-y-2">
+                                <input
+                                    type="text"
+                                    value={manualInput}
+                                    onChange={(e) => setManualInput(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && fetchItemByBarcode(manualInput)}
+                                    placeholder="Enter barcode..."
+                                    className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:ring-0 outline-none font-bold"
+                                />
+                                <button
+                                    onClick={() => fetchItemByBarcode(manualInput)}
+                                    disabled={!manualInput.trim() || loading}
+                                    className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold"
+                                >
+                                    Add Item
+                                </button>
+                            </div>
+                        )}
+                        
+                        {scanMode === 'gallery' && (
+                            <div className="space-y-4">
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="w-full border-2 border-dashed border-indigo-200 hover:border-indigo-50 rounded-3xl p-6 flex flex-col items-center gap-2 transition-all bg-indigo-50/30"
+                                >
+                                    <ImagePlus size={24} className="text-indigo-600" />
+                                    <span className="font-bold">Choose Photo</span>
+                                </button>
+                                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleGallerySelect} className="hidden" />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Cart Section */}
+                    {scannedItems.length > 0 && (
+                        <div className="flex-1 flex flex-col border-t border-gray-100 bg-gray-50 overflow-hidden">
+                            <div className="p-4 flex justify-between items-center bg-white shadow-sm z-10">
+                                <h3 className="text-sm font-black text-gray-500 uppercase tracking-widest">Scanned Items ({scannedItems.length})</h3>
+                                <div className="flex bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+                                    <button onClick={() => setAction('IN')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${action === 'IN' ? 'bg-emerald-500 text-white' : 'text-gray-500'}`}>Stock IN</button>
+                                    <button onClick={() => setAction('OUT')} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider ${action === 'OUT' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}>Stock OUT</button>
+                                </div>
+                            </div>
+                            
+                            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                {scannedItems.map(item => (
+                                    <div key={item.id} className="bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-3 relative">
+                                        <button onClick={() => removeCartItem(item.id)} className="absolute -top-2 -right-2 p-1 bg-rose-100 text-rose-500 hover:text-rose-600 hover:bg-rose-200 rounded-full shadow-sm">
+                                            <X size={14} />
+                                        </button>
+                                        <div className="flex-1 min-w-0 pr-4">
+                                            <div className="text-sm font-bold text-gray-900 truncate">{item.name}</div>
+                                            <div className="text-[10px] font-bold text-gray-500">Available: {item.quantity} {item.unit}</div>
+                                        </div>
+                                        <div className="flex items-center justify-between border-t border-gray-50 pt-3">
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Qty</span>
+                                            <div className="flex items-center gap-3 bg-gray-50 p-1 rounded-xl border border-gray-100">
+                                                <button onClick={() => updateCartQuantity(item.id, -1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-bold text-gray-700 hover:bg-gray-50">-</button>
+                                                <span className="w-8 text-center font-black text-indigo-600">{item.cartQuantity}</span>
+                                                <button onClick={() => updateCartQuantity(item.id, 1)} className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-sm font-bold text-gray-700 hover:bg-gray-50">+</button>
                                             </div>
                                         </div>
-                                    )}
-                                    <div id={SCANNER_ID} className="rounded-3xl overflow-hidden border-4 border-gray-100 shadow-inner aspect-square" />
-                                    <div className="mt-6 text-center">
-                                        <p className="text-sm font-bold text-gray-400">Position the QR code within the square</p>
                                     </div>
-                                </div>
+                                ))}
                             </div>
 
-                            {scanMode === 'gallery' && (
-                                <div className="space-y-4">
-                                    <button
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="w-full border-2 border-dashed border-indigo-200 hover:border-indigo-50 rounded-3xl p-10 flex flex-col items-center gap-4 transition-all bg-indigo-50/30 group"
-                                    >
-                                        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                            <ImagePlus size={32} className="text-indigo-600" />
-                                        </div>
-                                        <div className="text-center">
-                                            <p className="font-extrabold text-gray-800">Choose from Photos</p>
-                                            <p className="text-xs text-gray-400 mt-1">Upload an image with a clear QR code</p>
-                                        </div>
-                                    </button>
-                                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleGallerySelect} className="hidden" />
-                                    {galleryProcessing && (
-                                        <div className="flex items-center justify-center p-4 bg-gray-50 rounded-2xl">
-                                            <Loader2 size={20} className="animate-spin text-indigo-500 mr-2" />
-                                            <span className="text-sm font-bold text-gray-500">Scanning Image...</span>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {scanMode === 'manual' && (
-                                <div className="space-y-4">
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={manualInput}
-                                            onChange={(e) => setManualInput(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && fetchItemByBarcode(manualInput)}
-                                            placeholder="Enter item code or scanner ID..."
-                                            className="w-full px-5 py-5 bg-gray-50 border-2 border-gray-100 rounded-2xl focus:border-indigo-500 focus:ring-0 outline-none text-gray-900 font-bold placeholder:text-gray-300 transition-all shadow-sm"
-                                        />
-                                    </div>
-                                    <button
-                                        onClick={() => fetchItemByBarcode(manualInput)}
-                                        disabled={!manualInput.trim() || loading}
-                                        className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-indigo-200 hover:bg-indigo-700 active:scale-[0.98] transition-all disabled:opacity-50"
-                                    >
-                                        Identify Item
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </>
-                ) : (
-                    /* Identification Success UI (Same as before) */
-                    <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6 animate-in zoom-in-95 duration-200">
-                        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-3xl p-6 border border-white shadow-sm">
-                            <div className="flex items-start gap-4">
-                                <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-md">
-                                    <Boxes size={32} className="text-indigo-600" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">Item Found</span>
-                                    <h3 className="text-xl font-black text-gray-900 truncate uppercase tracking-tight leading-tight">{identifiedItem.name}</h3>
-                                    <div className="flex gap-2 mt-2">
-                                        <span className="bg-white/80 px-2 py-1 rounded-lg text-[10px] font-bold text-gray-500 uppercase">{identifiedItem.category}</span>
-                                        <span className="bg-white/80 px-2 py-1 rounded-lg text-[10px] font-bold text-gray-500">STOCK: {identifiedItem.quantity} {identifiedItem.unit}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Action Selector */}
-                        <div className="space-y-4">
-                            <div className="flex gap-3">
+                            <div className="p-4 bg-white border-t border-gray-100 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.1)]">
                                 <button
-                                    onClick={() => setAction('IN')}
-                                    className={`flex-1 flex flex-col items-center gap-2 p-5 rounded-3xl border-3 transition-all ${action === 'IN' ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-md ring-4 ring-emerald-500/10' : 'border-gray-100 text-gray-400 hover:border-gray-200'}`}
+                                    onClick={handleStockUpdate}
+                                    disabled={isUpdatingStock}
+                                    className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2 ${action === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-orange-600 hover:bg-orange-700 shadow-orange-200'} text-white disabled:opacity-50`}
                                 >
-                                    <ArrowBigUp size={28} className={action === 'IN' ? 'animate-bounce' : ''} />
-                                    <span className="font-black uppercase tracking-widest text-xs">Stock In</span>
-                                </button>
-                                <button
-                                    onClick={() => setAction('OUT')}
-                                    className={`flex-1 flex flex-col items-center gap-2 p-5 rounded-3xl border-3 transition-all ${action === 'OUT' ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-md ring-4 ring-orange-500/10' : 'border-gray-100 text-gray-400 hover:border-gray-200'}`}
-                                >
-                                    <ArrowBigDown size={28} className={action === 'OUT' ? 'animate-bounce' : ''} />
-                                    <span className="font-black uppercase tracking-widest text-xs">Stock Out</span>
+                                    {isUpdatingStock ? <Loader2 size={20} className="animate-spin" /> : <CheckCircle2 size={20} />}
+                                    Confirm {scannedItems.length} {action === 'IN' ? 'Stock In' : 'Stock Out'}
                                 </button>
                             </div>
-
-                            <div className="space-y-3">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Quantity</label>
-                                <div className="flex items-center gap-4 bg-gray-50 p-2 rounded-2xl border border-gray-100 shadow-inner">
-                                    <button
-                                        onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                                        className="w-12 h-12 flex items-center justify-center bg-white rounded-xl shadow-sm font-black text-xl hover:bg-gray-100 transition-colors"
-                                    >
-                                        -
-                                    </button>
-                                    <input
-                                        type="number"
-                                        value={quantity || ''}
-                                        onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                                        className="flex-1 bg-transparent border-none text-center font-black text-2xl focus:ring-0 outline-none text-gray-900"
-                                    />
-                                    <button
-                                        onClick={() => setQuantity(q => q + 1)}
-                                        className="w-12 h-12 flex items-center justify-center bg-white rounded-xl shadow-sm font-black text-xl hover:bg-gray-100 transition-colors"
-                                    >
-                                        +
-                                    </button>
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={handleStockUpdate}
-                                disabled={isUpdatingStock}
-                                className={`w-full py-5 rounded-3xl font-black text-base uppercase tracking-widest shadow-2xl transition-all active:scale-[0.98] mt-2 flex items-center justify-center gap-3 ${action === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200' : 'bg-orange-600 hover:bg-orange-700 shadow-orange-200'} text-white`}
-                            >
-                                {isUpdatingStock ? (
-                                    <>
-                                        <Loader2 size={24} className="animate-spin" />
-                                        Updating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle2 size={24} />
-                                        Confirm Stock {action}
-                                    </>
-                                )}
-                            </button>
-
-                            <button
-                                onClick={() => setIdentifiedItem(null)}
-                                className="w-full py-3 text-gray-400 font-bold text-xs uppercase tracking-widest hover:text-gray-600 transition-colors"
-                            >
-                                Rescan
-                            </button>
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
+
             </div>
         </div>
     );
