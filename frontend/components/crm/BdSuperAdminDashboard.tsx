@@ -12,8 +12,12 @@ import {
     PieChart, Pie, Cell, ResponsiveContainer,
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
+import { useSound } from '@/frontend/context/SoundContext';
+import { useCountUp } from '@/frontend/hooks/useCountUp';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
+import RepTimeGridCalendar from '@/frontend/components/crm/RepTimeGridCalendar';
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -37,7 +41,7 @@ function inrCompact(n: number | null | undefined): string {
 
 const compactNum = (n: number | null | undefined) => (n == null || isNaN(n)) ? '0' : n.toLocaleString('en-IN');
 const pct = (c?: number, p?: number) => (c != null && p != null && p > 0) ? Math.round(((c - p) / p) * 100) : null;
-const fmtDate = (d: Date) => d.toISOString().split('T')[0];
+const fmtDate = (d: Date) => (isNaN(d.getTime()) ? new Date() : d).toISOString().split('T')[0];
 
 function periodRange(period: Period): { from: string; to: string } {
     const now = new Date();
@@ -46,6 +50,9 @@ function periodRange(period: Period): { from: string; to: string } {
     if (period === 'This Week') {
         const day = now.getDay(); const offset = day === 0 ? 6 : day - 1;
         return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset)), to };
+    }
+    if (period === 'Last 15 Days') {
+        return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 14)), to };
     }
     // This Month / Custom → month-to-date
     return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), 1)), to };
@@ -62,13 +69,17 @@ function prevPeriodRange(period: Period): { from: string; to: string } {
         const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - offset);
         return { from: fmtDate(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() - 7)), to: fmtDate(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() - 1)) };
     }
+    if (period === 'Last 15 Days') {
+        // Prior 15-day window: day-29 .. day-15
+        return { from: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)), to: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 15)) };
+    }
     // This Month / Custom → first of last month .. same day-of-month last month
     const firstLast = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const sameDayLast = new Date(now.getFullYear(), now.getMonth() - 1, Math.min(now.getDate(), new Date(now.getFullYear(), now.getMonth(), 0).getDate()));
     return { from: fmtDate(firstLast), to: fmtDate(sameDayLast) };
 }
 
-const deltaLabelFor = (p: Period) => p === 'Today' ? 'vs yesterday' : p === 'This Week' ? 'vs last week' : 'vs last month';
+const deltaLabelFor = (p: Period) => p === 'Today' ? 'vs yesterday' : p === 'This Week' ? 'vs last week' : p === 'Last 15 Days' ? 'vs prev 15 days' : 'vs last month';
 
 function weekBounds() {
     const now = new Date();
@@ -78,10 +89,27 @@ function weekBounds() {
     return { start: mon.toISOString(), end: sun.toISOString(), mon };
 }
 
-const PERIODS = ['Today', 'This Week', 'This Month', 'Custom'] as const;
+const CHANNEL_BADGE: Record<string, { label: string; color: string; glyph: string }> = {
+    meta_ads: { label: 'Meta Ads', color: '#1877F2', glyph: '∞' },
+    linkedin_ads: { label: 'LinkedIn Ads', color: '#0A66C2', glyph: 'in' },
+    google_ads: { label: 'Google Ads', color: '#16A34A', glyph: 'G' },
+    other: { label: 'Other', color: '#64748B', glyph: '·' },
+};
+
+const PERIODS = ['Today', 'This Week', 'Last 15 Days', 'This Month', 'Custom'] as const;
 type Period = typeof PERIODS[number];
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// Staggered entrance for the KPI grid (gated by reduced-motion at call sites).
+const KPI_GRID_VARIANTS = {
+    hidden: {},
+    show: { transition: { staggerChildren: 0.06 } },
+};
+const KPI_ITEM_VARIANTS = {
+    hidden: { opacity: 0, y: 12 },
+    show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
+};
 
 /* ------------------------------------------------------------------ */
 /* Main component                                                      */
@@ -91,6 +119,8 @@ export default function BdSuperAdminDashboard() {
     const { user } = useAuth();
     const params = useParams();
     const orgId = params?.orgId as string;
+    const reduceMotion = useReducedMotion();
+    const { play } = useSound();
 
     const [loading, setLoading] = useState(true);
     const [period, setPeriod] = useState<Period>('This Month');
@@ -98,7 +128,9 @@ export default function BdSuperAdminDashboard() {
     const [customTo, setCustomTo] = useState('');
     const [city, setCity] = useState('All Cities');
     const [cityOpen, setCityOpen] = useState(false);
-    const [trendMonths, setTrendMonths] = useState(12);
+    const [trendKey, setTrendKey] = useState<'15d' | '3m' | '6m' | '12m' | 'custom'>('12m');
+    const [trendCustom, setTrendCustom] = useState<{ from: string; to: string }>({ from: '', to: '' });
+    const [trendChannel, setTrendChannel] = useState<'blended' | 'meta' | 'linkedin'>('blended');
     const cityRef = useRef<HTMLDivElement>(null);
 
     const [impactPeriod, setImpactPeriod] = useState<any>(null);
@@ -107,6 +139,7 @@ export default function BdSuperAdminDashboard() {
     const [stats, setStats] = useState<any>(null);
     const [campaigns, setCampaigns] = useState<any[]>([]);
     const [latest, setLatest] = useState<any[]>([]);
+    const [channelMix, setChannelMix] = useState<any[]>([]);
     const [events, setEvents] = useState<any[]>([]);
     const [accounts, setAccounts] = useState<any[]>([]);
     const [cities, setCities] = useState<string[]>(['All Cities']);
@@ -129,33 +162,50 @@ export default function BdSuperAdminDashboard() {
             ? { from: customFrom, to: customTo }
             : periodRange(period);
         const pp = prevPeriodRange(period);
-        const yearFrom = fmtDate(new Date(Date.now() - trendMonths * 30 * 86400000));
+        // Trend range + granularity. 15d → daily points; months → monthly;
+        // custom → daily if ≤ 31 days else monthly.
+        let trendFrom: string, trendTo = fmtDate(new Date()), trendGroup: 'day' | 'month' = 'month';
+        if (trendKey === '15d') { trendFrom = fmtDate(new Date(Date.now() - 14 * 86400000)); trendGroup = 'day'; }
+        else if (trendKey === 'custom' && trendCustom.from && trendCustom.to) {
+            trendFrom = trendCustom.from; trendTo = trendCustom.to;
+            trendGroup = (new Date(trendTo).getTime() - new Date(trendFrom).getTime()) <= 31 * 86400000 ? 'day' : 'month';
+        } else {
+            const m = trendKey === '3m' ? 3 : trendKey === '6m' ? 6 : 12;
+            trendFrom = fmtDate(new Date(Date.now() - m * 30 * 86400000));
+        }
         const wk = weekBounds();
         const j = (url: string) => fetch(url).then(r => (r.ok ? r.json() : null)).catch(() => null);
 
         Promise.all([
             j(`/api/crm/reports/impact?from=${pr.from}&to=${pr.to}&group_by=month${org}`),
             j(`/api/crm/reports/impact?from=${pp.from}&to=${pp.to}&group_by=month${org}`),
-            j(`/api/crm/reports/impact?from=${yearFrom}&to=${pr.to}&group_by=month${org}`),
+            j(`/api/crm/reports/impact?from=${trendFrom}&to=${trendTo}&group_by=${trendGroup}${org}`),
             j(`/api/crm/stats?type=admin&period=${statsPeriod}${cityParam}${org}`),
             j(`/api/crm/campaigns?${org.slice(1)}`),
             j(`/api/crm/leads?sort_by=created_at&sort_order=desc&page_size=8${org}`),
             j(`/api/crm/events?start_date=${encodeURIComponent(wk.start)}&end_date=${encodeURIComponent(wk.end)}${org}`),
             j(`/api/crm/accounts?limit=8${org}`),
-        ]).then(([ip, ipp, iy, s, c, l, ev, ac]) => {
+            j(`/api/crm/campaigns/performance?from=${pr.from}&to=${pr.to}${org}`),
+        ]).then(([ip, ipp, iy, s, c, l, ev, ac, perf]) => {
             if (!active) return;
             setImpactPeriod(ip); setImpactPrev(ipp); setImpactYear(iy); setStats(s);
             setCampaigns(Array.isArray(c?.campaigns) ? c.campaigns : []);
             setLatest(Array.isArray(l?.leads) ? l.leads : []);
+            setChannelMix(Array.isArray(perf?.by_channel) ? perf.by_channel : []);
             setEvents(Array.isArray(ev?.events) ? ev.events : []);
             setAccounts(Array.isArray(ac?.accounts) ? ac.accounts : []);
-            // Real city list from territory performance.
-            const tp = s?.territory_performance || [];
-            if (tp.length) setCities(['All Cities', ...tp.map((t: any) => t.city).filter(Boolean)]);
+            // Real city list from territory performance — only rebuild from the
+            // UNFILTERED ("All Cities") dataset. When a specific city is selected the
+            // stats are filtered to that one city, so territory_performance would
+            // otherwise collapse the dropdown to just that city + All Cities.
+            if (city === 'All Cities') {
+                const tp = s?.territory_performance || [];
+                if (tp.length) setCities(['All Cities', ...Array.from(new Set<string>(tp.map((t: any) => t.city).filter(Boolean)))]);
+            }
             setLoading(false);
         });
         return () => { active = false; };
-    }, [orgId, period, city, customFrom, customTo, trendMonths]);
+    }, [orgId, period, city, customFrom, customTo, trendKey, trendCustom]);
 
     /* ---- Derived (100% real data) ---- */
 
@@ -193,9 +243,15 @@ export default function BdSuperAdminDashboard() {
 
     const trend = useMemo(() => {
         const mt = impactYear?.monthly_trend || [];
-        return mt.map((m: any) => ({ d: m.label, v: m.leads || 0 }));
-    }, [impactYear]);
+        const pick = (m: any) => {
+            if (trendChannel === 'meta') return m.metaLeads || 0;
+            if (trendChannel === 'linkedin') return m.linkedinLeads || 0;
+            return m.leads || 0; // blended
+        };
+        return mt.map((m: any) => ({ d: m.label, v: pick(m) }));
+    }, [impactYear, trendChannel]);
     const trendTotal = trend.reduce((a: number, b: any) => a + b.v, 0);
+    const trendColor = trendChannel === 'meta' ? '#1877F2' : trendChannel === 'linkedin' ? '#0A66C2' : '#6366F1';
 
     const campaignSpend = useMemo(() => {
         const cb = impactPeriod?.campaign_breakdown || [];
@@ -205,18 +261,50 @@ export default function BdSuperAdminDashboard() {
             .map((c: any) => ({ name: c.name, spend: c.spend || 0, leads: c.leads || 0, cpl: c.cpl || (c.leads ? (c.spend || 0) / c.leads : 0) }));
     }, [impactPeriod]);
 
+    // Color-grade CPL relative to the displayed rows' median, so "good/bad" is
+    // judged against this dataset rather than a hardcoded INR threshold.
+    const cplTone = useMemo(() => {
+        const vals = campaignSpend.filter((c: any) => c.leads).map((c: any) => c.cpl).sort((a: number, b: number) => a - b);
+        const median = vals.length ? vals[Math.floor(vals.length / 2)] : 0;
+        return (v: number) => {
+            if (!median) return 'text-text-primary';
+            if (v <= median * 0.75) return 'text-emerald-600';  // efficient — good
+            if (v >= median * 1.5) return 'text-rose-500';      // expensive — bad
+            if (v >= median * 1.15) return 'text-amber-600';    // slightly high — watch
+            return 'text-text-primary';                          // around median
+        };
+    }, [campaignSpend]);
+
     const team = useMemo(() => {
-        const rp = impactPeriod?.rep_performance || impactYear?.rep_performance || [];
+        // Prefer current period data; fallback to year data if period is empty.
+        // This ensures we show SOMETHING even if the selected period has no leads.
+        const rp = (impactPeriod?.rep_performance && impactPeriod.rep_performance.length > 0)
+            ? impactPeriod.rep_performance
+            : (impactYear?.rep_performance || []);
         const meetingsByName: Record<string, number> = {};
         (stats?.user_performance || []).forEach((u: any) => { meetingsByName[(u.user_name || '').toLowerCase()] = u.meetings || 0; });
-        return rp.filter((r: any) => r.name)
-            .sort((a: any, b: any) => (b.pipeline || 0) - (a.pipeline || 0) || (b.won || 0) - (a.won || 0))
-            .slice(0, 6)
+        let teamList = rp.filter((r: any) => r.name && r.name !== 'Unassigned')
+            .sort((a: any, b: any) => (b.leads || 0) - (a.leads || 0) || (b.won || 0) - (a.won || 0))
             .map((r: any) => ({
-                name: r.name, pipeline: r.pipeline || 0,
+                name: r.name, leads: r.leads || 0,
                 meetings: meetingsByName[(r.name || '').toLowerCase()] ?? 0,
                 sqls: r.won || 0, winRate: Math.round(r.win_rate || 0),
             }));
+
+        // Add specific team members if not already in the list
+        const existingNames = new Set(teamList.map((t: any) => t.name.toLowerCase()));
+        const additionalReps = [
+            { name: 'Harshini', leads: 0, meetings: 0, sqls: 0, winRate: 0 },
+            { name: 'Neha', leads: 0, meetings: 0, sqls: 0, winRate: 0 },
+        ];
+
+        for (const rep of additionalReps) {
+            if (!existingNames.has(rep.name.toLowerCase())) {
+                teamList.push(rep);
+            }
+        }
+
+        return teamList.slice(0, 6);
     }, [impactPeriod, impactYear, stats]);
 
     const signals = useMemo(() => {
@@ -270,11 +358,35 @@ export default function BdSuperAdminDashboard() {
                 title: e.title || e.event_type || 'Event',
                 time: dt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }),
                 color: e.event_type === 'meeting' ? 'violet' : e.event_type === 'call' ? 'blue' : e.event_type === 'site_visit' ? 'emerald' : 'amber',
+                user: e.user_info,
             });
         }
         return days;
     }, [events]);
     const calendarHasEvents = calendar.some(d => d.events.length);
+
+    // Extract unique reps from events for profile header
+    const eventReps = useMemo(() => {
+        const repsMap = new Map<string, any>();
+        for (const e of events) {
+            if (e.user_id && !repsMap.has(e.user_id)) {
+                const userInfo = Array.isArray(e.user_info) ? e.user_info[0] : e.user_info;
+                repsMap.set(e.user_id, {
+                    id: e.user_id,
+                    name: userInfo?.full_name || 'Unknown',
+                    avatar: userInfo?.user_photo_url || userInfo?.avatar_url,
+                    eventCount: 0,
+                });
+            }
+        }
+        // Count events per rep
+        for (const e of events) {
+            if (e.user_id && repsMap.has(e.user_id)) {
+                repsMap.get(e.user_id)!.eventCount++;
+            }
+        }
+        return Array.from(repsMap.values()).sort((a: any, b: any) => b.eventCount - a.eventCount);
+    }, [events]);
 
     const aiInsights = useMemo(() => {
         const hot = stats?.hot_leads ?? 0;
@@ -302,17 +414,17 @@ export default function BdSuperAdminDashboard() {
     }
 
     return (
-        <div className="space-y-6 -mt-2">
+        <div className="space-y-6 -mt-2 w-full min-w-0">
             {/* Top header strip */}
-            <div className="flex items-center gap-4">
-                <div className="flex-1 max-w-2xl relative">
+            <div className="flex flex-wrap items-center gap-3">
+                <div className="flex-1 min-w-0 sm:max-w-2xl relative order-2 sm:order-1 basis-full sm:basis-auto">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
                     <input placeholder="Search leads, companies, campaigns..." className="w-full pl-11 pr-12 py-2.5 bg-surface-elevated border border-border rounded-full text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-primary/20" />
                     <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-text-tertiary bg-surface border border-border rounded px-1.5 py-0.5">⌘K</kbd>
                 </div>
-                <div className="flex items-center gap-3 ml-auto">
+                <div className="flex items-center gap-3 ml-auto order-1 sm:order-2 shrink-0">
                     <Link href={`/${orgId}/crm/ai`} className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-gradient-to-r from-violet-500/10 to-indigo-500/10 border border-violet-300/40 dark:border-violet-700/40 text-violet-700 dark:text-violet-300 hover:from-violet-500/20 hover:to-indigo-500/20 transition-colors">
-                        <Sparkles className="w-4 h-4" /><span className="text-xs font-bold">AI Agent</span>
+                        <Sparkles className="w-4 h-4" /><span className="text-xs font-bold hidden sm:inline">AI Agent</span>
                     </Link>
                     <button className="relative w-9 h-9 rounded-full bg-surface-elevated border border-border flex items-center justify-center hover:bg-muted transition-colors">
                         <Bell className="w-4 h-4 text-text-secondary" />
@@ -338,25 +450,25 @@ export default function BdSuperAdminDashboard() {
                     <h1 className="text-2xl font-black text-text-primary tracking-tight flex items-center gap-2">{getGreeting()}, {firstName} <span className="text-xl">👋</span></h1>
                     <p className="text-sm text-text-secondary mt-0.5">Here's what's happening across your GTM engine today.</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div ref={cityRef} className="relative">
+                <div className="flex flex-wrap items-center gap-3 min-w-0">
+                    <div ref={cityRef} className="relative shrink-0">
                         <button onClick={() => setCityOpen(o => !o)} className="flex items-center gap-2 px-4 py-2 bg-surface border border-border rounded-full hover:border-primary transition-all text-sm font-bold text-text-primary">
                             <MapPin className="w-4 h-4 text-primary" />{city}<ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform ${cityOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {cityOpen && (
                             <div className="absolute right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-xl z-50 min-w-[160px] overflow-hidden max-h-72 overflow-y-auto">
                                 {cities.map(c => (
-                                    <button key={c} onClick={() => { setCity(c); setCityOpen(false); }} className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${city === c ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-muted'}`}>
+                                    <button key={c} onClick={() => { setCity(c); setCityOpen(false); play('toggle'); }} className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${city === c ? 'bg-primary/10 text-primary' : 'text-text-secondary hover:bg-muted'}`}>
                                         <MapPin className="w-3.5 h-3.5" /> {c}
                                     </button>
                                 ))}
                             </div>
                         )}
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-0.5 bg-surface-elevated rounded-full p-1 border border-border">
+                    <div className="flex flex-col items-end gap-2 min-w-0 max-w-full">
+                        <div className="flex items-center gap-0.5 bg-surface-elevated rounded-full p-1 border border-border max-w-full overflow-x-auto no-scrollbar">
                             {PERIODS.map(p => (
-                                <button key={p} onClick={() => setPeriod(p)} className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${period === p ? 'bg-amber-400 text-slate-900' : 'text-text-secondary hover:text-text-primary'}`}>{p}</button>
+                                <button key={p} onClick={() => { setPeriod(p); play('toggle'); }} className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${period === p ? 'bg-amber-400 text-slate-900' : 'text-text-secondary hover:text-text-primary'}`}>{p}</button>
                             ))}
                         </div>
                         {period === 'Custom' && (
@@ -378,14 +490,71 @@ export default function BdSuperAdminDashboard() {
             </div>
 
             {/* 6 KPI cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-                <KpiCard icon={Users} tint="violet" label="Leads Received" value={compactNum(kpis.leads_received)} delta={kpis.leads_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />
-                <KpiCard icon={Megaphone} tint="rose" label="Campaigns Active" value={compactNum(kpis.campaigns_active)} delta={null} sub={`of ${campaignTotal} total`} href={`/${orgId}/crm/campaigns`} />
-                <KpiCard icon={Wallet} tint="amber" label="Total Spend" value={inrCompact(kpis.total_spend)} delta={kpis.spend_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/campaigns`} />
-                <KpiCard icon={CalendarCheck} tint="blue" label="Meetings Booked" value={compactNum(kpis.meetings_booked)} delta={null} href={`/${orgId}/crm/calendar`} />
-                <KpiCard icon={TrendingUp} tint="emerald" label="Pipeline Generated" value={inrCompact(kpis.pipeline_generated)} delta={kpis.pipeline_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />
-                <KpiCard icon={Target} tint="pink" label="SQLs" value={compactNum(kpis.sqls)} delta={null} sub="warm + MQL" href={`/${orgId}/crm/leads`} />
-            </div>
+            <motion.div
+                className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4"
+                variants={reduceMotion ? undefined : KPI_GRID_VARIANTS}
+                initial={reduceMotion ? undefined : 'hidden'}
+                animate={reduceMotion ? undefined : 'show'}
+            >
+                {[
+                    <KpiCard key="leads" icon={Users} tint="violet" label="Leads Received" value={compactNum(kpis.leads_received)} delta={kpis.leads_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />,
+                    <KpiCard key="camp" icon={Megaphone} tint="rose" label="Campaigns Active" value={compactNum(kpis.campaigns_active)} delta={null} sub={`of ${campaignTotal} total`} href={`/${orgId}/crm/campaigns`} />,
+                    <KpiCard key="spend" icon={Wallet} tint="amber" label="Total Spend" value={inrCompact(kpis.total_spend)} delta={kpis.spend_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/campaigns`} />,
+                    <KpiCard key="mtg" icon={CalendarCheck} tint="blue" label="Meetings Booked" value={compactNum(kpis.meetings_booked)} delta={null} href={`/${orgId}/crm/calendar`} />,
+                    <KpiCard key="pipe" icon={TrendingUp} tint="emerald" label="Pipeline Generated" value={inrCompact(kpis.pipeline_generated)} delta={kpis.pipeline_delta} deltaLabel={deltaLabel} href={`/${orgId}/crm/leads`} />,
+                    <KpiCard key="sql" icon={Target} tint="pink" label="SQLs" value={compactNum(kpis.sqls)} delta={null} sub="warm + MQL" href={`/${orgId}/crm/leads`} />,
+                ].map((card, i) => (
+                    reduceMotion ? card : <motion.div key={i} variants={KPI_ITEM_VARIANTS} className="h-full">{card}</motion.div>
+                ))}
+            </motion.div>
+
+            {/* Blended channel performance (Meta / LinkedIn / Google) */}
+            {channelMix.length > 0 && (
+                <Panel title="Channel Performance" href={`/${orgId}/crm/marketing`} linkLabel="Full marketing report">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm min-w-[520px]">
+                            <thead>
+                                <tr className="text-left text-[11px] font-bold text-text-tertiary uppercase border-b border-border">
+                                    <th className="px-4 py-2">Channel</th>
+                                    <th className="px-4 py-2">Spend</th>
+                                    <th className="px-4 py-2">Leads</th>
+                                    <th className="px-4 py-2">CTR</th>
+                                    <th className="px-4 py-2">CPL</th>
+                                    <th className="px-4 py-2">Impressions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {channelMix.map((r: any) => {
+                                    const meta = CHANNEL_BADGE[r.channel] || CHANNEL_BADGE.other;
+                                    const maxSpend = Math.max(1, ...channelMix.map((x: any) => x.spend));
+                                    return (
+                                        <tr key={r.channel} className="border-b border-border last:border-0">
+                                            <td className="px-4 py-2.5">
+                                                <span className="inline-flex items-center gap-2 font-bold text-text-primary">
+                                                    <span className="inline-flex items-center justify-center w-5 h-5 rounded text-[9px] font-black text-white" style={{ backgroundColor: meta.color }}>{meta.glyph}</span>
+                                                    {meta.label}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2.5">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-text-primary whitespace-nowrap">{inrCompact(r.spend)}</span>
+                                                    <div className="flex-1 h-1.5 bg-surface-elevated rounded-full overflow-hidden min-w-[40px]">
+                                                        <div className="h-full rounded-full" style={{ width: `${Math.max(3, (r.spend / maxSpend) * 100)}%`, backgroundColor: meta.color }} />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-2.5 font-bold text-text-primary">{compactNum(r.leads)}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary">{r.ctr != null ? `${r.ctr.toFixed(2)}%` : '—'}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary">{r.cpl != null ? inrCompact(Math.round(r.cpl)) : '—'}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary">{compactNum(r.impressions)}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Panel>
+            )}
 
             {/* Row 2 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -400,7 +569,7 @@ export default function BdSuperAdminDashboard() {
                                     return `${Math.floor(h / 24)}d ago`;
                                 })();
                                 return (
-                                    <div key={l.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-surface-elevated transition-colors">
+                                    <Link key={l.id} href={`/${orgId}/crm/leads?lead=${l.id}`} className="px-4 py-2.5 flex items-center gap-3 hover:bg-surface-elevated transition-colors">
                                         <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary flex-shrink-0">
                                             {(l.name || '?').charAt(0).toUpperCase()}
                                         </div>
@@ -411,32 +580,76 @@ export default function BdSuperAdminDashboard() {
                                             </p>
                                         </div>
                                         <span className="text-[10px] text-text-tertiary whitespace-nowrap">{ago}</span>
-                                    </div>
+                                    </Link>
                                 );
                             })}
                         </div>
                     )}
                 </Panel>
 
-                <Panel title="Leads Received Trend" right={<MiniSelect label={`Last ${trendMonths} mo`} options={['Last 3 mo', 'Last 6 mo', 'Last 12 mo']} onSelect={v => setTrendMonths(parseInt(v))} />}>
-                    {trend.length === 0 ? <Empty msg="No lead history" /> : (
-                        <div className="px-5 py-3">
-                            <div className="flex items-baseline gap-2 mb-2">
-                                <span className="text-2xl font-black text-text-primary">{compactNum(trendTotal)}</span>
-                                <span className="text-[11px] text-text-tertiary font-medium">leads · last 12 months</span>
-                            </div>
-                            <ResponsiveContainer width="100%" height={150}>
-                                <AreaChart data={trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                                    <defs><linearGradient id="leadFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6366F1" stopOpacity={0.25} /><stop offset="100%" stopColor="#6366F1" stopOpacity={0} /></linearGradient></defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                                    <XAxis dataKey="d" stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} interval="preserveStartEnd" />
-                                    <YAxis stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} width={36} />
-                                    <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }} />
-                                    <Area type="monotone" dataKey="v" stroke="#6366F1" strokeWidth={2} fill="url(#leadFill)" dot={{ r: 2.5, fill: '#6366F1' }} />
-                                </AreaChart>
-                            </ResponsiveContainer>
+                <Panel
+                    title="Leads Received Trend"
+                    right={
+                        <div className="flex items-center gap-2">
+                            {trendKey === 'custom' && (
+                                <span className="flex items-center gap-1">
+                                    <input type="date" value={trendCustom.from} onChange={e => setTrendCustom(c => ({ ...c, from: e.target.value }))}
+                                        className="border border-border rounded-lg px-2 py-1 text-[11px] bg-surface" />
+                                    <span className="text-text-tertiary text-[11px]">–</span>
+                                    <input type="date" value={trendCustom.to} onChange={e => setTrendCustom(c => ({ ...c, to: e.target.value }))}
+                                        className="border border-border rounded-lg px-2 py-1 text-[11px] bg-surface" />
+                                </span>
+                            )}
+                            <MiniSelect
+                                label={{ '15d': 'Last 15 days', '3m': 'Last 3 mo', '6m': 'Last 6 mo', '12m': 'Last 12 mo', custom: 'Custom' }[trendKey]}
+                                options={['Last 15 days', 'Last 3 mo', 'Last 6 mo', 'Last 12 mo', 'Custom']}
+                                onSelect={v => setTrendKey(v === 'Last 15 days' ? '15d' : v === 'Last 3 mo' ? '3m' : v === 'Last 6 mo' ? '6m' : v === 'Custom' ? 'custom' : '12m')}
+                            />
                         </div>
-                    )}
+                    }
+                >
+                    <div className="px-5 py-3">
+                        {/* Channel toggle: blended vs Meta-only vs LinkedIn-only */}
+                        <div className="flex items-center gap-0.5 bg-surface-elevated rounded-full p-1 border border-border w-fit mb-3">
+                            {([
+                                { key: 'blended', label: 'Blended', color: '#6366F1' },
+                                { key: 'meta', label: 'Meta', color: '#1877F2' },
+                                { key: 'linkedin', label: 'LinkedIn', color: '#0A66C2' },
+                            ] as const).map(c => (
+                                <button
+                                    key={c.key}
+                                    onClick={() => { setTrendChannel(c.key); play('toggle'); }}
+                                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold transition-colors ${trendChannel === c.key ? 'text-white' : 'text-text-secondary hover:text-text-primary'}`}
+                                    style={trendChannel === c.key ? { backgroundColor: c.color } : undefined}
+                                >
+                                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: trendChannel === c.key ? '#fff' : c.color }} />
+                                    {c.label}
+                                </button>
+                            ))}
+                        </div>
+                        {trend.length === 0 || trendTotal === 0 ? (
+                            <Empty msg={trendChannel === 'blended' ? 'No lead history' : `No ${trendChannel === 'meta' ? 'Meta' : 'LinkedIn'} leads in this range`} />
+                        ) : (
+                            <>
+                                <div className="flex items-baseline gap-2 mb-2">
+                                    <span className="text-2xl font-black text-text-primary">{compactNum(trendTotal)}</span>
+                                    <span className="text-[11px] text-text-tertiary font-medium">
+                                        {trendChannel === 'blended' ? 'leads' : `${trendChannel === 'meta' ? 'Meta' : 'LinkedIn'} leads`} · {{ '15d': 'last 15 days', '3m': 'last 3 months', '6m': 'last 6 months', '12m': 'last 12 months', custom: 'custom range' }[trendKey]}
+                                    </span>
+                                </div>
+                                <ResponsiveContainer width="100%" height={150}>
+                                    <AreaChart data={trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                                        <defs><linearGradient id="leadFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={trendColor} stopOpacity={0.25} /><stop offset="100%" stopColor={trendColor} stopOpacity={0} /></linearGradient></defs>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                                        <XAxis dataKey="d" stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} interval="preserveStartEnd" />
+                                        <YAxis stroke="#94A3B8" tickLine={false} axisLine={false} style={{ fontSize: 10 }} width={36} />
+                                        <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 12 }} />
+                                        <Area type="monotone" dataKey="v" stroke={trendColor} strokeWidth={2} fill="url(#leadFill)" dot={{ r: 2.5, fill: trendColor }} />
+                                    </AreaChart>
+                                </ResponsiveContainer>
+                            </>
+                        )}
+                    </div>
                 </Panel>
 
                 <Panel title="Spend per Campaign" href={`/${orgId}/crm/campaigns`} linkLabel="View campaigns" right={<MiniSelect label={period} options={[...PERIODS]} onSelect={v => setPeriod(v as Period)} />}>
@@ -453,9 +666,9 @@ export default function BdSuperAdminDashboard() {
                                     {campaignSpend.map((c: any) => (
                                         <tr key={c.name}>
                                             <td className="py-2 px-2 font-bold text-text-primary truncate max-w-[150px]">{c.name}</td>
-                                            <td className="py-2 px-2 text-right text-text-secondary">{inrCompact(c.spend)}</td>
-                                            <td className="py-2 px-2 text-right text-text-secondary">{c.leads}</td>
-                                            <td className="py-2 px-2 text-right text-text-secondary">{c.leads ? inrCompact(c.cpl) : '—'}</td>
+                                            <td className="py-2 px-2 text-right font-bold tabular-nums text-text-primary">{inrCompact(c.spend)}</td>
+                                            <td className="py-2 px-2 text-right font-bold tabular-nums text-primary">{c.leads}</td>
+                                            <td className={`py-2 px-2 text-right font-bold tabular-nums ${c.leads ? cplTone(c.cpl) : 'text-text-tertiary'}`}>{c.leads ? inrCompact(c.cpl) : '—'}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -467,14 +680,14 @@ export default function BdSuperAdminDashboard() {
 
             {/* Row 3 */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-4">
+                <div className="lg:col-span-5">
                     <Panel title="Team Performance" href={`/${orgId}/crm/performance`} linkLabel="View full team report" right={<MiniSelect label={period} options={[...PERIODS]} onSelect={v => setPeriod(v as Period)} />}>
                         {team.length === 0 ? <Empty msg="No rep activity yet" /> : (
                             <div className="px-3 pb-2 overflow-x-auto">
                                 <table className="w-full text-xs">
                                     <thead><tr className="text-text-tertiary">
                                         <th className="text-left font-bold py-2 px-2"> </th>
-                                        <th className="text-right font-bold py-2 px-1">Pipeline</th>
+                                        <th className="text-right font-bold py-2 px-1">Leads</th>
                                         <th className="text-right font-bold py-2 px-1">Mtgs</th>
                                         <th className="text-right font-bold py-2 px-1">Won</th>
                                         <th className="text-right font-bold py-2 px-1">Win%</th>
@@ -486,10 +699,10 @@ export default function BdSuperAdminDashboard() {
                                                     <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-black text-primary flex-shrink-0">{(t.name || '?').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}</div>
                                                     <span className="font-bold text-text-primary whitespace-nowrap">{t.name}</span>
                                                 </div></td>
-                                                <td className="py-2 px-1 text-right text-text-secondary whitespace-nowrap">{inrCompact(t.pipeline)}</td>
-                                                <td className="py-2 px-1 text-right text-text-secondary">{t.meetings}</td>
-                                                <td className="py-2 px-1 text-right text-text-secondary">{t.sqls}</td>
-                                                <td className="py-2 px-1 text-right font-bold text-emerald-600">{t.winRate}%</td>
+                                                <td className="py-2 px-1 text-right whitespace-nowrap font-bold tabular-nums text-primary">{t.leads}</td>
+                                                <td className="py-2 px-1 text-right font-bold tabular-nums text-text-primary">{t.meetings}</td>
+                                                <td className="py-2 px-1 text-right font-bold tabular-nums text-violet-600">{t.sqls}</td>
+                                                <td className="py-2 px-1 text-right font-bold tabular-nums text-emerald-600">{t.winRate}%</td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -499,66 +712,12 @@ export default function BdSuperAdminDashboard() {
                     </Panel>
                 </div>
 
-                <div className="lg:col-span-3">
-                    <Panel title="High-Intent Signal Leads" href={`/${orgId}/crm/signals`} linkLabel="View all signal leads">
-                        {signals.length === 0 ? <Empty msg="No hot/warm leads" /> : (
-                            <div className="divide-y divide-border">
-                                {signals.map((s: any) => (
-                                    <Link key={s.id} href={`/${orgId}/crm/leads?lead=${s.id}`} className="block px-4 py-3 hover:bg-surface-elevated transition-colors">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <p className="text-xs font-bold text-text-primary truncate">{s.name}</p>
-                                                <p className="text-[10px] text-text-tertiary truncate">{s.meta}</p>
-                                                <p className="text-[10px] text-text-secondary mt-0.5 truncate">{s.reason}</p>
-                                            </div>
-                                            <div className="text-right flex-shrink-0">
-                                                <span className={`inline-flex items-center gap-0.5 text-[10px] font-black ${s.tier === 'Very Hot' ? 'text-rose-500' : 'text-amber-500'}`}><Flame className="w-2.5 h-2.5" /> {s.status}</span>
-                                                {s.lastAgo && <p className="text-[9px] text-text-tertiary mt-0.5">{s.lastAgo}</p>}
-                                            </div>
-                                        </div>
-                                    </Link>
-                                ))}
-                            </div>
-                        )}
-                    </Panel>
-                </div>
-
-                <div className="lg:col-span-2">
-                    <Panel title="Latest Leads" href={`/${orgId}/crm/leads`} linkLabel="View all latest leads">
-                        {latestLeads.length === 0 ? <Empty msg="No leads yet" /> : (
-                            <div className="divide-y divide-border">
-                                {latestLeads.map((l: any) => (
-                                    <Link key={l.id} href={`/${orgId}/crm/leads?lead=${l.id}`} className="px-4 py-3 flex items-center gap-2.5 hover:bg-surface-elevated transition-colors">
-                                        <div className="w-7 h-7 rounded-lg bg-surface-elevated flex items-center justify-center flex-shrink-0"><Building2 className="w-3.5 h-3.5 text-text-tertiary" /></div>
-                                        <div className="flex-1 min-w-0"><p className="text-xs font-bold text-text-primary truncate">{l.name}</p><p className="text-[10px] text-text-tertiary truncate">{l.location}</p></div>
-                                        <PriorityChip priority={l.priority} />
-                                    </Link>
-                                ))}
-                            </div>
-                        )}
-                    </Panel>
-                </div>
-
-                <div className="lg:col-span-3">
-                    <Panel title="Rep Calendar" right={<MiniSelect label="This Week" />}>
-                        {!calendarHasEvents ? <Empty msg="No events this week" /> : (
-                            <div className="px-3 pb-3">
-                                <p className="text-[10px] text-text-tertiary font-medium px-1 mb-2">{calendar[0]?.label} {calendar[0]?.date} – {calendar[6]?.label} {calendar[6]?.date}</p>
-                                <div className="space-y-1.5 max-h-[230px] overflow-y-auto">
-                                    {calendar.filter(d => d.events.length).map(d => (
-                                        <div key={d.key} className="flex gap-2">
-                                            <div className="w-9 flex-shrink-0 text-center"><p className="text-[9px] text-text-tertiary font-bold uppercase">{d.label}</p><p className="text-sm font-black text-text-primary leading-none">{d.date}</p></div>
-                                            <div className="flex-1 space-y-1">
-                                                {d.events.map((e: any, i: number) => (
-                                                    <div key={i} className={`px-2 py-1 rounded-md text-[10px] font-bold ${calColor(e.color)}`}>{e.title} <span className="font-medium opacity-70">{e.time}</span></div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </Panel>
+                <div className="lg:col-span-7 flex flex-col">
+                    <RepTimeGridCalendar
+                        events={events}
+                        reps={eventReps}
+                        orgId={orgId}
+                    />
                 </div>
             </div>
 
@@ -631,13 +790,15 @@ const TINTS: Record<string, string> = {
 };
 
 function KpiCard({ icon: Icon, tint, label, value, delta, deltaLabel, sub, href }: { icon: React.ElementType; tint: string; label: string; value: string; delta: number | null; deltaLabel?: string; sub?: string; href?: string; }) {
+    const reduce = useReducedMotion();
+    const animatedValue = useCountUp(value, !reduce);
     const inner = (
         <>
             <div className="flex items-start justify-between mb-3">
                 <p className="text-[11px] font-bold text-text-secondary">{label}</p>
                 <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${TINTS[tint]}`}><Icon className="w-4 h-4" /></div>
             </div>
-            <p className="text-2xl font-black text-text-primary tracking-tight">{value}</p>
+            <p className="text-2xl font-black text-text-primary tracking-tight tabular-nums">{animatedValue}</p>
             {delta != null ? (
                 <div className="flex items-center gap-1 mt-1.5">
                     {delta >= 0 ? <ArrowUpRight className="w-3 h-3 text-emerald-500" /> : <ArrowDownRight className="w-3 h-3 text-rose-500" />}
@@ -647,13 +808,18 @@ function KpiCard({ icon: Icon, tint, label, value, delta, deltaLabel, sub, href 
             ) : sub ? <p className="text-[10px] text-text-tertiary mt-1.5">{sub}</p> : <p className="text-[10px] text-text-tertiary mt-1.5 opacity-0">·</p>}
         </>
     );
-    const cls = `bg-surface rounded-2xl border border-border p-4 ${href ? 'hover:border-primary hover:shadow-sm transition-all cursor-pointer' : ''}`;
-    return href ? <Link href={href} className={cls}>{inner}</Link> : <div className={cls}>{inner}</div>;
+    const cls = `crm-card bg-surface rounded-2xl border border-border p-4 h-full ${href ? 'hover:border-primary cursor-pointer' : ''}`;
+    if (!href) return <div className={cls}>{inner}</div>;
+    return (
+        <motion.div whileTap={reduce ? undefined : { scale: 0.97 }} className="h-full">
+            <Link href={href} className={`${cls} block`}>{inner}</Link>
+        </motion.div>
+    );
 }
 
 function Panel({ title, href, linkLabel, right, children }: { title: string; href?: string; linkLabel?: string; right?: React.ReactNode; children: React.ReactNode; }) {
     return (
-        <div className="bg-surface rounded-2xl border border-border overflow-hidden flex flex-col h-full">
+        <div className="crm-card bg-surface rounded-2xl border border-border overflow-hidden flex flex-col h-full">
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
                 <h2 className="text-sm font-black text-text-primary">{title}</h2>
                 {right || (href && (

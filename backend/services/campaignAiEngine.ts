@@ -94,6 +94,11 @@ export interface PerformancePayload {
     daily_spend: { date: string; amount: number }[];
     source_breakdown: { name: string; leads: number; won: number; value: number }[];
     city_breakdown: { name: string; leads: number; won: number; value: number }[];
+    by_channel?: {
+        channel: string; spend: number; leads: number; won: number; won_value: number;
+        impressions: number; clicks: number; campaigns: number;
+        ctr: number | null; cpl: number | null; roi: number | null;
+    }[];
 }
 
 // ── Industry baselines (B2B flexible office space, India) ────────────────────

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useParams } from 'next/navigation';
+import ChannelSwitch from '@/frontend/components/crm/ChannelSwitch';
 import {
     Loader2, AlertCircle, TrendingUp, TrendingDown, Target, DollarSign,
     Users, MousePointerClick, Eye, Award, AlertTriangle, Zap, ArrowRight,
@@ -122,7 +123,7 @@ export default function PerformanceMarketingDashboard() {
     }
     if (!data) return null;
 
-    const { kpis, campaigns, daily_spend, source_breakdown, city_breakdown } = data;
+    const { kpis, campaigns, daily_spend, source_breakdown, city_breakdown, by_channel } = data;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: '0 0 60px' }}>
@@ -142,16 +143,10 @@ export default function PerformanceMarketingDashboard() {
                     <span style={{ color: C.textTertiary }}>→</span>
                     <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
                         style={inputStyle} />
-                    <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)}
-                        style={inputStyle}>
-                        <option value="">All channels</option>
-                        <option value="meta_ads">Meta Ads</option>
-                        <option value="google_ads">Google Ads</option>
-                        <option value="whatsapp">WhatsApp</option>
-                        <option value="email">Email</option>
-                        <option value="referral">Referral</option>
-                        <option value="organic">Organic</option>
-                    </select>
+                    <ChannelSwitch
+                        value={(channelFilter || 'all') as any}
+                        onChange={(v) => setChannelFilter(v === 'all' ? '' : v)}
+                    />
                 </div>
             </div>
 
@@ -243,6 +238,17 @@ export default function PerformanceMarketingDashboard() {
             </div>
 
             {/* ── Main table + side panels ──────────────────────────────────── */}
+            {/* ── Blended channel performance (cross-channel report) ─────────── */}
+            {by_channel && by_channel.length > 0 && (
+                <div style={cardStyle}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, margin: '0 0 4px' }}>
+                        Channel Performance
+                    </h3>
+                    <p style={{ fontSize: 12, color: C.textTertiary, margin: '0 0 12px' }}>Blended across all ad channels</p>
+                    <ChannelPerformanceTable rows={by_channel} />
+                </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16 }}>
                 <div style={cardStyle}>
                     <h3 style={{ fontSize: 14, fontWeight: 700, color: C.textPrimary, margin: '0 0 12px' }}>
@@ -462,6 +468,79 @@ function InsightRow({ insight }: { insight: PortfolioInsight }) {
             <p style={{ margin: 0, fontSize: 10, color: C.textSecondary, fontWeight: 600 }}>
                 → {insight.action}
             </p>
+        </div>
+    );
+}
+
+const CHANNEL_META: Record<string, { label: string; color: string }> = {
+    meta_ads: { label: 'Meta Ads', color: '#1877F2' },
+    linkedin_ads: { label: 'LinkedIn Ads', color: '#0A66C2' },
+    google_ads: { label: 'Google Ads', color: '#16A34A' },
+    other: { label: 'Other', color: '#64748B' },
+};
+
+/** Blended channel rollup table with inline bars (cross-channel report). */
+function ChannelPerformanceTable({ rows }: { rows: any[] }) {
+    const maxSpend = Math.max(1, ...rows.map((r) => r.spend));
+    const maxImpr = Math.max(1, ...rows.map((r) => r.impressions));
+    const cell: React.CSSProperties = { padding: '10px 12px', fontSize: 13, color: C.textPrimary, whiteSpace: 'nowrap' };
+    const head: React.CSSProperties = { padding: '8px 12px', fontSize: 11, fontWeight: 700, color: C.textSecondary, textTransform: 'uppercase', textAlign: 'left' };
+    const bar = (val: number, max: number, color: string) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ minWidth: 56, fontWeight: 700 }}>{fmtNum(Math.round(val))}</span>
+            <div style={{ flex: 1, height: 6, background: C.bg, borderRadius: 4, overflow: 'hidden', minWidth: 40 }}>
+                <div style={{ width: `${Math.max(2, (val / max) * 100)}%`, height: '100%', background: color, borderRadius: 4 }} />
+            </div>
+        </div>
+    );
+    return (
+        <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                    <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <th style={head}>Channel</th>
+                        <th style={head}>Ad Spend</th>
+                        <th style={head}>Leads</th>
+                        <th style={head}>Won</th>
+                        <th style={head}>CTR</th>
+                        <th style={head}>CPL</th>
+                        <th style={head}>Impressions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((r) => {
+                        const m = CHANNEL_META[r.channel] || CHANNEL_META.other;
+                        return (
+                            <tr key={r.channel} style={{ borderBottom: `1px solid ${C.border}` }}>
+                                <td style={cell}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ width: 10, height: 10, borderRadius: 3, background: m.color }} />
+                                        <strong>{m.label}</strong>
+                                        <span style={{ fontSize: 11, color: C.textTertiary }}>· {r.campaigns}</span>
+                                    </span>
+                                </td>
+                                <td style={cell}>{bar(r.spend, maxSpend, m.color)}</td>
+                                <td style={{ ...cell, fontWeight: 700 }}>{fmtNum(r.leads)}</td>
+                                <td style={{ ...cell, color: C.success, fontWeight: 700 }}>{fmtNum(r.won)}</td>
+                                <td style={cell}>{r.ctr != null ? `${r.ctr.toFixed(2)}%` : '—'}</td>
+                                <td style={cell}>{r.cpl != null ? fmtINR(Math.round(r.cpl)) : '—'}</td>
+                                <td style={cell}>{bar(r.impressions, maxImpr, m.color)}</td>
+                            </tr>
+                        );
+                    })}
+                    {rows.length > 1 && (
+                        <tr style={{ background: C.bg }}>
+                            <td style={{ ...cell, fontWeight: 800 }}>Grand total</td>
+                            <td style={{ ...cell, fontWeight: 800 }}>{fmtINR(Math.round(rows.reduce((s, r) => s + r.spend, 0)))}</td>
+                            <td style={{ ...cell, fontWeight: 800 }}>{fmtNum(rows.reduce((s, r) => s + r.leads, 0))}</td>
+                            <td style={{ ...cell, fontWeight: 800 }}>{fmtNum(rows.reduce((s, r) => s + r.won, 0))}</td>
+                            <td style={cell}>—</td>
+                            <td style={cell}>—</td>
+                            <td style={{ ...cell, fontWeight: 800 }}>{fmtNum(rows.reduce((s, r) => s + r.impressions, 0))}</td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
         </div>
     );
 }

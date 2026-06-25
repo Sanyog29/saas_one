@@ -296,6 +296,25 @@ export async function GET(request: NextRequest) {
     const totalImpressions = campPerf.reduce((s, c) => s + c.impressions, 0);
     const totalClicks = campPerf.reduce((s, c) => s + c.clicks, 0);
 
+    // ── 11. Blended by-channel rollup (cross-channel report) ─────────────────
+    const channelAgg: Record<string, any> = {};
+    for (const c of campPerf) {
+        const key = c.channel || 'other';
+        const a = channelAgg[key] || (channelAgg[key] = {
+            channel: key, spend: 0, leads: 0, won: 0, won_value: 0,
+            impressions: 0, clicks: 0, campaigns: 0,
+        });
+        a.spend += c.spend; a.leads += c.leads; a.won += c.won;
+        a.won_value += c.won_value; a.impressions += c.impressions;
+        a.clicks += c.clicks; a.campaigns += 1;
+    }
+    const byChannel = Object.values(channelAgg).map((a: any) => ({
+        ...a,
+        ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : null,
+        cpl: a.leads > 0 ? a.spend / a.leads : null,
+        roi: a.spend > 0 ? ((a.won_value - a.spend) / a.spend) * 100 : null,
+    })).sort((a: any, b: any) => b.spend - a.spend);
+
     return NextResponse.json({
         period: { from, to },
         kpis: {
@@ -313,6 +332,7 @@ export async function GET(request: NextRequest) {
             ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0,
         },
         campaigns: campPerf,
+        by_channel: byChannel,
         daily_spend: dailyTimeline,
         source_breakdown: Object.values(srcAgg).sort((a, b) => b.leads - a.leads),
         city_breakdown: Object.values(cityAgg).sort((a, b) => b.leads - a.leads),

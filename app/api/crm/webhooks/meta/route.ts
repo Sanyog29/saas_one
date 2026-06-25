@@ -137,12 +137,14 @@ async function findExistingLead(orgId: string, phone: string | null, email: stri
     return data;
 }
 
-async function notifyNewLead(config: any, lead: any, assignedTo: string, formName: string | null) {
+async function notifyNewLead(config: any, lead: any, assignedTo: string | null, formName: string | null) {
     try {
-        const { data: users } = await supabaseAdmin
-            .from('users')
-            .select('id, email, full_name')
-            .in('id', [assignedTo]);
+        const { data: users } = assignedTo
+            ? await supabaseAdmin
+                .from('users')
+                .select('id, email, full_name')
+                .in('id', [assignedTo])
+            : { data: [] as any[] };
         const { data: admins } = await supabaseAdmin
             .from('organization_memberships')
             .select('user_id, users:user_id(email, full_name)')
@@ -209,17 +211,32 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
 
     try {
         const fields = await fetchLeadFields(leadgenId, config.page_access_token);
+        // Robust fuzzy matcher (Meta names look like `what_is_your_seat_requirement?`).
+        const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const get = (...names: string[]) => {
             for (const n of names) {
-                const f = fields.find((x) => x.name?.toLowerCase() === n);
+                const f = fields.find((x) => norm(x.name).includes(norm(n)));
                 if (f?.values?.[0]) return f.values[0];
             }
             return null;
         };
-        const fullName = get('full_name', 'name', 'full name') || get('first_name');
-        const email = get('email');
-        const phone = get('phone_number', 'phone', 'mobile_number');
-        const city = get('city', 'location');
+        const fullName = get('full_name', 'full name')
+            || [get('first_name'), get('last_name')].filter(Boolean).join(' ')
+            || get('name') || null;
+        const email = get('email', 'work email', 'work_email');
+        const phone = get('phone_number', 'phone', 'mobile_number', 'mobile');
+        const city = get('city', 'preferred location', 'location');
+        const seatsRaw = get('seat requirement', 'seat_requirement', 'number of seats', 'seats');
+        const seatNums = (seatsRaw || '').match(/\d+/g)?.map((x) => parseInt(x)) || [];
+        const seats = seatNums.length ? Math.max(...seatNums) : null;
+        const moveIn = get('move in timeline', 'move_in_timeline', 'when do you want to move in', 'move in');
+        const companyName = get('company name', 'company_name', 'organization');
+        const jobTitle = get('job title', 'job_title', 'designation');
+        const requirement = [
+            seatsRaw ? `Seats: ${seatsRaw.replace(/_/g, ' ')}` : null,
+            companyName ? `Company: ${companyName}` : null,
+            jobTitle ? `Title: ${jobTitle}` : null,
+        ].filter(Boolean).join(' | ') || null;
 
         // Cross-source dedup: check phone/email against existing leads.
         const existingLead = await findExistingLead(config.organization_id, phone, email);
@@ -238,7 +255,8 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         const campaignName = formName || value.campaign_name || null;
         const distributionAssignee = await resolveDistributionAssignee(
             config.organization_id,
-            campaignName
+            campaignName,
+            city
         );
 
         const { data: def } = await supabaseAdmin
@@ -253,17 +271,21 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
             sourceId = metaSrc?.id ?? null;
         }
 
-        const assignedTo = distributionAssignee ?? config.default_assignee ?? createdBy;
+        // Unmatched leads stay unassigned (null) rather than dumping on an admin.
+        const assignedTo = distributionAssignee ?? config.default_assignee ?? null;
         const leadData = {
             organization_id: config.organization_id,
             created_by: createdBy,
             assigned_to: assignedTo,
-            company_name: fullName || 'Meta Lead',
+            company_name: companyName || fullName || 'Meta Lead',
             contact_person: fullName,
             contact_number: phone,
             email,
             location: city,
             city,
+            seats,
+            move_in_timeline: moveIn ? moveIn.replace(/_/g, ' ') : null,
+            requirement,
             status: def?.id,
             priority: 'Medium',
             lead_source: sourceId,
@@ -281,7 +303,11 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
         if (leadErr) throw leadErr;
 
         await supabaseAdmin.from('crm_meta_leads')
-            .update({ status: 'processed', processed_lead_id: lead.id, processed_at: new Date().toISOString() })
+            .update({
+                status: 'processed', processed_lead_id: lead.id, processed_at: new Date().toISOString(),
+                // Persist the full Q&A so the lead drawer can show every field.
+                payload: { ...(value || {}), field_data: fields },
+            })
             .eq('id', metaRow!.id);
 
         // Fire-and-forget email notification.

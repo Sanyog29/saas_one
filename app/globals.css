@@ -633,6 +633,28 @@
     background: var(--surface-elevated);
   }
 
+  /* Chameleon: integrate the wallpaper accent into content cards as a soft
+     diagonal wash. Scoped to the main content area (not the sidebar) and only
+     active when a wallpaper sets --surface-gradient. Layers over bg-surface's
+     background-color, so the flat tint still shows through where it fades out. */
+  .crm-chameleon .bg-surface {
+    background-image: var(--surface-gradient, none);
+  }
+
+  /* Depth pass for CRM cards: a subtle resting shadow that lifts on hover.
+     Scoped to the CRM content area so it never touches FMS/facilities chrome.
+     Pairs with the existing --shadow-* tokens (light + dark aware). */
+  .crm-chameleon .crm-card,
+  .crm-card {
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  }
+  .crm-chameleon .crm-card:hover,
+  .crm-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+
   .hover\:bg-surface-elevated:hover {
     background: var(--surface-elevated);
   }
@@ -1196,8 +1218,14 @@
   padding: 0.75rem 1rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  position: sticky;
+  /* fixed full-width top bar — must NOT sit in-flow inside the flex row,
+     or it eats horizontal space and squeezes the main content. */
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 56px;
   z-index: 40;
 }
 
@@ -1373,6 +1401,16 @@
   scroll-behavior: smooth;
 }
 
+/* In-bounds horizontal scroll strips (filter/pill/tab rows): scroll within the
+   element instead of overflowing & being clipped by the page. Hides the bar. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Prevent text selection during touch */
 .no-select {
   -webkit-user-select: none;
@@ -1483,4 +1521,22 @@
 /* Feature Gating: Hide features that are coming soon or incomplete */
 .feature-incomplete {
   display: none !important;
+}
+
+/* Accessibility: honour the OS "Reduce Motion" preference. Collapses the CRM
+   card lift + any long transitions/animations to near-instant. framer-motion
+   animations are separately gated via useReducedMotion in the components. */
+@media (prefers-reduced-motion: reduce) {
+  .crm-card,
+  .crm-card:hover {
+    transform: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -14,6 +14,18 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('to');
     const userId = searchParams.get('user_id');
     const propertyId = searchParams.get('property_id');
+    const channel = searchParams.get('channel'); // meta_ads | linkedin_ads | google_ads | null(all)
+
+    // Resolve which lead-source ids belong to the requested channel (indexed).
+    let channelSourceIds: string[] | null = null;
+    if (channel && channel !== 'all') {
+        const { data: srcs } = await supabaseAdmin
+            .from('crm_lead_sources').select('id')
+            .eq('channel', channel)
+            .or(`organization_id.eq.${org},organization_id.is.null`);
+        channelSourceIds = (srcs || []).map((s) => s.id);
+        if (channelSourceIds.length === 0) channelSourceIds = ['00000000-0000-0000-0000-000000000000'];
+    }
 
     // Status semantics for this org.
     const { data: statuses } = await supabaseAdmin
@@ -38,6 +50,7 @@ export async function GET(request: NextRequest) {
     if (dateTo) query = query.lte('created_at', dateTo);
     if (userId && access.isAdmin) query = query.eq('assigned_to', userId);
     if (propertyId) query = query.eq('property_interest', propertyId);
+    if (channelSourceIds) query = query.in('lead_source', channelSourceIds);
 
     const { data: leads, error } = await query;
     if (error) {

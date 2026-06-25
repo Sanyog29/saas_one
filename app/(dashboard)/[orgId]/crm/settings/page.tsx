@@ -2,11 +2,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { Settings, Palette, MapPin, Building2, Bell, Link2, Plus, Edit, Trash2, Loader2, Check, Send, ChevronDown, Search, X, Filter, Calendar, GraduationCap, RotateCcw, Shuffle, ToggleLeft, ToggleRight, Info, PhoneCall } from 'lucide-react';
+import { Settings, Palette, MapPin, Building2, Bell, Link2, Plus, Edit, Trash2, Loader2, Check, Send, ChevronDown, Search, X, Filter, Calendar, GraduationCap, RotateCcw, Shuffle, ToggleLeft, ToggleRight, Info, PhoneCall, Image as ImageIcon } from 'lucide-react';
 import Link from 'next/link';
 import { LeadStatusConfig, LeadSource } from '@/frontend/types/crm';
 import { MetaIntegrationGuide, LinkedInIntegrationGuide } from '@/frontend/components/crm';
 import LeadDistributionManager from '@/frontend/components/crm/LeadDistributionManager';
+import WallpaperSettings from '@/frontend/components/dashboard/WallpaperSettings';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { isBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 
@@ -93,7 +94,7 @@ const LEAD_QUALIFICATION_INFO: Record<string, { label: string; color: string; cr
     },
 };
 
-type SettingsTab = 'statuses' | 'sources' | 'properties' | 'territories' | 'distribution' | 'integrations';
+type SettingsTab = 'statuses' | 'sources' | 'properties' | 'territories' | 'distribution' | 'integrations' | 'appearance';
 
 export default function CRMSettingsPage() {
     const params = useParams();
@@ -362,6 +363,7 @@ export default function CRMSettingsPage() {
         { id: 'territories' as SettingsTab, label: 'Territories', icon: MapPin },
         { id: 'distribution' as SettingsTab, label: 'Lead Distribution', icon: Shuffle },
         { id: 'integrations' as SettingsTab, label: 'Integrations', icon: Bell },
+        { id: 'appearance' as SettingsTab, label: 'Appearance', icon: ImageIcon },
     ];
 
     return (
@@ -387,7 +389,7 @@ export default function CRMSettingsPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex overflow-x-auto gap-2 pb-2">
+            <div className="flex overflow-x-auto no-scrollbar gap-2 pb-2">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
@@ -974,6 +976,10 @@ export default function CRMSettingsPage() {
                                     </div>
                                 </div>
                             </div>
+                        )}
+
+                        {activeTab === 'appearance' && (
+                            <WallpaperSettings />
                         )}
                     </>
                 )}

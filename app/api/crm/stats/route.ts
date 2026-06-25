@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
 
         let leadsQ = supabaseAdmin
             .from('crm_leads')
-            .select('id, status, deal_value, priority, company_name, contact_person, location, city, requirement, created_at, next_followup_date, last_contacted, closed_at, is_archived, followup_notes, source_info:crm_lead_sources(id, name)')
+            .select('id, status, deal_value, priority, company_name, contact_person, location, city, requirement, created_at, updated_at, next_followup_date, last_contacted, closed_at, is_archived, followup_notes, source_info:crm_lead_sources(id, name)')
             .eq('organization_id', org)
             .eq('is_archived', false);
         if (!adminAllOrg) leadsQ = leadsQ.eq('assigned_to', targetUserId);
@@ -183,6 +183,39 @@ export async function GET(request: NextRequest) {
                 followup_notes: l.followup_notes || null,
             }));
 
+        // Most recent leads (newest first) for the "Latest Leads" card.
+        const latestLeads = [...all]
+            .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+            .slice(0, 6)
+            .map((l) => ({
+                id: l.id,
+                full_name: l.contact_person || l.company_name || 'Unnamed Lead',
+                company_name: l.company_name || null,
+                requirement: l.requirement || null,
+                location: l.location || l.city || null,
+                status_name: statusNameById.get(l.status) || (l.status ? 'Unknown' : 'New'),
+                created_at: l.created_at,
+                last_contacted: l.last_contacted || null,
+            }));
+
+        // Stale leads: non-terminal and not touched (status/record un-updated) for
+        // STALE_DAYS — "gone quiet, needs a nudge". updated_at is the proxy since
+        // there's no dedicated status-change timestamp.
+        const STALE_DAYS = 7;
+        const staleCutoff = new Date(now.getTime() - STALE_DAYS * 86400000).toISOString();
+        const staleLeads = all
+            .filter((l) => !terminalIds.has(l.status) && (l.updated_at || l.created_at || '') < staleCutoff)
+            .sort((a, b) => (a.updated_at || a.created_at || '').localeCompare(b.updated_at || b.created_at || ''))
+            .slice(0, 10)
+            .map((l) => ({
+                id: l.id,
+                full_name: l.contact_person || l.company_name || 'Unnamed Lead',
+                company_name: l.company_name || null,
+                status_name: statusNameById.get(l.status) || (l.status ? 'Unknown' : 'No Status'),
+                last_activity: l.updated_at || l.created_at || null,
+                next_followup_date: l.next_followup_date || null,
+            }));
+
         return NextResponse.json({
             ...counts,
             ...computePeriodCounts(all),
@@ -190,6 +223,8 @@ export async function GET(request: NextRequest) {
             priority_leads: priorityLeads,
             action_leads: actionLeads,
             todays_followups: todaysFollowups,
+            latest_leads: latestLeads,
+            stale_leads: staleLeads,
             pipeline_value: 0,
             target_achievement_percent: 0,
             revenue_closed: 0,
@@ -238,14 +273,16 @@ export async function GET(request: NextRequest) {
         }
     }
 
-    // One query for completed meetings this month, counted per user in JS.
+    // One query for completed meetings, counted per user in JS.
+    // Use the same period window as the rest of the stats so metrics align.
     const { data: meetings } = await supabaseAdmin
         .from('crm_events')
         .select('user_id')
         .eq('organization_id', org)
         .eq('event_type', 'meeting')
         .eq('status', 'completed')
-        .gte('start_datetime', startOfMonth);
+        .gte('start_datetime', periodWindow.from)
+        .lte('start_datetime', periodWindow.to);
     const meetingsByUser: Record<string, number> = {};
     for (const m of meetings || []) meetingsByUser[(m as any).user_id] = (meetingsByUser[(m as any).user_id] || 0) + 1;
 

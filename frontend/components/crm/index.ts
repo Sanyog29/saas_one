@@ -15,3 +15,5 @@ export { default as CallCoachPanel } from './CallCoachPanel';
 export { default as CoachingTrendChart } from './CoachingTrendChart';
 export { default as ExecutiveImpactReport } from './ExecutiveImpactReport';
 export { default as CampaignSpendManager } from './CampaignSpendManager';
+export { default as ChannelSwitch } from './ChannelSwitch';
+export { default as SourceBadge } from './SourceBadge';

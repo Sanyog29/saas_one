@@ -14,7 +14,9 @@ import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 
 // LinkedIn versions its API monthly via the `LinkedIn-Version: YYYYMM` header.
 // Bump this as LinkedIn deprecates older versions (they give ~1 year notice).
-export const LINKEDIN_API_VERSION = '202406';
+// LinkedIn keeps ~12 months of versions active; bump as older ones retire.
+// Override without a deploy via the LINKEDIN_API_VERSION env var.
+export const LINKEDIN_API_VERSION = process.env.LINKEDIN_API_VERSION?.trim() || '202605';
 export const LINKEDIN_REST_BASE = 'https://api.linkedin.com/rest';
 export const LINKEDIN_OAUTH_BASE = 'https://www.linkedin.com/oauth/v2';
 

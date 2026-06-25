@@ -6,7 +6,7 @@ import {
 
 const EVENT_TYPES = ['call', 'meeting', 'site_visit', 'followup'];
 const EVENT_STATUSES = ['scheduled', 'completed', 'cancelled', 'rescheduled'];
-const EVENT_SELECT = `*, lead_info:crm_leads(id, company_name, contact_person, contact_number)`;
+const EVENT_SELECT = `*, lead_info:crm_leads(id, company_name, contact_person, contact_number), user_info:users(id, full_name, email)`;
 
 // GET /api/crm/events - calendar feed (org + ownership/market scoped)
 export async function GET(request: NextRequest) {

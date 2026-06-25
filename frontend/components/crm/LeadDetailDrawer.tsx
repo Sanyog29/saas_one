@@ -88,6 +88,11 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
     const [savingStageComment, setSavingStageComment] = useState(false);
     const [editingActivity, setEditingActivity] = useState<{ id: string; description: string } | null>(null);
     const [savingActivity, setSavingActivity] = useState(false);
+    // Reassignment (admins + reps)
+    const [formResponses, setFormResponses] = useState<{ question: string; answer: string }[]>([]);
+    const [reps, setReps] = useState<{ id: string; full_name?: string; email?: string }[]>([]);
+    const [showReassign, setShowReassign] = useState(false);
+    const [reassigning, setReassigning] = useState(false);
 
     useEffect(() => {
         if (leadId && isOpen) {
@@ -122,6 +127,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                 setActivities(data.activities || []);
                 setNotes(data.notes || []);
                 setEvents(data.events || []);
+                setFormResponses(data.form_responses || []);
             }
         } catch (error) {
             console.error('Failed to fetch lead details:', error);
@@ -172,6 +178,43 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         }
 
         await executeStageChange(statusId, target);
+    };
+
+    // Load BD reps for the reassign picker (once, when drawer opens).
+    useEffect(() => {
+        if (!isOpen) return;
+        (async () => {
+            try {
+                const res = await fetch('/api/crm/settings?type=all&scope=bd');
+                if (res.ok) setReps((await res.json()).users || []);
+            } catch { /* non-fatal */ }
+        })();
+    }, [isOpen]);
+
+    const handleReassign = async (userId: string | null) => {
+        if (!leadId || !lead) return;
+        setReassigning(true);
+        try {
+            const res = await fetch(`/api/crm/leads/${leadId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ assigned_to: userId }),
+            });
+            if (!res.ok) return;
+            const rep = reps.find(r => r.id === userId) || null;
+            const updated: any = { ...lead, assigned_to: userId, assigned_user: rep ? { id: rep.id, full_name: rep.full_name, email: rep.email } : null };
+            setLead(updated);
+            onLeadUpdate?.(updated);
+            setShowReassign(false);
+            setActivities(prev => [{
+                id: `temp-${Date.now()}`, lead_id: leadId, user_id: '',
+                activity_type: 'updated', description: rep ? `Reassigned to ${rep.full_name}` : 'Unassigned',
+                metadata: {}, created_at: new Date().toISOString(),
+                user_info: { id: '', full_name: 'You', email: '' },
+            } as CRMActivity, ...prev]);
+        } finally {
+            setReassigning(false);
+        }
     };
 
     const executeStageChange = async (statusId: string, target: LeadStatusConfig, comment?: string) => {
@@ -610,17 +653,52 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                     )}
 
                                     {/* Assignment */}
-                                    {lead.assigned_user && (
+                                    <div className="bg-surface-elevated rounded-xl p-4">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="font-bold text-text-primary">Assigned To</h3>
+                                            <button
+                                                onClick={() => setShowReassign(v => !v)}
+                                                className="text-xs font-bold text-primary hover:underline"
+                                            >{showReassign ? 'Cancel' : 'Change'}</button>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                                <User className="w-5 h-5 text-primary" />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-medium text-text-primary">{lead.assigned_user?.full_name || 'Unassigned'}</p>
+                                                {lead.assigned_user?.email && <p className="text-xs text-text-secondary">{lead.assigned_user.email}</p>}
+                                            </div>
+                                        </div>
+                                        {showReassign && (
+                                            <div className="mt-3 pt-3 border-t border-border">
+                                                <select
+                                                    value={(lead as any).assigned_to || ''}
+                                                    disabled={reassigning}
+                                                    onChange={(e) => handleReassign(e.target.value || null)}
+                                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary disabled:opacity-50"
+                                                >
+                                                    <option value="">Unassigned</option>
+                                                    {reps.map(r => (
+                                                        <option key={r.id} value={r.id}>{r.full_name || r.email}</option>
+                                                    ))}
+                                                </select>
+                                                {reassigning && <p className="text-[11px] text-text-tertiary mt-1">Reassigning…</p>}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Request Details — every field the prospect submitted on the ad form */}
+                                    {formResponses.length > 0 && (
                                         <div className="bg-surface-elevated rounded-xl p-4">
-                                            <h3 className="font-bold text-text-primary mb-3">Assigned To</h3>
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                                    <User className="w-5 h-5 text-primary" />
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-text-primary">{lead.assigned_user.full_name}</p>
-                                                    <p className="text-xs text-text-secondary">{lead.assigned_user.email}</p>
-                                                </div>
+                                            <h3 className="font-bold text-text-primary mb-3">Request Details</h3>
+                                            <div className="space-y-2.5">
+                                                {formResponses.map((f, i) => (
+                                                    <div key={i} className="flex flex-col">
+                                                        <span className="text-xs font-bold text-text-secondary">{f.question}</span>
+                                                        <span className="text-sm text-text-primary break-words">{f.answer}</span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
                                     )}

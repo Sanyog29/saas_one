@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const campaignIds = url.searchParams.getAll('campaign_id');
     const propertyIds = url.searchParams.getAll('property_id');
     const userId = url.searchParams.get('user_id');
-    const groupBy = (url.searchParams.get('group_by') || 'month') as 'month' | 'week';
+    const groupBy = (url.searchParams.get('group_by') || 'month') as 'month' | 'week' | 'day';
     const targetWinRate = Math.max(
         0,
         Math.min(100, Number(url.searchParams.get('target_win_rate') || DEFAULT_TARGET_WIN_RATE))
@@ -77,8 +77,9 @@ export async function GET(request: NextRequest) {
             last_contacted, lead_source, campaign, organization_id, assigned_to, created_by,
             city, property_interest, is_archived, lost_reason, lost_reason_notes,
             meta_lead_id, meta_campaign_id, meta_adset_id, meta_ad_id, meta_form_name,
+            linkedin_lead_id,
             status_info:crm_lead_statuses(id, name, color, is_won, is_lost),
-            source_info:crm_lead_sources(id, name),
+            source_info:crm_lead_sources(id, name, channel),
             assigned_user:users!crm_leads_assigned_to_fkey(id, full_name, email)
         `)
         .eq('is_archived', false)
@@ -318,6 +319,20 @@ export async function GET(request: NextRequest) {
 // Aggregation
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Classify a lead's acquisition channel for the blended/per-channel trend.
+// Priority: explicit Meta/LinkedIn IDs → the source's `channel` tag → 'other'.
+function leadChannel(lead: any, sourceInfo: any): 'meta' | 'linkedin' | 'other' {
+    if (lead.meta_lead_id || lead.meta_form_name || lead.meta_campaign_id) return 'meta';
+    if (lead.linkedin_lead_id) return 'linkedin';
+    const ch = (sourceInfo?.channel || '').toLowerCase();
+    if (ch.includes('meta')) return 'meta';
+    if (ch.includes('linkedin')) return 'linkedin';
+    const src = (lead.lead_source || '').toLowerCase();
+    if (src.includes('meta') || src.includes('facebook') || src.includes('instagram')) return 'meta';
+    if (src.includes('linkedin')) return 'linkedin';
+    return 'other';
+}
+
 interface AggInput {
     leads: any[];
     statuses: any[];
@@ -328,7 +343,7 @@ interface AggInput {
     totalSpend: number;
     fromMs: number;
     toMs: number;
-    groupBy: 'month' | 'week';
+    groupBy: 'month' | 'week' | 'day';
     targetWinRate: number;
     orgId: string;
     staleDays: number;
@@ -354,6 +369,9 @@ function aggregate(input: AggInput) {
         key: string;
         label: string;
         leads: number;
+        metaLeads: number;
+        linkedinLeads: number;
+        otherLeads: number;
         connected: number;
         meetings: number;
         won: number;
@@ -366,6 +384,9 @@ function aggregate(input: AggInput) {
         key: b.key,
         label: b.label,
         leads: 0,
+        metaLeads: 0,
+        linkedinLeads: 0,
+        otherLeads: 0,
         connected: 0,
         meetings: 0,
         won: 0,
@@ -410,6 +431,12 @@ function aggregate(input: AggInput) {
             const bIdx = bucketIndex(createdMs);
             if (bIdx >= 0 && bIdx < monthly.length) {
                 monthly[bIdx].leads++;
+                // Classify by acquisition channel so the trend can be filtered
+                // to Meta / LinkedIn / blended on the dashboard.
+                const ch = leadChannel(l, sourceInfo);
+                if (ch === 'meta') monthly[bIdx].metaLeads++;
+                else if (ch === 'linkedin') monthly[bIdx].linkedinLeads++;
+                else monthly[bIdx].otherLeads++;
             }
         }
 
@@ -739,9 +766,20 @@ function aggregate(input: AggInput) {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildBuckets(fromMs: number, toMs: number, groupBy: 'month' | 'week'): Array<{ key: string; label: string; startMs: number; endMs: number }> {
+function buildBuckets(fromMs: number, toMs: number, groupBy: 'month' | 'week' | 'day'): Array<{ key: string; label: string; startMs: number; endMs: number }> {
     const buckets: Array<{ key: string; label: string; startMs: number; endMs: number }> = [];
-    if (groupBy === 'week') {
+    if (groupBy === 'day') {
+        const start = new Date(fromMs);
+        start.setUTCHours(0, 0, 0, 0);
+        while (start.getTime() <= toMs) {
+            const end = new Date(start);
+            end.setUTCDate(end.getUTCDate() + 1);
+            const key = start.toISOString().slice(0, 10);
+            const label = `${start.getUTCDate()} ${shortMonth(start)}`;
+            buckets.push({ key, label, startMs: start.getTime(), endMs: end.getTime() - 1 });
+            start.setUTCDate(start.getUTCDate() + 1);
+        }
+    } else if (groupBy === 'week') {
         const start = new Date(fromMs);
         start.setUTCHours(0, 0, 0, 0);
         // align to Monday
