@@ -11,12 +11,10 @@ import { supabaseAdmin } from '@/backend/lib/supabase/admin';
  *   - A user must be an ACTIVE member of the organization (org- or property-level)
  *     with a CRM-capable role, OR a master admin.
  *   - bd_admin / org_admin / org_super_admin / master_admin  -> see the whole org.
- *   - bd_rep WITH a territory (crm_territories) -> HARD-GATED to their markets:
- *     leads they created, plus leads in their assigned cities/campaigns. Assignment
- *     ALONE does NOT grant cross-territory visibility — a Bangalore rep never sees
- *     Mumbai leads, even if one was (mis)assigned to them.
- *   - bd_rep WITHOUT a territory -> legacy fallback: leads they created or are
- *     assigned to (configure a territory in BD-admin settings to restrict further).
+ *   - bd_rep -> sees leads they created or are assigned to (assignment = ownership,
+ *     always visible), PLUS leads in the markets (cities) assigned to them in
+ *     BD-admin settings (crm_territories). Cross-territory leakage is prevented at
+ *     the distribution layer (don't mis-assign), not by hiding owned leads.
  */
 
 export const CRM_ADMIN_ROLES = ['bd_admin', 'bd_super_admin', 'org_admin', 'org_super_admin'] as const;
@@ -159,34 +157,27 @@ export function isCrmAccessError(x: CrmAccess | NextResponse): x is NextResponse
 
 /**
  * Apply org + rep-market visibility to a crm_leads PostgREST query builder.
- * Admins get the whole org. Reps WITH a territory are hard-gated to their markets
- * (own-created OR in-territory) — assignment alone does NOT leak cross-territory
- * leads. Reps WITHOUT a territory keep the legacy (created OR assigned) view.
+ * Admins get the whole org; reps see (mine OR market-matched): leads they created
+ * or are ASSIGNED to (assignment = ownership, always visible), PLUS leads in the
+ * cities/campaigns granted to them as territory.
+ *
+ * NOTE: We deliberately do NOT hide assigned-but-out-of-territory leads — a rep
+ * must always see/work a lead that's theirs. Stopping cross-territory leakage
+ * belongs in lead DISTRIBUTION (don't mis-assign), not here.
  */
 export function scopeLeadsQuery(query: any, access: CrmAccess) {
     query = query.eq('organization_id', access.organizationId);
     if (access.isAdmin) return query;
 
-    const hasTerritory = access.territoryCities.length > 0 || access.territoryCampaigns.length > 0;
-
-    // Reps can always see leads they created.
-    const ors: string[] = [`created_by.eq.${access.user.id}`];
-
-    if (!hasTerritory) {
-        // Legacy: no market configured → fall back to assignment-based visibility.
-        ors.push(`assigned_to.eq.${access.user.id}`);
-    } else {
-        // Hard gate: only leads inside the rep's assigned markets. A cross-territory
-        // lead that happens to be assigned to them is intentionally NOT visible.
-        if (access.territoryCities.length > 0) {
-            // PostgREST in.() — quote values to tolerate spaces in city names.
-            const list = access.territoryCities.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
-            ors.push(`city.in.(${list})`);
-        }
-        if (access.territoryCampaigns.length > 0) {
-            const list = access.territoryCampaigns.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
-            ors.push(`campaign.in.(${list})`);
-        }
+    const ors: string[] = [`created_by.eq.${access.user.id}`, `assigned_to.eq.${access.user.id}`];
+    if (access.territoryCities.length > 0) {
+        // PostgREST in.() — quote values to tolerate spaces in city names.
+        const list = access.territoryCities.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
+        ors.push(`city.in.(${list})`);
+    }
+    if (access.territoryCampaigns.length > 0) {
+        const list = access.territoryCampaigns.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
+        ors.push(`campaign.in.(${list})`);
     }
     return query.or(ors.join(','));
 }
@@ -198,16 +189,12 @@ export function canAccessLead(
 ): boolean {
     if (lead.organization_id && lead.organization_id !== access.organizationId) return false;
     if (access.isAdmin) return true;
-    // Always: leads they created.
+    // Ownership always grants access — a rep can open any lead they created or are
+    // assigned to, regardless of territory (territory only widens DISCOVERY).
     if (lead.created_by === access.user.id) return true;
-    // In-territory leads.
+    if (lead.assigned_to === access.user.id) return true;
     if (lead.city && access.territoryCities.map((c) => c.toLowerCase()).includes(lead.city.toLowerCase())) return true;
     if (lead.campaign && access.territoryCampaigns.map((c) => c.toLowerCase()).includes(lead.campaign.toLowerCase())) return true;
-    // Assignment grants access ONLY for reps without a territory (legacy). Mirrors
-    // scopeLeadsQuery so a territory-scoped rep can't open a cross-territory lead
-    // that was (mis)assigned to them.
-    const hasTerritory = access.territoryCities.length > 0 || access.territoryCampaigns.length > 0;
-    if (!hasTerritory && lead.assigned_to === access.user.id) return true;
     return false;
 }
 
