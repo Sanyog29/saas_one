@@ -16,18 +16,42 @@ export class WhatsAppQueueService {
      * The Supabase DB webhook fires per-row and sends each message independently.
      */
     static async enqueue(payload: WhatsAppQueuePayload): Promise<void> {
-        // Check global system config
-        const { data: config } = await supabaseAdmin
+        // Map eventType to moduleName
+        let moduleName: string | null = null;
+        if (payload.eventType.startsWith('TICKET_') || payload.eventType === 'SLA_BREACH') {
+            moduleName = 'ticketing';
+        } else if (payload.eventType.startsWith('ROOM_')) {
+            moduleName = 'meeting_room';
+        } else if (payload.eventType.startsWith('MATERIAL_REQUEST_') || payload.eventType.startsWith('PROCUREMENT_')) {
+            moduleName = 'procurement';
+        } else if (payload.eventType.startsWith('SOP_') || payload.eventType.startsWith('PPM_')) {
+            moduleName = 'ppm';
+        } else if (payload.eventType.startsWith('CRM_')) {
+            moduleName = 'crm';
+        }
+
+        const keys = ['whatsapp_notifications_enabled'];
+        if (moduleName) keys.push(`whatsapp_${moduleName}_enabled`);
+
+        const { data: configs } = await supabaseAdmin
             .from('system_config')
-            .select('value')
-            .eq('key', 'whatsapp_notifications_enabled')
-            .single();
+            .select('key, value')
+            .in('key', keys);
 
-        const isEnabled = config?.value === true;
-
-        if (!isEnabled) {
+        const configMap = (configs || []).reduce((acc, row) => ({ ...acc, [row.key]: row.value === true }), {} as Record<string, boolean>);
+        
+        const isGlobalEnabled = configMap['whatsapp_notifications_enabled'] !== false;
+        if (!isGlobalEnabled) {
             console.log('[WhatsAppQueue] Service is globally disabled via system_config. Skipping enqueue for:', payload.eventType);
             return;
+        }
+
+        if (moduleName) {
+            const isModuleEnabled = configMap[`whatsapp_${moduleName}_enabled`] !== false;
+            if (!isModuleEnabled) {
+                console.log(`[WhatsAppQueue] Module ${moduleName} disabled via system_config. Skipping enqueue for:`, payload.eventType);
+                return;
+            }
         }
         
         if (payload.userIds.length === 0) return;

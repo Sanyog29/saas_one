@@ -146,23 +146,34 @@ const StockMovementModal: React.FC<StockMovementModalProps> = ({
         }
     };
 
-    const handleScanSuccess = (barcode: string) => {
+    const handleBatchSubmit = async (
+        cartItems: { id: string; name: string; cartQuantity: number; notes?: string }[],
+        action: 'IN' | 'OUT'
+    ) => {
         setShowScanModal(false);
-        const foundItem = items.find(i =>
-            i.barcode === barcode || i.item_code === barcode ||
-            i.location?.toLowerCase() === barcode.toLowerCase()
-        );
-        if (foundItem) {
-            setSelectedItem(foundItem);
-            setStep('action');
-        } else {
-            const itemsInLocation = items.filter(i => i.location?.toLowerCase().includes(barcode.toLowerCase()));
-            if (itemsInLocation.length > 0) {
-                setSearchTerm(barcode);
-                setToast({ message: `Filtered items by location: ${barcode}`, type: 'success' });
+        try {
+            const promises = cartItems.map(item =>
+                fetch(`/api/properties/${propertyId}/stock/scan`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        itemId: item.id,
+                        action: action === 'IN' ? 'add' : 'remove',
+                        quantity: item.cartQuantity,
+                        notes: item.notes || `Batch movement via scanner`,
+                    })
+                }).then(res => res.json())
+            );
+            const results = await Promise.all(promises);
+            const failed = results.filter(r => !r.success);
+            if (failed.length === 0) {
+                fetchItems();
+                setToast({ message: `${cartItems.length} item(s) moved successfully`, type: 'success' });
             } else {
-                setToast({ message: `No item or location found for: ${barcode}`, type: 'error' });
+                setToast({ message: `${failed.length} item(s) failed to move`, type: 'error' });
             }
+        } catch {
+            setToast({ message: 'Network error during batch submit', type: 'error' });
         }
     };
 
@@ -522,8 +533,8 @@ const StockMovementModal: React.FC<StockMovementModalProps> = ({
                 <BarcodeScannerModal
                     isOpen={showScanModal}
                     onClose={() => setShowScanModal(false)}
-                    onScanSuccess={handleScanSuccess}
-                    title="Scan Item Barcode"
+                    onBatchSubmit={handleBatchSubmit}
+                    title="Scan to Move Stock"
                 />
             </Suspense>
         </>

@@ -188,17 +188,35 @@ export default function DailyProgressDashboard({ isDark = false }: DailyProgress
             const today = selectedDate;
             const { data: meters, error: meterError } = await supabase
                 .from('electricity_meters')
-                .select('id, name, sheet_name, location')
+                .select('id, name')
                 .eq('property_id', propertyId)
                 .is('deleted_at', null)
-                .order('sheet_name', { nullsFirst: false })
-                .order('location', { nullsFirst: false })
                 .order('name');
 
             if (meterError) throw meterError;
             if (!meters || meters.length === 0) {
                 setMeterDetails([]);
                 return;
+            }
+
+            // Fetch facility layout to get sheet and location
+            let layoutMap: Record<string, { sheetName: string, locationName: string }> = {};
+            try {
+                const layoutRes = await fetch(`/api/properties/${propertyId}/facility-meters`);
+                if (layoutRes.ok) {
+                    const categories = await layoutRes.json();
+                    if (Array.isArray(categories)) {
+                        categories.forEach(cat => {
+                            (cat.groups || []).forEach((group: any) => {
+                                (group.meters || []).forEach((m: any) => {
+                                    layoutMap[m.id] = { sheetName: cat.name, locationName: group.name };
+                                });
+                            });
+                        });
+                    }
+                }
+            } catch (err) {
+                console.warn('Error fetching facility layout:', err);
             }
 
             const meterIds = meters.map((m) => m.id);
@@ -214,8 +232,8 @@ export default function DailyProgressDashboard({ isDark = false }: DailyProgress
                 meters.map((m) => ({
                     id: m.id,
                     name: m.name,
-                    sheet_name: m.sheet_name,
-                    location: m.location,
+                    sheet_name: layoutMap[m.id]?.sheetName || null,
+                    location: layoutMap[m.id]?.locationName || null,
                     done: readToday.has(m.id),
                 }))
             );

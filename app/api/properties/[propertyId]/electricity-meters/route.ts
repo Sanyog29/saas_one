@@ -142,6 +142,62 @@ export async function POST(
         }
     }
 
+    // 4. Dual-Write to facility_meters for the Spreadsheet view
+    try {
+        // Ensure "Uncategorized" category exists
+        const { data: categories } = await supabase
+            .from('facility_meter_categories')
+            .select('id')
+            .eq('property_id', propertyId)
+            .ilike('name', 'Uncategorized')
+            .limit(1);
+
+        let categoryId = categories?.[0]?.id;
+        if (!categoryId) {
+            const { data: newCat } = await supabase
+                .from('facility_meter_categories')
+                .insert({ property_id: propertyId, name: 'Uncategorized', order_index: 999 })
+                .select('id')
+                .single();
+            categoryId = newCat?.id;
+        }
+
+        // Ensure "Default Group" exists under this category
+        const { data: groups } = await supabase
+            .from('facility_meter_groups')
+            .select('id')
+            .eq('category_id', categoryId)
+            .ilike('name', 'Default')
+            .limit(1);
+
+        let groupId = groups?.[0]?.id;
+        if (!groupId) {
+            const { data: newGrp } = await supabase
+                .from('facility_meter_groups')
+                .insert({ category_id: categoryId, name: 'Default', order_index: 999 })
+                .select('id')
+                .single();
+            groupId = newGrp?.id;
+        }
+
+        // Write to facility_meters
+        const { error: fmError } = await supabase
+            .from('facility_meters')
+            .upsert({
+                id: meter.id, // Keep IDs identical!
+                group_id: groupId,
+                name: meter.name,
+                meter_constant: multiplierValue,
+                order_index: 999
+            });
+
+        if (fmError) {
+            console.warn('[ElectricityMeters] Could not sync facility_meters:', fmError);
+        }
+    } catch (err) {
+        console.warn('[ElectricityMeters] Error during facility_meters dual-write:', err);
+    }
+
     return NextResponse.json(meter, { status: 201 });
 }
 
@@ -163,7 +219,7 @@ export async function DELETE(
 
     const { error } = await supabase
         .from('electricity_meters')
-        .delete()
+        .update({ status: 'inactive', deleted_at: new Date().toISOString() })
         .eq('id', meterId)
         .eq('property_id', propertyId);
 

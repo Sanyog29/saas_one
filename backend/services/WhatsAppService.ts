@@ -11,6 +11,7 @@ export interface WhatsAppOptions {
     deepLink?: string;
     mediaUrl?: string;
     mediaType?: 'image' | 'video';
+    moduleName?: 'ticketing' | 'meeting_room' | 'ppm' | 'procurement' | 'crm';
 }
 
 export class WhatsAppService {
@@ -82,17 +83,32 @@ export class WhatsAppService {
     // The actual send logic — returns true on success, false on failure
     private static async _send(phone: string, options: WhatsAppOptions): Promise<boolean> {
         // Check global system config
-        const { data: config } = await supabaseAdmin
+        const keys = ['whatsapp_notifications_enabled'];
+        if (options.moduleName) {
+            keys.push(`whatsapp_${options.moduleName}_enabled`);
+        }
+
+        const { data: configs } = await supabaseAdmin
             .from('system_config')
-            .select('value')
-            .eq('key', 'whatsapp_notifications_enabled')
-            .single();
+            .select('key, value')
+            .in('key', keys);
 
-        const isEnabled = config?.value === true;
-
-        if (!isEnabled) {
+        const configMap = (configs || []).reduce((acc, row) => ({ ...acc, [row.key]: row.value === true }), {} as Record<string, boolean>);
+        
+        const isGlobalEnabled = configMap['whatsapp_notifications_enabled'] !== false; // defaults true if missing
+        
+        if (!isGlobalEnabled) {
             // globally disabled — skip silently
             return true; 
+        }
+
+        if (options.moduleName) {
+            const moduleKey = `whatsapp_${options.moduleName}_enabled`;
+            const isModuleEnabled = configMap[moduleKey] !== false; // defaults true if missing
+            if (!isModuleEnabled) {
+                // module disabled — skip silently
+                return true;
+            }
         }
 
         if (!WASENDER_API_KEY || !WASENDER_SENDER_ID) {
@@ -212,7 +228,8 @@ export class WhatsAppService {
             .in('id', userIds);
         for (const user of data || []) {
             if (user.phone) {
-                this.send(user.phone, options);
+                // Await the send so Vercel does not terminate the function mid-flight
+                await this.sendAsync(user.phone, options);
                 await new Promise(r => setTimeout(r, 500));
             }
         }

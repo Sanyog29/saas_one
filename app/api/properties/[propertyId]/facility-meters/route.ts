@@ -277,8 +277,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ p
         }
 
         if (action === 'delete_meter') {
-            // Delete from spreadsheet only. The legacy meter stays in the Cards UI to protect historical data.
+            // Delete from spreadsheet only. The legacy meter stays in the database to protect historical data.
             await supabase.from('facility_meters').delete().eq('id', targetId);
+            // Mark the legacy meter as deleted and inactive
+            await supabase.from('electricity_meters').update({ status: 'inactive', deleted_at: new Date().toISOString() }).eq('id', targetId);
             return NextResponse.json({ success: true });
         }
 

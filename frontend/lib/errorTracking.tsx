@@ -160,8 +160,9 @@ export function setupApiInterceptor() {
       const response = await originalFetch(input, init);
       const duration = Date.now() - startTime;
 
-      // Capture API errors (4xx, 5xx)
-      if (!response.ok) {
+      // Capture API errors (4xx, 5xx) - Ignore the issue tracker itself to prevent infinite loops
+      const urlString = input instanceof Request ? input.url : String(input);
+      if (!response.ok && !urlString.includes('/api/internal/issue-logs')) {
         let errorBody: { error?: string } = {};
         try {
           errorBody = await response.clone().json();
@@ -205,16 +206,20 @@ export function setupApiInterceptor() {
       return response;
     } catch (error: any) {
       // Network errors
-      captureError({
-        category: 'api_error',
-        severity: 'high',
-        source: 'frontend',
-        error_message: error.message || 'Network error',
-        request_url: input instanceof Request ? input.url : String(input),
-        request_method: init?.method || 'GET',
-        occurred_at: new Date().toISOString(),
-        ...(window as any).__errorContext,
-      });
+      // Network errors - Ignore the issue tracker itself
+      const urlString = input instanceof Request ? input.url : String(input);
+      if (!urlString.includes('/api/internal/issue-logs')) {
+        captureError({
+          category: 'api_error',
+          severity: 'high',
+          source: 'frontend',
+          error_message: error.message || 'Network error',
+          request_url: urlString,
+          request_method: init?.method || 'GET',
+          occurred_at: new Date().toISOString(),
+          ...(window as any).__errorContext,
+        });
+      }
       throw error;
     }
   };

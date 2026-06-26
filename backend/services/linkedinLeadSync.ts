@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveDistributionAssignee } from '@/backend/lib/crm/distribution';
+import { NotificationService } from '@/backend/services/NotificationService';
 import {
     LinkedInConfig,
     LinkedInAuthError,
@@ -160,7 +161,7 @@ export async function syncLinkedInLeadsForOrg(cfg: LinkedInConfig): Promise<Lead
             jobTitle ? `Title: ${jobTitle}` : null,
         ].filter(Boolean).join(' | ') || null;
 
-        const { error: insErr } = await supabaseAdmin.from('crm_leads').insert({
+        const { data: newLead, error: insErr } = await supabaseAdmin.from('crm_leads').insert({
             organization_id: cfg.organization_id,
             created_by: createdBy,
             assigned_to: assignedTo,
@@ -184,9 +185,14 @@ export async function syncLinkedInLeadsForOrg(cfg: LinkedInConfig): Promise<Lead
                 const ts = resp.submittedAt ?? resp.createdAt ?? resp.formResponse?.submittedAt;
                 return typeof ts === 'number' ? new Date(ts).toISOString() : (ts ? new Date(ts).toISOString() : undefined);
             })(),
-        });
+        }).select('id').single();
         if (insErr) { errors.push(insErr.message); skipped++; }
-        else inserted++;
+        else {
+            inserted++;
+            if (newLead?.id) {
+                NotificationService.afterLeadCreated(newLead.id).catch(e => console.error(e));
+            }
+        }
     }
 
     await markLeadSync(cfg, 'ok');

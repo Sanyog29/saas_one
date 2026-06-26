@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveDistributionAssignee } from '@/backend/lib/crm/distribution';
 import { EmailService } from '@/backend/services/EmailService';
+import { NotificationService } from '@/backend/services/NotificationService';
 
 const GRAPH_VERSION = 'v19.0';
 
@@ -312,6 +313,9 @@ async function processLeadgen(leadgenId: string, value: any, config: any) {
 
         // Fire-and-forget email notification.
         notifyNewLead(config, leadData, assignedTo, formName).catch(() => {});
+
+        // Fire-and-forget WhatsApp notification.
+        NotificationService.afterLeadCreated(lead.id).catch(e => console.error('[Meta webhook] WA error:', e));
 
         return { leadgen_id: leadgenId, status: 'processed', lead_id: lead.id };
     } catch (err: any) {

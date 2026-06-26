@@ -146,7 +146,8 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                                 if (existingRecord.final_reading !== null) {
                                     lastKnownFinal[m.id] = existingRecord.final_reading;
                                 } else {
-                                    delete lastKnownFinal[m.id]; // Stop cascading if final reading is missing
+                                    // If there's an existing record but no final reading, we still want to carry forward
+                                    // the last known final to the next day's initial reading, so we don't delete it.
                                 }
                             } else {
                                 // If reading row is totally empty, inject a 'ghost' record just to show the initial reading!
@@ -160,7 +161,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                                         meter_constant_used: m.meter_constant,
                                         is_rollover: false
                                     };
-                                    delete lastKnownFinal[m.id]; // Only carry forward exactly one day
+                                    // Do not delete lastKnownFinal, allow it to carry forward to subsequent missing days
                                 }
                             }
                         });

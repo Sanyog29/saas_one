@@ -163,7 +163,7 @@ export async function POST(
         }
 
         if (body.retroactivelyUpdate) {
-            await updateReadingsWithNewMultiplier(supabase, body.meter_id, effectiveFromDate, computedMultiplierValue);
+            await updateReadingsWithNewMultiplier(supabase, propertyId, body.meter_id, effectiveFromDate, computedMultiplierValue);
         }
 
         // Sync the new computed multiplier to the facility_meters table for the spreadsheet view
@@ -266,7 +266,7 @@ export async function POST(
 
     // Optionally retroactively update existing readings
     if (body.retroactivelyUpdate) {
-        await updateReadingsWithNewMultiplier(supabase, body.meter_id, effectiveFromDate, computedMultiplierValue);
+        await updateReadingsWithNewMultiplier(supabase, propertyId, body.meter_id, effectiveFromDate, computedMultiplierValue);
     }
 
     // Sync the new computed multiplier to the facility_meters table for the spreadsheet view
@@ -283,7 +283,7 @@ export async function POST(
 }
 
 // Helper function to retroactively update readings with new multiplier
-async function updateReadingsWithNewMultiplier(supabase: any, meterId: string, effectiveFrom: string, newMultiplierValue: number) {
+async function updateReadingsWithNewMultiplier(supabase: any, propertyId: string, meterId: string, effectiveFrom: string, newMultiplierValue: number) {
     try {
         // Get all readings for this meter that are on or after the effective date
         // We update multiplier_value_used and recalculate final_units
@@ -319,16 +319,51 @@ async function updateReadingsWithNewMultiplier(supabase: any, meterId: string, e
 
             console.log(`[MeterMultipliers] Reading ${reading.id}: computed=${computedUnits}, new_multiplier=${newMultiplierValue}, new_final=${newFinalUnits}`);
 
+            // Fetch active tariff for this date to recalculate computed_cost
+            let tariffId = null;
+            let tariffRate = 0;
+            try {
+                const { data: tData } = await supabase.rpc('get_active_grid_tariff', {
+                    p_property_id: propertyId,
+                    p_date: reading.reading_date
+                });
+                if (tData && tData.length > 0) {
+                    tariffId = tData[0].id;
+                    tariffRate = tData[0].rate_per_unit || 0;
+                }
+            } catch (e) {
+                console.warn('[MeterMultipliers] Tariff lookup failed for retroactive update:', e);
+            }
+
+            const computedCost = newFinalUnits * tariffRate;
+
             const { error: updateError } = await supabase
                 .from('electricity_readings')
                 .update({
                     multiplier_value_used: newMultiplierValue,
                     final_units: newFinalUnits,
+                    computed_cost: computedCost,
+                    tariff_id: tariffId,
+                    tariff_rate_used: tariffRate > 0 ? tariffRate : null
                 })
                 .eq('id', reading.id);
 
             if (updateError) {
                 console.error(`[MeterMultipliers] Error updating reading ${reading.id}:`, updateError);
+            }
+
+            // Dual-Write sync for facility_meter_readings
+            const { error: syncError } = await supabase
+                .from('facility_meter_readings')
+                .update({
+                    consumption: newFinalUnits,
+                    meter_constant_used: newMultiplierValue
+                })
+                .eq('meter_id', meterId)
+                .eq('reading_date', reading.reading_date);
+            
+            if (syncError) {
+                console.warn(`[MeterMultipliers] Error syncing facility reading for ${reading.id}:`, syncError);
             }
         }
 

@@ -110,6 +110,39 @@ export async function POST(
     }
 
     console.log('[GridTariffs] Created new tariff version:', data.id);
+
+    // Retroactively update computed_cost for all readings >= effective_from
+    try {
+        const { data: readingsToUpdate, error: fetchError } = await supabase
+            .from('electricity_readings')
+            .select('id, final_units')
+            .eq('property_id', propertyId)
+            .gte('reading_date', body.effective_from);
+
+        if (fetchError) {
+            console.error('[GridTariffs] Error fetching readings for retroactive update:', fetchError);
+        } else if (readingsToUpdate && readingsToUpdate.length > 0) {
+            console.log(`[GridTariffs] Retroactively updating ${readingsToUpdate.length} readings with new tariff`);
+            for (const reading of readingsToUpdate) {
+                const finalUnits = reading.final_units || 0;
+                const newCost = finalUnits * body.rate_per_unit;
+                const { error: updateError } = await supabase
+                    .from('electricity_readings')
+                    .update({
+                        computed_cost: newCost,
+                        tariff_id: data.id,
+                        tariff_rate_used: body.rate_per_unit
+                    })
+                    .eq('id', reading.id);
+                if (updateError) {
+                    console.error(`[GridTariffs] Error updating reading ${reading.id}:`, updateError);
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[GridTariffs] Error in retroactive update:', err);
+    }
+
     return NextResponse.json(data, { status: 201 });
 }
 

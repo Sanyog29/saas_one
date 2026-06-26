@@ -7,6 +7,7 @@ import {
     scopeLeadsQuery,
     sanitizeSearchTerm,
 } from '@/backend/lib/crm/access';
+import { NotificationService } from '@/backend/services/NotificationService';
 
 const LEAD_SELECT = `
     *,
@@ -183,6 +184,11 @@ export async function POST(request: NextRequest) {
         console.error('CRM Lead CREATE error:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    if (data?.id) {
+        NotificationService.afterLeadCreated(data.id).catch(e => console.error('[CRM Lead CREATE] WA error:', e));
+    }
+
     // The 'created' activity is written by the crm_auto_activity DB trigger.
     return NextResponse.json({ lead: data }, { status: 201 });
 }

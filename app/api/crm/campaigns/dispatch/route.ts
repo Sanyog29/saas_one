@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
         touchedCampaigns.add(r.campaign_id);
         let ok = false;
         try {
-            ok = await WhatsAppService.sendAsync(r.phone, { message: r.message });
+            ok = await WhatsAppService.sendAsync(r.phone, { message: r.message, moduleName: 'crm' });
         } catch {
             ok = false;
         }

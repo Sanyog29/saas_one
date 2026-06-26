@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveDistributionAssignee } from '@/backend/lib/crm/distribution';
+import { NotificationService } from '@/backend/services/NotificationService';
 
 /**
  * Meta Lead Ads polling sync.
@@ -168,7 +169,16 @@ export async function syncMetaLeadsForOrg(orgId: string, opts: { perFormCap?: nu
                 }, { onConflict: 'meta_lead_id' });
 
                 base.inserted++;
-            } catch { base.failed++; }
+
+                if (newLead?.id) {
+                    // Send notifications to BD team asynchronously
+                    NotificationService.afterLeadCreated(newLead.id).catch(e => console.error(e));
+                }
+
+            } catch (err) { 
+                console.error('Failed to process lead', err);
+                base.failed++; 
+            }
         }
     }
 

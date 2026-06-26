@@ -8,8 +8,12 @@ const key = env.match(/SUPABASE_SERVICE_ROLE_KEY=(.*)/)[1].replace(/['"]+/g, '')
 const supabase = createClient(url, key);
 
 async function run() {
-    const { data } = await supabase.from('electricity_meters').select('*').limit(1);
-    console.log(Object.keys(data[0]||{}));
+    const { data, error } = await supabase.from('facility_meters').select('*').limit(1);
+    if (error) {
+        console.error("facility_meters error:", error);
+    } else {
+        console.log("facility_meters keys:", Object.keys(data[0]||{}));
+    }
 }
 
 run();

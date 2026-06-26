@@ -1345,4 +1345,67 @@ static async afterSOPItemRated(
             console.error('[NS] afterSOPReminderTriggered error:', err);
         }
     }
+
+    static async afterLeadCreated(leadId: string) {
+        try {
+            const { data: lead, error } = await supabaseAdmin
+                .from('crm_leads')
+                .select('*, organization_id, assigned_to, company_name, contact_person, contact_number, requirement, lead_source, campaign')
+                .eq('id', leadId)
+                .single();
+
+            if (error || !lead) return;
+
+            const orgId = lead.organization_id;
+            if (!orgId) return;
+
+            const recipientIds = new Set<string>();
+            if (lead.assigned_to) recipientIds.add(String(lead.assigned_to));
+
+            // Add CRM Admins (bd_admin, bd_super_admin, org_admin, org_super_admin)
+            const { data: admins } = await supabaseAdmin
+                .from('organization_memberships')
+                .select('user_id')
+                .eq('organization_id', orgId)
+                .in('role', ['bd_admin', 'bd_super_admin', 'org_admin', 'org_super_admin'])
+                .eq('is_active', true);
+            
+            (admins || []).forEach(m => recipientIds.add(String(m.user_id)));
+
+            // Also fetch Saniel's user explicitly if they aren't somehow mapped
+            const { data: sanielUsers } = await supabaseAdmin
+                .from('users')
+                .select('id')
+                .eq('email', 'saniel@worksquare.in');
+            (sanielUsers || []).forEach(u => recipientIds.add(String(u.id)));
+
+            let assigneeName = 'Unassigned';
+            if (lead.assigned_to) {
+                const { data: u } = await supabaseAdmin.from('users').select('full_name').eq('id', lead.assigned_to).single();
+                if (u?.full_name) assigneeName = u.full_name;
+            }
+
+            const sourceName = lead.lead_source || 'Manual/Other';
+            const campaignName = lead.campaign || 'Direct';
+            
+            const waMessage = [
+                `🚀 *New Inbound Lead!*`,
+                `*Source:* ${sourceName}`,
+                `*Campaign:* ${campaignName}`,
+                `*Name:* ${lead.contact_person || lead.company_name || 'Unknown'}`,
+                `*Phone:* ${lead.contact_number || 'Not provided'}`,
+                lead.requirement ? `*Requirement:* ${lead.requirement}` : null,
+                `*Assigned Rep:* ${assigneeName}`
+            ].filter(Boolean).join('\n');
+
+            await WhatsAppQueueService.enqueue({
+                userIds: Array.from(recipientIds),
+                message: waMessage,
+                eventType: 'CRM_NEW_LEAD',
+            });
+
+        } catch (err) {
+            console.error('[NS] afterLeadCreated error:', err);
+        }
+    }
 }
