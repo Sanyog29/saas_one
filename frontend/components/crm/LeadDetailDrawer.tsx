@@ -528,7 +528,39 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
 
                                     {/* Follow-up */}
                                     <div className="bg-surface-elevated rounded-xl p-4 space-y-3">
-                                        <h3 className="font-bold text-text-primary">Follow-up</h3>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <h3 className="font-bold text-text-primary">Follow-up</h3>
+                                            {(lead.next_followup_date || lead.followup_notes) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                method: 'PATCH',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({
+                                                                    next_followup_date: null,
+                                                                    last_contacted: new Date().toISOString(),
+                                                                }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const updated: CRMLead = {
+                                                                    ...lead,
+                                                                    next_followup_date: undefined,
+                                                                    last_contacted: new Date().toISOString(),
+                                                                };
+                                                                setLead(updated);
+                                                                onLeadUpdate?.(updated);
+                                                            }
+                                                        } catch {}
+                                                    }}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 transition-colors shrink-0"
+                                                    title="Mark this follow-up done — records the contact and clears the date"
+                                                >
+                                                    <CheckCircle className="w-3.5 h-3.5" /> Mark done
+                                                </button>
+                                            )}
+                                        </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="text-xs text-text-tertiary block mb-1">Next Follow-up Date</label>
