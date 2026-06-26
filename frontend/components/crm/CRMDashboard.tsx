@@ -439,7 +439,7 @@ export default function CRMDashboard() {
                 </div>
 
                 {/* Latest Leads — newest first, so reps catch fresh leads fast */}
-                <LatestLeadsCard orgId={orgId} leads={s.latest_leads || []} />
+                <LatestLeadsCard orgId={orgId} leads={s.latest_leads || []} userId={user?.id} />
 
                 {/* Follow-ups — leads surface here once a follow-up is set/updated */}
                 <div data-tour="crm-followups" className="bg-surface rounded-2xl border border-border overflow-hidden">
