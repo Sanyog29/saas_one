@@ -48,17 +48,18 @@ export async function GET(request: NextRequest) {
         const inWindow = leads.filter(
             (l) => l.created_at && l.created_at >= periodWindow.from && l.created_at <= periodWindow.to
         );
-        // "New leads" = freshly-received campaign leads. For the Today view we use a
-        // rolling 24h window (matching the "<24h NEW" badge on the Latest Leads card)
-        // instead of strict calendar-midnight — otherwise a lead that arrived late the
-        // previous evening reads as 0 "new today" while still showing as NEW elsewhere.
+        // "New leads" = leads freshly received in the period. For the Today view we
+        // use a rolling 24h window (matching the "<24h NEW" badge on the Latest Leads
+        // card) instead of strict calendar-midnight. We count ALL new leads — not only
+        // campaign-tagged ones — because many leads (manual, import, untagged Meta)
+        // have no campaign yet still showed up as NEW, which made this read 0.
         const dayAgo = new Date(now.getTime() - 24 * 3600 * 1000).toISOString();
         const newLeadPool = period === 'today'
             ? leads.filter((l) => l.created_at && l.created_at >= dayAgo)
             : inWindow;
         const campaignLeads = newLeadPool.filter((l) => l.campaign);
 
-        // Per-campaign breakdown of new leads in the window
+        // Per-campaign breakdown (only leads that actually carry a campaign tag).
         const campaignNewLeads: Record<string, number> = {};
         for (const l of campaignLeads) {
             campaignNewLeads[l.campaign] = (campaignNewLeads[l.campaign] || 0) + 1;
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
 
         return {
             period,
-            new_leads: campaignLeads.length,
+            new_leads: newLeadPool.length,
             new_leads_by_campaign: Object.entries(campaignNewLeads).map(
                 ([campaign, count]) => ({ campaign, count })
             ),
