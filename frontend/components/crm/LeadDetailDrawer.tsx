@@ -290,19 +290,39 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         } catch {}
     };
 
+    // Timeline items carry a type prefix ("a-<id>"); the API needs the raw id.
+    const rawActivityId = (timelineId: string) => timelineId.replace(/^a-/, '');
+
     const handleSaveActivityEdit = async () => {
         if (!editingActivity || !leadId) return;
+        const id = rawActivityId(editingActivity.id);
         setSavingActivity(true);
         try {
-            await fetch(`/api/crm/activities/${editingActivity.id}`, {
+            const res = await fetch(`/api/crm/activities/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ description: editingActivity.description }),
             });
-            setActivities(prev => prev.map(a => a.id === editingActivity.id ? { ...a, description: editingActivity.description } : a));
-            setEditingActivity(null);
+            if (res.ok) {
+                setActivities(prev => prev.map(a => a.id === id ? { ...a, description: editingActivity.description } : a));
+                setEditingActivity(null);
+            }
         } catch {}
         setSavingActivity(false);
+    };
+
+    const handleDeleteActivity = async (timelineId: string) => {
+        const id = rawActivityId(timelineId);
+        // Optimistic remove; restore on failure.
+        const prev = activities;
+        setActivities(prev.filter(a => a.id !== id));
+        setEditingActivity(curr => (curr?.id === timelineId ? null : curr));
+        try {
+            const res = await fetch(`/api/crm/activities/${id}`, { method: 'DELETE' });
+            if (!res.ok) setActivities(prev);
+        } catch {
+            setActivities(prev);
+        }
     };
 
     const handleEventCreated = (event: CRMEvent) => {
@@ -939,14 +959,24 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                                     <span className="text-xs text-text-tertiary whitespace-nowrap">
                                                                         {formatDate(item.timestamp)}
                                                                     </span>
-                                                                    {!isEditing && (
-                                                                        <button
-                                                                            onClick={() => setEditingActivity({ id: item.id, description: item.description || '' })}
-                                                                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-elevated transition-all"
-                                                                            title="Edit"
-                                                                        >
-                                                                            <Pencil className="w-3 h-3 text-text-tertiary" />
-                                                                        </button>
+                                                                    {/* Edit + Delete — only timeline activities have an API for this */}
+                                                                    {!isEditing && item.type === 'activity' && (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => setEditingActivity({ id: item.id, description: item.description || '' })}
+                                                                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-elevated transition-all"
+                                                                                title="Edit"
+                                                                            >
+                                                                                <Pencil className="w-3 h-3 text-text-tertiary" />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => { if (confirm('Remove this timeline entry?')) handleDeleteActivity(item.id); }}
+                                                                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"
+                                                                                title="Delete"
+                                                                            >
+                                                                                <Trash2 className="w-3 h-3 text-text-tertiary hover:text-rose-500" />
+                                                                            </button>
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             </div>
