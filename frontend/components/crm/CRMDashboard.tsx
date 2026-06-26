@@ -378,7 +378,7 @@ export default function CRMDashboard() {
                         iconBg="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"
                         label="New Leads"
                         value={s.new_leads}
-                        sub={statPeriod === 'all' ? 'All time' : `This ${statPeriod}`}
+                        sub={statPeriod === 'all' ? 'All time' : statPeriod === 'today' ? 'Last 24h' : `This ${statPeriod}`}
                         href={`/${orgId}/crm/leads`}
                     />
                     <StatCard

@@ -48,7 +48,15 @@ export async function GET(request: NextRequest) {
         const inWindow = leads.filter(
             (l) => l.created_at && l.created_at >= periodWindow.from && l.created_at <= periodWindow.to
         );
-        const campaignLeads = inWindow.filter((l) => l.campaign);
+        // "New leads" = freshly-received campaign leads. For the Today view we use a
+        // rolling 24h window (matching the "<24h NEW" badge on the Latest Leads card)
+        // instead of strict calendar-midnight — otherwise a lead that arrived late the
+        // previous evening reads as 0 "new today" while still showing as NEW elsewhere.
+        const dayAgo = new Date(now.getTime() - 24 * 3600 * 1000).toISOString();
+        const newLeadPool = period === 'today'
+            ? leads.filter((l) => l.created_at && l.created_at >= dayAgo)
+            : inWindow;
+        const campaignLeads = newLeadPool.filter((l) => l.campaign);
 
         // Per-campaign breakdown of new leads in the window
         const campaignNewLeads: Record<string, number> = {};
