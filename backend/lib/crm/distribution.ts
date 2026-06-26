@@ -77,49 +77,60 @@ export async function resolveDistributionAssignee(
     return chosen.user_id;
 }
 
-/**
- * Keep only members whose configured territory could cover this lead's market.
- * A member is kept when:
- *   - they have NO territory rows (unconstrained), OR
- *   - the lead's city rolls up to one of their territory cities (parent-metro
- *     aware, so "Lower Parel" matches a "Mumbai" territory), OR
- *   - the lead's campaign matches one of their territory campaigns.
- */
-async function filterByTerritory(members: any[], campaign: string | null, city?: string | null): Promise<any[]> {
-    const userIds = [...new Set(members.map((m) => m.user_id).filter(Boolean))];
-    if (userIds.length === 0) return members;
+export interface UserTerritory { cities: string[]; campaigns: string[] }
+
+/** Load active territory grants for a set of users → user_id → {cities, campaigns}. */
+export async function fetchTerritories(userIds: string[]): Promise<Map<string, UserTerritory>> {
+    const ids = [...new Set(userIds.filter(Boolean))];
+    const map = new Map<string, UserTerritory>();
+    if (ids.length === 0) return map;
 
     const { data: terr } = await supabaseAdmin
         .from('crm_territories')
         .select('user_id, city, campaign')
-        .in('user_id', userIds)
+        .in('user_id', ids)
         .eq('is_active', true);
 
-    // user_id -> { cities[], campaigns[] }
-    const byUser = new Map<string, { cities: string[]; campaigns: string[] }>();
     for (const t of terr || []) {
-        const e = byUser.get(t.user_id) || { cities: [], campaigns: [] };
+        const e = map.get(t.user_id) || { cities: [], campaigns: [] };
         const camp = (t.campaign || '').trim();
         const cityVal = (t.city || '').trim();
         if (camp) e.campaigns.push(camp);
         else if (cityVal) e.cities.push(cityVal);
-        byUser.set(t.user_id, e);
+        map.set(t.user_id, e);
     }
+    return map;
+}
 
+/**
+ * Does a user's territory cover a lead's market? Parent-metro aware (so a
+ * "Mumbai" territory covers "Lower Parel"). A user with NO territory is treated
+ * as UNCONSTRAINED (covers everything) — pass requireExplicit=true to instead
+ * require a positive, explicit match (used when picking a reassignment target).
+ */
+export function territoryCoversLead(
+    terr: UserTerritory | undefined,
+    campaign: string | null,
+    city?: string | null,
+    requireExplicit = false,
+): boolean {
+    const empty = !terr || (terr.cities.length === 0 && terr.campaigns.length === 0);
+    if (empty) return !requireExplicit;
     const leadParent = city ? parentCity(city).toLowerCase() : '';
+    if (leadParent && terr!.cities.some((c) => parentCity(c).toLowerCase() === leadParent)) return true;
     const leadCampaign = (campaign || '').toLowerCase();
+    if (leadCampaign && terr!.campaigns.some((tc) => {
+        const k = tc.toLowerCase();
+        return k && (leadCampaign.includes(k) || k.includes(leadCampaign));
+    })) return true;
+    return false;
+}
 
-    const covers = (uid: string): boolean => {
-        const t = byUser.get(uid);
-        // No territory configured → don't constrain this member.
-        if (!t || (t.cities.length === 0 && t.campaigns.length === 0)) return true;
-        if (leadParent && t.cities.some((c) => parentCity(c).toLowerCase() === leadParent)) return true;
-        if (leadCampaign && t.campaigns.some((tc) => {
-            const k = tc.toLowerCase();
-            return k && (leadCampaign.includes(k) || k.includes(leadCampaign));
-        })) return true;
-        return false;
-    };
-
-    return members.filter((m) => covers(m.user_id));
+/**
+ * Keep only members whose configured territory could cover this lead's market.
+ * Members with NO territory rows stay (unconstrained).
+ */
+async function filterByTerritory(members: any[], campaign: string | null, city?: string | null): Promise<any[]> {
+    const byUser = await fetchTerritories(members.map((m) => m.user_id));
+    return members.filter((m) => territoryCoversLead(byUser.get(m.user_id), campaign, city));
 }

@@ -46,6 +46,53 @@ export default function LeadDistributionManager({ orgId }: LeadDistributionManag
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
     const [showUserDropdown, setShowUserDropdown] = useState(false);
 
+    // Bulk reassign (territory cleanup)
+    const [reassign, setReassign] = useState<any | null>(null);
+    const [reassignLoading, setReassignLoading] = useState(false);
+    const [reassignApplying, setReassignApplying] = useState(false);
+    const [reassignDone, setReassignDone] = useState<string | null>(null);
+
+    const callReassign = async (apply: boolean) => {
+        const res = await fetch('/api/crm/distribution/reassign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ organization_id: orgId, apply }),
+        });
+        return res.ok ? res.json() : null;
+    };
+
+    const previewReassign = async () => {
+        setReassignLoading(true);
+        setReassignDone(null);
+        try {
+            const data = await callReassign(false);
+            if (data) setReassign(data);
+        } catch (e) {
+            console.error('reassign preview failed', e);
+        } finally {
+            setReassignLoading(false);
+        }
+    };
+
+    const applyReassign = async () => {
+        setReassignApplying(true);
+        try {
+            const data = await callReassign(true);
+            if (data) {
+                setReassignDone(
+                    `Moved ${data.moved} lead${data.moved !== 1 ? 's' : ''}` +
+                    (data.unassigned ? `, unassigned ${data.unassigned} (no in-territory rep).` : '.')
+                );
+                setReassign(null);
+                fetchData();
+            }
+        } catch (e) {
+            console.error('reassign apply failed', e);
+        } finally {
+            setReassignApplying(false);
+        }
+    };
+
     useEffect(() => {
         fetchData();
     }, []);
@@ -152,6 +199,79 @@ export default function LeadDistributionManager({ orgId }: LeadDistributionManag
                     <Plus className="w-4 h-4" />
                     Add Rule
                 </button>
+            </div>
+
+            {/* Territory cleanup: bulk-reassign mis-routed leads */}
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/20 p-4 md:p-5">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                            <UserCheck className="w-4 h-4" /> Fix mis-routed leads
+                        </h3>
+                        <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5 max-w-2xl">
+                            Move open leads assigned to a rep outside their territory (e.g. a Mumbai lead on a Bangalore rep)
+                            to a rep whose territory matches. Reps with no territory set are left untouched. Always shows a
+                            preview before any change.
+                        </p>
+                    </div>
+                    <button
+                        onClick={previewReassign}
+                        disabled={reassignLoading}
+                        className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 disabled:opacity-50 transition-colors shrink-0"
+                    >
+                        {reassignLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Shuffle className="w-3.5 h-3.5" />}
+                        Check now
+                    </button>
+                </div>
+
+                {reassignDone && (
+                    <p className="mt-3 text-xs font-bold text-emerald-700 dark:text-emerald-400">✓ {reassignDone}</p>
+                )}
+
+                {reassign && (
+                    <div className="mt-4 rounded-xl border border-amber-200 dark:border-amber-800/40 bg-white dark:bg-surface overflow-hidden">
+                        {reassign.misassigned === 0 ? (
+                            <p className="px-4 py-3 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                                ✓ All {reassign.checked} open leads are correctly assigned — nothing to fix.
+                            </p>
+                        ) : (
+                            <>
+                                <div className="px-4 py-2.5 border-b border-amber-100 dark:border-amber-900/40 flex items-center justify-between gap-3 flex-wrap">
+                                    <p className="text-xs font-bold text-text-primary">
+                                        {reassign.misassigned} mis-routed lead{reassign.misassigned !== 1 ? 's' : ''}
+                                        {reassign.unassigned ? ` · ${reassign.unassigned} have no in-territory rep (→ pool)` : ''}
+                                    </p>
+                                    <button
+                                        onClick={applyReassign}
+                                        disabled={reassignApplying}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                                    >
+                                        {reassignApplying ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserCheck className="w-3 h-3" />}
+                                        Apply {reassign.misassigned} change{reassign.misassigned !== 1 ? 's' : ''}
+                                    </button>
+                                </div>
+                                <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                                    {reassign.reassignments.slice(0, 100).map((r: any) => (
+                                        <div key={r.lead_id} className="px-4 py-2 flex items-center gap-2 text-[11px]">
+                                            <span className="font-bold text-text-primary truncate max-w-[160px]">{r.name}</span>
+                                            {r.city && <span className="text-text-tertiary whitespace-nowrap">· {r.city}</span>}
+                                            <span className="ml-auto flex items-center gap-1.5 whitespace-nowrap">
+                                                <span className="text-rose-600 dark:text-rose-400 line-through">{r.from_name}</span>
+                                                <span className="text-text-tertiary">→</span>
+                                                <span className={`font-bold ${r.to_name ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-600'}`}>
+                                                    {r.to_name || 'Unassigned (pool)'}
+                                                </span>
+                                            </span>
+                                        </div>
+                                    ))}
+                                    {reassign.reassignments.length > 100 && (
+                                        <p className="px-4 py-2 text-[10px] text-text-tertiary">+ {reassign.reassignments.length - 100} more…</p>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Add Rule Form */}
