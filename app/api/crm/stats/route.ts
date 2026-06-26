@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { resolveCrmAccess, isCrmAccessError, readOrgId } from '@/backend/lib/crm/access';
+import { cityFilterOr } from '@/backend/lib/crm/cityGroups';
 
 // GET /api/crm/stats?type=rep|admin
 export async function GET(request: NextRequest) {
@@ -113,7 +114,7 @@ export async function GET(request: NextRequest) {
             .eq('organization_id', org)
             .eq('is_archived', false);
         if (!adminAllOrg) leadsQ = leadsQ.eq('assigned_to', targetUserId);
-        if (city) leadsQ = leadsQ.or(`city.ilike.%${city}%,location.ilike.%${city}%`);
+        if (city) leadsQ = leadsQ.or(cityFilterOr([city]));
         const { data: leads } = await leadsQ;
 
         const all = (leads || []) as any[];
@@ -238,7 +239,7 @@ export async function GET(request: NextRequest) {
         .eq('organization_id', org)
         .eq('is_archived', false);
     if (propertyId) leadQ = leadQ.eq('property_interest', propertyId);
-    if (city) leadQ = leadQ.or(`city.ilike.%${city}%,location.ilike.%${city}%`);
+    if (city) leadQ = leadQ.or(cityFilterOr([city]));
     const { data: allLeads } = await leadQ;
     const leads = (allLeads || []) as any[];
 

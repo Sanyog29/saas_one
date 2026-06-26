@@ -7,6 +7,7 @@ import {
     scopeLeadsQuery,
     sanitizeSearchTerm,
 } from '@/backend/lib/crm/access';
+import { cityFilterOr } from '@/backend/lib/crm/cityGroups';
 
 const LEAD_SELECT = `
     *,
@@ -64,7 +65,12 @@ export async function GET(request: NextRequest) {
     if (properties.length) query = query.in('property_interest', properties);
     if (sources.length) query = query.in('lead_source', sources);
     if (campaigns.length) query = query.in('campaign', campaigns);
-    if (cities.length) query = query.in('city', cities);
+    // City filter rolls a parent metro (e.g. Mumbai) up to its sub-locations
+    // (Lower Parel, Andheri, …) so neighbourhood-tagged leads aren't dropped.
+    if (cities.length) {
+        const cityOr = cityFilterOr(cities);
+        if (cityOr) query = query.or(cityOr);
+    }
     if (dateFrom) query = query.gte('created_at', dateFrom);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`);
     // Seat-range filter on the numeric `seats` column.
