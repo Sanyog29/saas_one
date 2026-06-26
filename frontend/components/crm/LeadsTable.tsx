@@ -43,6 +43,9 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
     const [showFilters, setShowFilters] = useState(false);
+    // My Leads (only assigned to me) vs All Leads (everything I can see — my whole
+    // market, incl. teammates' leads in the same city). 'all' is the default view.
+    const [scope, setScope] = useState<'mine' | 'all'>('all');
 
     // Staged filters (user picks, then clicks Apply)
     const [stagedFilters, setStagedFilters] = useState<{
@@ -71,7 +74,7 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
 
     useEffect(() => {
         fetchLeads();
-    }, [page, search, appliedFilters, sortBy, sortOrder]);
+    }, [page, search, appliedFilters, sortBy, sortOrder, scope]);
 
     useEffect(() => {
         fetchConfigs();
@@ -88,6 +91,9 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
             });
 
             if (search) params.set('search', search);
+            // "My Leads" → only leads assigned to me. "All Leads" → my full scope
+            // (server-side scopeLeadsQuery already limits this to my market).
+            if (scope === 'mine' && user?.id) params.set('assigned_to', user.id);
             if (appliedFilters.status?.length) {
                 appliedFilters.status.forEach(s => params.append('status', s));
             }
@@ -268,6 +274,21 @@ export default function LeadsTable({ onLeadSelect, onCreateLead, filters }: Lead
                     />
                 </div>
                 <div className="flex items-center gap-3">
+                    {/* My Leads / All Leads scope toggle */}
+                    <div className="flex items-center gap-0.5 bg-surface-elevated rounded-xl p-1 border border-border shrink-0">
+                        {([['mine', 'My Leads'], ['all', 'All Leads']] as const).map(([key, label]) => (
+                            <button
+                                key={key}
+                                onClick={() => { setScope(key); setPage(1); }}
+                                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                                    scope === key ? 'bg-primary text-white shadow-sm' : 'text-text-secondary hover:text-text-primary'
+                                }`}
+                                title={key === 'mine' ? 'Only leads assigned to me' : 'All leads in my market (incl. teammates’)'}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                    </div>
                     <button
                         data-tour="leads-filters"
                         onClick={() => setShowFilters(!showFilters)}

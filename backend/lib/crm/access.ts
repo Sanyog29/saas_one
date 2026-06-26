@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/frontend/utils/supabase/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { cityFilterOr, parentCity } from '@/backend/lib/crm/cityGroups';
 
 /**
  * CRM access resolution.
@@ -171,9 +172,11 @@ export function scopeLeadsQuery(query: any, access: CrmAccess) {
 
     const ors: string[] = [`created_by.eq.${access.user.id}`, `assigned_to.eq.${access.user.id}`];
     if (access.territoryCities.length > 0) {
-        // PostgREST in.() — quote values to tolerate spaces in city names.
-        const list = access.territoryCities.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
-        ors.push(`city.in.(${list})`);
+        // Metro-aware: a "Mumbai" grant must cover its neighbourhoods (Lower Parel,
+        // Andheri, …), matched against city AND location — so reps in the same city
+        // see each other's whole-market leads. cityFilterOr expands the aliases.
+        const cityOr = cityFilterOr(access.territoryCities);
+        if (cityOr) ors.push(cityOr);
     }
     if (access.territoryCampaigns.length > 0) {
         const list = access.territoryCampaigns.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
@@ -193,8 +196,14 @@ export function canAccessLead(
     // assigned to, regardless of territory (territory only widens DISCOVERY).
     if (lead.created_by === access.user.id) return true;
     if (lead.assigned_to === access.user.id) return true;
-    if (lead.city && access.territoryCities.map((c) => c.toLowerCase()).includes(lead.city.toLowerCase())) return true;
-    if (lead.campaign && access.territoryCampaigns.map((c) => c.toLowerCase()).includes(lead.campaign.toLowerCase())) return true;
+    // Metro-aware territory match: a "Mumbai" grant covers "Lower Parel"/"Andheri"
+    // (and the lead's location field too), so it agrees with scopeLeadsQuery.
+    if (lead.city || lead.campaign) {
+        const leadMetro = lead.city ? parentCity(lead.city).toLowerCase() : '';
+        if (leadMetro && access.territoryCities.some((c) => parentCity(c).toLowerCase() === leadMetro)) return true;
+        const leadCampaign = (lead.campaign || '').toLowerCase();
+        if (leadCampaign && access.territoryCampaigns.some((c) => c.toLowerCase() === leadCampaign)) return true;
+    }
     return false;
 }
 
