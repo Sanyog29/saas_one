@@ -35,7 +35,13 @@ async function fetchAllPages(path: string, token: string, cap = 300): Promise<an
     while (url) {
         const res: Response = await fetch(url);
         const json: any = await res.json();
-        if (!res.ok) break;
+        if (!res.ok) {
+            // Surface API failures (expired/invalid token, permission, rate-limit)
+            // instead of silently returning an empty list — a silent break makes an
+            // auth failure look identical to "no leads", hiding real ingestion outages.
+            const msg = json?.error?.message || `${res.status} ${res.statusText}`;
+            throw new Error(`Meta Graph API error: ${msg}`);
+        }
         out.push(...(json.data || []));
         url = json.paging?.next || null;
         if (out.length >= cap) break;
@@ -90,7 +96,12 @@ export async function syncMetaLeadsForOrg(orgId: string, opts: { perFormCap?: nu
         let formLeads: any[] = [];
         try {
             formLeads = await fetchAllPages(`${form.id}/leads?fields=id,created_time,field_data&limit=100`, token, perFormCap);
-        } catch { base.failed++; continue; }
+        } catch (e: any) {
+            base.failed++;
+            base.error = e?.message || 'form leads fetch failed';
+            console.error('[metaLeadSync] form leads fetch failed', form.id, e?.message);
+            continue;
+        }
 
         for (const lead of formLeads) {
             const leadgenId = lead.id;
@@ -134,11 +145,22 @@ export async function syncMetaLeadsForOrg(orgId: string, opts: { perFormCap?: nu
                     .or(conditions.join(',')).limit(1).maybeSingle();
                 if (existing) {
                     if (!existingMeta) {
-                        await supabaseAdmin.from('crm_meta_leads').insert({
-                            organization_id: orgId, meta_lead_id: leadgenId, form_id: form.id,
-                            payload: lead, status: 'duplicate_contact', processed_lead_id: existing.id,
-                            processed_at: new Date().toISOString(),
-                        });
+                        // Mark this Meta lead as a duplicate of an existing CRM contact.
+                        // NOTE: status MUST be one of the values allowed by the
+                        // crm_meta_leads_status_check constraint ('pending','processed',
+                        // 'failed','duplicate'). Writing an invalid value here previously
+                        // threw and — because this insert is outside the try below —
+                        // killed the ENTIRE org sync before new leads were reached,
+                        // silently stalling Meta lead ingestion. Wrapped + valid now.
+                        try {
+                            await supabaseAdmin.from('crm_meta_leads').insert({
+                                organization_id: orgId, meta_lead_id: leadgenId, form_id: form.id,
+                                payload: lead, status: 'duplicate', processed_lead_id: existing.id,
+                                processed_at: new Date().toISOString(),
+                            });
+                        } catch (e) {
+                            console.error('[metaLeadSync] failed to mark duplicate', leadgenId, e);
+                        }
                     }
                     base.skipped++;
                     continue;
@@ -172,9 +194,14 @@ export async function syncMetaLeadsForOrg(orgId: string, opts: { perFormCap?: nu
         }
     }
 
-    // Record the run on the config for observability.
+    // Record the run on the config for observability. Reflect failures so an
+    // expired token / API outage shows up as 'failed' instead of a misleading 'ok'.
+    if (base.failed > 0) base.status = 'failed';
     await supabaseAdmin.from('crm_meta_config')
-        .update({ last_sync_at: new Date().toISOString(), last_sync_status: 'ok' })
+        .update({
+            last_sync_at: new Date().toISOString(),
+            last_sync_status: base.failed > 0 ? 'failed' : 'ok',
+        })
         .eq('organization_id', orgId);
 
     return base;
