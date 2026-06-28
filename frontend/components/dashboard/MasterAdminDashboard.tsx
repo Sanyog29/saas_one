@@ -7,7 +7,7 @@ import {
     CheckCircle2, AlertCircle, Search, Plus, ExternalLink, XCircle, Filter,
     Key, Eye, EyeOff, Globe, Copy, X, Ticket, Link as LinkIcon, LogOut,
     UserCircle, FileDown, Brain, Wrench, MessageCircle,
-    TrendingUp, MapPin, Radio, Flame, Phone
+    TrendingUp, MapPin, Radio, Flame, Phone, Gauge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -25,6 +25,7 @@ import TicketCreateModal from '@/frontend/components/tickets/TicketCreateModal';
 import AIInsightsDashboard from './AIInsightsDashboard';
 import IssueCategoryKanban from '@/frontend/components/admin/IssueCategoryKanban';
 import AnalyticsTab from './AnalyticsTab';
+import UsageDashboardTab from './UsageDashboardTab';
 import MasterAdminChatbot from './MasterAdminChatbot';
 import ResolverStatsList from '@/frontend/components/mst/ResolverStatsList';
 import { MessageSquareCode } from 'lucide-react';
@@ -32,7 +33,7 @@ import WhatsAppTemplatesManager from '@/frontend/components/admin/WhatsAppTempla
 import WhatsAppSystemControl from '@/frontend/components/ops/WhatsAppSystemControl';
 import IssueTrackingDashboard from '@/frontend/components/master-admin/IssueTrackingDashboard';
 
-type Tab = 'overview' | 'bd-pipeline' | 'analytics' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
+type Tab = 'overview' | 'bd-pipeline' | 'analytics' | 'usage' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
 
 // Shape returned by GET /api/admin/bd-stats (cross-org BD pipeline metrics).
 interface BDStats {
@@ -140,7 +141,7 @@ const MasterAdminDashboard = () => {
     // Restore tab from URL and handle back navigation
     useEffect(() => {
         const tab = searchParams.get('tab');
-if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
+if (tab && ['overview', 'bd-pipeline', 'analytics', 'usage', 'organizations', 'tickets', 'users', 'visitors', 'invite-links', 'ai-insights', 'ai-assistant', 'issue-config', 'modules', 'settings', 'resolvers', 'super-tenants', 'whatsapp-templates', 'issues'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -368,10 +369,11 @@ if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 
         fetchOrganizations();
     };
 
-    const navItems: { id: Tab, label: string, icon: any }[] = [
+    const navItems: { id: Tab, label: string, icon: any, section?: string }[] = [
         { id: 'overview', label: 'Console', icon: ShieldCheck },
         { id: 'bd-pipeline', label: 'BD Pipeline', icon: TrendingUp },
         { id: 'analytics', label: 'Engagement', icon: Activity },
+        { id: 'usage', label: 'Usage Overview', icon: Gauge, section: 'Reports' },
         { id: 'resolvers', label: 'Resolvers', icon: Wrench },
         { id: 'organizations', label: 'Organizations', icon: Building2 },
         { id: 'tickets', label: 'Support Tickets', icon: Ticket },
@@ -404,17 +406,21 @@ if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 
 
                 <nav className="space-y-2 flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0">
                     {navItems.map((item) => (
-                        <button
-                            key={item.id}
-                            onClick={() => handleTabChange(item.id)}
-                            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-sm ${activeTab === item.id
-                                ? 'bg-primary text-text-inverse shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                                }`}
-                        >
-                            <item.icon className="w-4 h-4" />
-                            {item.label}
-                        </button>
+                        <React.Fragment key={item.id}>
+                            {item.section && (
+                                <p className="px-4 pt-4 pb-1 text-[10px] font-black text-text-tertiary uppercase tracking-widest">{item.section}</p>
+                            )}
+                            <button
+                                onClick={() => handleTabChange(item.id)}
+                                className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-sm ${activeTab === item.id
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                                    }`}
+                            >
+                                <item.icon className="w-4 h-4" />
+                                {item.label}
+                            </button>
+                        </React.Fragment>
                     ))}
                 </nav>
 
@@ -514,6 +520,7 @@ if (tab && ['overview', 'bd-pipeline', 'analytics', 'organizations', 'tickets', 
                         {activeTab === 'overview' && <OverviewGrid stats={stats} />}
                         {activeTab === 'bd-pipeline' && <BDPipelineTab router={router} />}
                         {activeTab === 'analytics' && <AnalyticsTab />}
+                        {activeTab === 'usage' && <UsageDashboardTab />}
                         {activeTab === 'organizations' && (
                             selectedOrg ? (
                                 <OrgPropertyDashboard
