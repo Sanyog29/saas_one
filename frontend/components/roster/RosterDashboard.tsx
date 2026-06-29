@@ -35,6 +35,13 @@ export function RosterDashboard({ propertyId }: Props) {
     
     const [loading, setLoading] = useState(!initialCached);
     const [saving, setSaving] = useState(false);
+    
+    // Import Modal State
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importMonth, setImportMonth] = useState(new Date().getMonth());
+    const [importYear, setImportYear] = useState(new Date().getFullYear());
+    const [isImporting, setIsImporting] = useState(false);
+    
     const [notification, setNotification] = useState<{message: string, type: 'success'|'error'|'info'} | null>(null);
     const [isCustomExportOpen, setIsCustomExportOpen] = useState(false);
     const [customExportStart, setCustomExportStart] = useState('');
@@ -376,17 +383,26 @@ export function RosterDashboard({ propertyId }: Props) {
         }
     };
 
-    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        setImportFile(file);
+        setImportMonth(month);
+        setImportYear(year);
+        e.target.value = ''; // Reset file input so same file can be picked again
+    };
 
+    const confirmImport = async () => {
+        if (!importFile) return;
+        
         try {
+            setIsImporting(true);
             setNotification({ message: 'Uploading and parsing Excel file...', type: 'info' });
             
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append('file', importFile);
             
-            const fetchUrl = `/api/roster/import?propertyId=${propertyId}&year=${year}&month=${month + 1}`;
+            const fetchUrl = `/api/roster/import?propertyId=${propertyId}&year=${importYear}&month=${importMonth + 1}`;
             const res = await fetch(fetchUrl, {
                 method: 'POST',
                 body: formData
@@ -407,19 +423,18 @@ export function RosterDashboard({ propertyId }: Props) {
             });
 
             setUnsavedAssignments(newUnsaved);
+            setNotification({ message: `Successfully imported shifts!`, type: 'success' });
             
-            let msg = `Successfully loaded ${data.stats.totalImported} shifts! Review and save.`;
-            if (data.stats.unknownNames.length > 0) {
-                msg += ` Note: Ignored ${data.stats.unknownNames.length} unknown rows.`;
-            }
+            // Navigate the calendar to the imported month/year
+            const newDate = new Date(importYear, importMonth, 1);
+            setCurrentDate(newDate);
             
-            setNotification({ message: msg, type: 'success' });
-            
+            setImportFile(null); // Close modal
         } catch (error: any) {
             console.error(error);
             setNotification({ message: error.message || 'Error parsing import file', type: 'error' });
         } finally {
-            e.target.value = ''; // Reset file input
+            setIsImporting(false);
         }
     };
 
@@ -563,6 +578,64 @@ export function RosterDashboard({ propertyId }: Props) {
                 propertyId={propertyId}
                 onSaved={fetchData}
             />
+
+            {importFile && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full space-y-6">
+                        <div className="space-y-2">
+                            <h3 className="text-lg font-bold text-gray-900">Import Roster</h3>
+                            <p className="text-sm text-gray-500">Select the target month and year for this file.</p>
+                            <p className="text-xs text-blue-600 font-medium truncate bg-blue-50 px-2 py-1 rounded">
+                                {importFile.name}
+                            </p>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                                <label className="text-xs font-medium text-gray-700">Month</label>
+                                <select 
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                                    value={importMonth}
+                                    onChange={(e) => setImportMonth(parseInt(e.target.value))}
+                                    disabled={isImporting}
+                                >
+                                    {Array.from({ length: 12 }).map((_, i) => (
+                                        <option key={i} value={i}>{new Date(2000, i).toLocaleString('default', { month: 'long' })}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-medium text-gray-700">Year</label>
+                                <input 
+                                    type="number"
+                                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                    value={importYear}
+                                    onChange={(e) => setImportYear(parseInt(e.target.value))}
+                                    disabled={isImporting}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex space-x-3 pt-2">
+                            <button
+                                onClick={() => setImportFile(null)}
+                                disabled={isImporting}
+                                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmImport}
+                                disabled={isImporting}
+                                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+                            >
+                                {isImporting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                                Import
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <AddOfflineStaffModal 
                 isOpen={isAddOfflineOpen} 
