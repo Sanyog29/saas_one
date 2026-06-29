@@ -36,6 +36,9 @@ export function RosterDashboard({ propertyId }: Props) {
     const [loading, setLoading] = useState(!initialCached);
     const [saving, setSaving] = useState(false);
     const [notification, setNotification] = useState<{message: string, type: 'success'|'error'|'info'} | null>(null);
+    const [isCustomExportOpen, setIsCustomExportOpen] = useState(false);
+    const [customExportStart, setCustomExportStart] = useState('');
+    const [customExportEnd, setCustomExportEnd] = useState('');
     
     // Track unsaved changes
     const [unsavedAssignments, setUnsavedAssignments] = useState<Record<string, any>>({});
@@ -322,6 +325,12 @@ export function RosterDashboard({ propertyId }: Props) {
         const type = e.target.value;
         if (!type) return;
 
+        if (type === 'custom') {
+            setIsCustomExportOpen(true);
+            e.target.value = '';
+            return;
+        }
+
         const todayStr = new Date().toISOString().split('T')[0];
         const dateParam = (type === 'weekly' || type === 'daily') ? `&date=${todayStr}` : '';
         
@@ -451,7 +460,6 @@ export function RosterDashboard({ propertyId }: Props) {
                         </button>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-2">
                     <Button variant="outline" onClick={() => setIsAddOfflineOpen(true)} className="rounded-full h-8 text-xs px-3 bg-white">
                         + Add Offline Staff
@@ -473,6 +481,7 @@ export function RosterDashboard({ propertyId }: Props) {
                         <option value="monthly">Export Monthly</option>
                         <option value="weekly">Export Weekly</option>
                         <option value="daily">Export Today</option>
+                        <option value="custom">Export Custom Dates</option>
                     </select>
                     <Button 
                         onClick={handleSave} 
@@ -484,6 +493,43 @@ export function RosterDashboard({ propertyId }: Props) {
                     </Button>
                 </div>
             </div>
+
+            {isCustomExportOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden p-6 border border-gray-200">
+                        <h3 className="text-lg font-bold mb-4">Export Custom Date Range</h3>
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">Start Date</label>
+                                <input type="date" value={customExportStart} onChange={e => setCustomExportStart(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:border-gray-500" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-500 mb-1">End Date</label>
+                                <input type="date" value={customExportEnd} onChange={e => setCustomExportEnd(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:border-gray-500" />
+                            </div>
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <Button variant="outline" onClick={() => setIsCustomExportOpen(false)}>Cancel</Button>
+                            <Button 
+                                onClick={() => {
+                                    if (!customExportStart || !customExportEnd) {
+                                        setNotification({ message: 'Please select both start and end dates', type: 'error' });
+                                        return;
+                                    }
+                                    if (new Date(customExportStart) > new Date(customExportEnd)) {
+                                        setNotification({ message: 'Start date cannot be after end date', type: 'error' });
+                                        return;
+                                    }
+                                    window.open(`/api/roster/export?propertyId=${propertyId}&exportType=custom&startDate=${customExportStart}&endDate=${customExportEnd}`, '_blank');
+                                    setIsCustomExportOpen(false);
+                                }}
+                            >
+                                Export
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {loading ? (
                 <div className="h-64 flex items-center justify-center border rounded-lg bg-gray-50">

@@ -70,6 +70,17 @@ export async function POST(
             return NextResponse.json({ error: 'Vendor ID and revenue amount are required' }, { status: 400 });
         }
 
+        // Fetch organization_id from the property
+        const { data: propData, error: propErr } = await supabase
+            .from('properties')
+            .select('organization_id')
+            .eq('id', propertyId)
+            .single();
+
+        if (propErr || !propData) {
+            return NextResponse.json({ error: 'Property not found' }, { status: 400 });
+        }
+
         const today = new Date().toISOString().split('T')[0];
         const targetDate = body.revenue_date || today;
         const revenueAmount = Number(body.revenue_amount);
@@ -113,6 +124,7 @@ export async function POST(
             const { data: inserted, error: insertError } = await supabase
                 .from('vendor_daily_revenue')
                 .insert({
+                    organization_id: propData.organization_id,
                     vendor_id: body.vendor_id,
                     property_id: propertyId,
                     revenue_amount: revenueAmount,

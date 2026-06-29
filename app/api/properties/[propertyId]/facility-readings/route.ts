@@ -39,81 +39,87 @@ export async function GET(request: Request, { params }: { params: Promise<{ prop
 
         let combinedReadings: any[] = [];
 
+        // Standard generic facility_meter_readings
+        const { data: readings, error } = await supabase
+            .from('facility_meter_readings')
+            .select('*')
+            .in('meter_id', meterIds)
+            .gte('reading_date', startDate)
+            .lt('reading_date', endDate);
+
+        if (error) throw error;
+
+        const { data: prevReadings, error: prevError } = await supabase
+            .from('facility_meter_readings')
+            .select('*')
+            .in('meter_id', meterIds)
+            .lt('reading_date', startDate)
+            .order('reading_date', { ascending: false });
+            
+        if (prevError) throw prevError;
+        
+        let mergedReadings = readings || [];
+        let mergedPrevReadings = prevReadings || [];
+
         if (isElectricity) {
-            // For electricity, we use the unified electricity_readings table as source of truth
-            const { data: readings, error } = await supabase
+            const { data: legacyReadings } = await supabase
                 .from('electricity_readings')
                 .select('*')
                 .in('meter_id', meterIds)
                 .gte('reading_date', startDate)
                 .lt('reading_date', endDate);
-            
-            if (error) throw error;
-
-            const { data: prevReadings, error: prevError } = await supabase
-                .from('electricity_readings')
-                .select('*')
-                .in('meter_id', meterIds)
-                .lt('reading_date', startDate)
-                .order('reading_date', { ascending: false });
-
-            if (prevError) throw prevError;
-
-            const latestPrevMap = new Map();
-            if (prevReadings) {
-                for (const pr of prevReadings) {
-                    if (!latestPrevMap.has(pr.meter_id)) {
-                        latestPrevMap.set(pr.meter_id, pr);
+                
+            if (legacyReadings && legacyReadings.length > 0) {
+                const existingKeys = new Set(mergedReadings.map(r => `${r.meter_id}_${r.reading_date}`));
+                for (const lr of legacyReadings) {
+                    if (!existingKeys.has(`${lr.meter_id}_${lr.reading_date}`)) {
+                        mergedReadings.push({
+                            meter_id: lr.meter_id,
+                            reading_date: lr.reading_date,
+                            initial_reading: lr.opening_reading,
+                            final_reading: lr.closing_reading,
+                            consumption: lr.final_units,
+                            meter_constant_used: lr.multiplier_value_used,
+                            is_rollover: false
+                        });
                     }
                 }
             }
-
-            const rawCombined = [...(readings || []), ...Array.from(latestPrevMap.values())];
             
-            // Map electricity_readings schema back to spreadsheet expected schema
-            combinedReadings = rawCombined.map(r => ({
-                id: r.id,
-                meter_id: r.meter_id,
-                reading_date: r.reading_date,
-                initial_reading: r.opening_reading,
-                final_reading: r.closing_reading,
-                consumption: r.final_units || r.computed_units,
-                meter_constant_used: r.multiplier_value_used,
-                is_rollover: false,
-                created_at: r.created_at
-            }));
-
-        } else {
-            // Standard generic facility_meter_readings
-            const { data: readings, error } = await supabase
-                .from('facility_meter_readings')
-                .select('*')
-                .in('meter_id', meterIds)
-                .gte('reading_date', startDate)
-                .lt('reading_date', endDate);
-
-            if (error) throw error;
-
-            const { data: prevReadings, error: prevError } = await supabase
-                .from('facility_meter_readings')
+            const { data: legacyPrev } = await supabase
+                .from('electricity_readings')
                 .select('*')
                 .in('meter_id', meterIds)
                 .lt('reading_date', startDate)
                 .order('reading_date', { ascending: false });
                 
-            if (prevError) throw prevError;
-            
-            const latestPrevMap = new Map();
-            if (prevReadings) {
-                for (const pr of prevReadings) {
-                    if (!latestPrevMap.has(pr.meter_id)) {
-                        latestPrevMap.set(pr.meter_id, pr);
+            if (legacyPrev && legacyPrev.length > 0) {
+                const existingKeys = new Set(mergedPrevReadings.map(r => `${r.meter_id}_${r.reading_date}`));
+                for (const lr of legacyPrev) {
+                    if (!existingKeys.has(`${lr.meter_id}_${lr.reading_date}`)) {
+                        mergedPrevReadings.push({
+                            meter_id: lr.meter_id,
+                            reading_date: lr.reading_date,
+                            initial_reading: lr.opening_reading,
+                            final_reading: lr.closing_reading,
+                            consumption: lr.final_units,
+                            meter_constant_used: lr.multiplier_value_used,
+                            is_rollover: false
+                        });
                     }
                 }
+                mergedPrevReadings.sort((a, b) => new Date(b.reading_date).getTime() - new Date(a.reading_date).getTime());
             }
-
-            combinedReadings = [...(readings || []), ...Array.from(latestPrevMap.values())];
         }
+        
+        const latestPrevMap = new Map();
+        for (const pr of mergedPrevReadings) {
+            if (!latestPrevMap.has(pr.meter_id)) {
+                latestPrevMap.set(pr.meter_id, pr);
+            }
+        }
+
+        combinedReadings = [...mergedReadings, ...Array.from(latestPrevMap.values())];
 
         return NextResponse.json(combinedReadings);
 
@@ -154,41 +160,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
             }
         }
 
-        if (isElectricity) {
-            // Write to electricity_readings ONLY (unified table)
-            const legacyPayload = readings.map((r: any) => ({
-                property_id: propertyId,
-                meter_id: r.meter_id,
-                reading_date: r.reading_date,
-                opening_reading: r.initial_reading,
-                closing_reading: r.final_reading,
-                final_units: r.consumption,
-                computed_units: r.consumption,
-                multiplier_value_used: r.meter_constant_used || 1.0,
-                created_by: user.id,
-                updated_at: new Date().toISOString()
-            }));
-
-            const { error: elecErr } = await supabase
-                .from('electricity_readings')
-                .upsert(legacyPayload, {
-                    onConflict: 'meter_id,reading_date',
-                    ignoreDuplicates: false
-                });
-
-            if (elecErr) throw elecErr;
-
-            // Update last_reading on electricity_meters
-            for (const r of readings) {
-                await supabase
-                    .from('electricity_meters')
-                    .update({ last_reading: r.final_reading, updated_at: new Date().toISOString() })
-                    .eq('id', r.meter_id);
-            }
-
-            return NextResponse.json({ success: true, count: legacyPayload.length });
-        }
-
         // Standard facility writing
         const payload = readings.map((r: any) => ({
             meter_id: r.meter_id,
@@ -210,6 +181,50 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
             });
 
         if (error) throw error;
+
+        // --- DUAL WRITE TO LEGACY TABLE ---
+        if (isElectricity) {
+            for (const r of readings) {
+                const legacyReading = {
+                    property_id: propertyId,
+                    meter_id: r.meter_id,
+                    reading_date: r.reading_date,
+                    opening_reading: r.initial_reading ?? 0,
+                    closing_reading: r.final_reading ?? r.initial_reading ?? 0,
+                    final_units: r.consumption ?? 0,
+                    multiplier_value_used: r.meter_constant_used || 1.0,
+                    created_by: user.id,
+                    updated_at: new Date().toISOString()
+                };
+
+                const { data: existing } = await supabase
+                    .from('electricity_readings')
+                    .select('id')
+                    .eq('meter_id', r.meter_id)
+                    .eq('reading_date', r.reading_date)
+                    .maybeSingle();
+
+                if (existing) {
+                    const { error: updateErr } = await supabase
+                        .from('electricity_readings')
+                        .update(legacyReading)
+                        .eq('id', existing.id);
+                    if (updateErr) throw updateErr;
+                } else {
+                    const { error: insertErr } = await supabase
+                        .from('electricity_readings')
+                        .insert(legacyReading);
+                    if (insertErr) throw insertErr;
+                }
+
+                if (r.final_reading !== null && r.final_reading !== undefined) {
+                    await supabase
+                        .from('electricity_meters')
+                        .update({ last_reading: r.final_reading, updated_at: new Date().toISOString() })
+                        .eq('id', r.meter_id);
+                }
+            }
+        }
 
         return NextResponse.json({ success: true, count: payload.length });
 

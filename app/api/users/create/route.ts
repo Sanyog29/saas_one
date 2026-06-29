@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Role enum guard — reject any value not in the allowed set to prevent privilege escalation
-        const ALLOWED_ROLES = ['master_admin', 'org_super_admin', 'property_admin', 'staff', 'mst', 'tenant', 'procurement'] as const;
+        const ALLOWED_ROLES = ['master_admin', 'org_super_admin', 'property_admin', 'staff', 'mst', 'tenant', 'procurement', 'vendor', 'super_tenant'] as const;
         if (!ALLOWED_ROLES.includes(role as any)) {
             return NextResponse.json(
                 { error: `Invalid role "${role}". Allowed: ${ALLOWED_ROLES.join(', ')}` },
@@ -188,10 +188,10 @@ export async function POST(request: NextRequest) {
         const { property_id } = body
 
         // Membership logic:
-        // org_super_admin & procurement → organization_memberships
+        // org_super_admin & procurement & super_tenant → organization_memberships
         // all other roles               → property_memberships
         // On failure: delete the auth user to avoid stranded accounts (partial state cleanup)
-        if (role === 'org_super_admin' || role === 'procurement') {
+        if (role === 'org_super_admin' || role === 'procurement' || role === 'super_tenant') {
             if (organization_id) {
                 const { error: memberError } = await adminClient
                     .from('organization_memberships')

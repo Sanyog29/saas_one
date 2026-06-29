@@ -13,6 +13,7 @@ import { useParams, useRouter } from 'next/navigation';
 import SignOutModal from '@/frontend/components/ui/SignOutModal';
 import VendorExportModal from '@/frontend/components/vendor/VendorExportModal';
 import VendorPaymentModal from '@/frontend/components/vendor/VendorPaymentModal';
+import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
 import SettingsView from './SettingsView';
 import Image from 'next/image';
 
@@ -52,13 +53,16 @@ const FoodVendorDashboard = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [revenue, setRevenue] = useState('');
+    const [vendors, setVendors] = useState<VendorProfile[]>([]);
     const [vendor, setVendor] = useState<VendorProfile | null>(null);
+    const [activeShopId, setActiveShopId] = useState<string | null>(null);
+    const [isManageModalOpen, setIsManageModalOpen] = useState(false);
     const [currentCycle, setCurrentCycle] = useState<CommissionCycle | null>(null);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
-    const [activeTab, setActiveTab] = useState<'portal' | 'history' | 'profile' | 'settings'>('portal');
+    const [activeTab, setActiveTab] = useState<'portal' | 'history' | 'profile' | 'settings' | 'shops'>('portal');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [history, setHistory] = useState<any[]>([]);
     const [todayDate] = useState(new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }));
@@ -71,55 +75,87 @@ const FoodVendorDashboard = () => {
 
     useEffect(() => {
         if (user && propertyId) {
-            initializeDashboard();
+            fetchVendors();
         }
     }, [user, propertyId]);
 
-    const initializeDashboard = async () => {
+    useEffect(() => {
+        if (activeShopId && vendor) {
+            fetchShopData(vendor);
+        }
+    }, [activeShopId, vendor, startDate, endDate, isFiltered]);
+
+    const fetchVendors = async () => {
         setIsLoading(true);
         try {
-            // 1. Fetch Vendor Profile
-            const { data: vendorData, error: vendorError } = await supabase
+            const { data: vendorsData, error: vendorError } = await supabase
                 .from('vendors')
                 .select('*, properties(name)')
                 .eq('user_id', user?.id)
-                .maybeSingle();
+                .order('shop_name', { ascending: true });
 
-            if (vendorError || !vendorData) {
-                console.error('Error fetching vendor:', vendorError);
+            if (vendorError) {
+                console.error('Error fetching vendors:', vendorError);
                 return;
             }
 
-            setVendor({
-                id: vendorData.id,
-                shop_name: vendorData.shop_name,
-                owner_name: vendorData.owner_name,
-                commission_rate: vendorData.commission_rate,
-                property_id: vendorData.property_id,
-                property_name: vendorData.properties?.name,
-                email: vendorData.email // assuming email might be here or in user
-            });
+            if (!vendorsData || vendorsData.length === 0) {
+                setVendors([]);
+                setVendor(null);
+                setActiveShopId(null);
+                setViewState('dashboard');
+                return;
+            }
 
+            const parsedVendors = vendorsData.map(v => ({
+                id: v.id,
+                shop_name: v.shop_name,
+                owner_name: v.owner_name,
+                commission_rate: v.commission_rate,
+                property_id: v.property_id,
+                property_name: v.properties?.name,
+                email: v.email
+            }));
+
+            setVendors(parsedVendors);
+            
+            // Set active shop if not set, or if it doesn't exist in the new list
+            if (!activeShopId || !parsedVendors.find(v => v.id === activeShopId)) {
+                setActiveShopId(parsedVendors[0].id);
+                setVendor(parsedVendors[0]);
+            } else {
+                setVendor(parsedVendors.find(v => v.id === activeShopId) || null);
+            }
+        } catch (err) {
+            console.error('Error fetching vendors:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchShopData = async (activeVendor: VendorProfile) => {
+        setIsLoading(true);
+        try {
             // 2. Fetch current commission cycle
             const { data: cycleData } = await supabase
                 .from('commission_cycles')
                 .select('*')
-                .eq('vendor_id', vendorData.id)
+                .eq('vendor_id', activeVendor.id)
                 .eq('status', 'in_progress')
                 .maybeSingle();
 
             if (cycleData) {
                 setCurrentCycle(cycleData);
+            } else {
+                setCurrentCycle(null);
             }
 
-            // 3. Just fetch initial view based on whether today exists, 
-            // but don't force lock-out. We'll show the dashboard by default if today exists,
-            // but still allow alternate date entries.
+            // 3. Just fetch initial view based on whether today exists
             const todayStr = new Date().toISOString().split('T')[0];
             const { data: entryData } = await supabase
                 .from('vendor_daily_revenue')
                 .select('id')
-                .eq('vendor_id', vendorData.id)
+                .eq('vendor_id', activeVendor.id)
                 .eq('entry_date', todayStr)
                 .maybeSingle();
 
@@ -133,7 +169,7 @@ const FoodVendorDashboard = () => {
             const { data: historyData } = await supabase
                 .from('vendor_daily_revenue')
                 .select('*')
-                .eq('vendor_id', vendorData.id)
+                .eq('vendor_id', activeVendor.id)
                 .order('entry_date', { ascending: false })
                 .limit(30);
 
@@ -158,25 +194,18 @@ const FoodVendorDashboard = () => {
                         cycle_start: startDate,
                         cycle_end: endDate,
                         total_revenue: filteredRevenue,
-                        commission_rate: vendorData.commission_rate,
-                        commission_due: filteredRevenue * (vendorData.commission_rate / 100),
+                        commission_rate: activeVendor.commission_rate,
+                        commission_due: filteredRevenue * (activeVendor.commission_rate / 100),
                         status: isFiltered ? 'filtered' : 'in_progress'
                     });
                 }
             }
         } catch (err) {
-            console.error('Initialization error:', err);
+            console.error('Data fetch error:', err);
         } finally {
             setIsLoading(false);
         }
     };
-
-    // Re-initialize when filters change
-    useEffect(() => {
-        if (user && propertyId) {
-            initializeDashboard();
-        }
-    }, [startDate, endDate, isFiltered]);
 
     const handleSubmitRevenue = async () => {
         if (!revenue || isNaN(Number(revenue)) || Number(revenue) <= 0) return;
@@ -214,7 +243,7 @@ const FoodVendorDashboard = () => {
             setViewState('already_submitted');
             setRevenue(''); // Reset revenue for next entry
             // Refresh cycle data
-            initializeDashboard();
+            if (vendor) fetchShopData(vendor);
         } catch (err) {
             console.error('Submission error:', err);
             alert('Failed to record revenue. Please try again.');
@@ -291,7 +320,7 @@ const FoodVendorDashboard = () => {
             if (!response.ok) throw new Error('Payment recording failed');
 
             // Refresh cycle data to show updated stats
-            initializeDashboard();
+            if (vendor) fetchShopData(vendor);
         } catch (err) {
             console.error('Payment completion error:', err);
         }
@@ -355,6 +384,26 @@ const FoodVendorDashboard = () => {
                         <p className="text-slate-500 font-medium mb-12">Select any date to record historical or daily revenue.</p>
 
                         <div className="relative mb-8 space-y-4">
+                            {vendors.length > 1 ? (
+                                <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 mb-6">
+                                    <span className="text-sm font-bold text-slate-400">Select Shop:</span>
+                                    <select
+                                        value={activeShopId || ''}
+                                        onChange={(e) => setActiveShopId(e.target.value)}
+                                        className="bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-2 font-bold text-slate-900 focus:border-indigo-600 focus:ring-0 transition-all outline-none min-w-[200px]"
+                                    >
+                                        {vendors.map(v => (
+                                            <option key={v.id} value={v.id}>{v.shop_name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-center gap-2 mb-6 bg-slate-50 border border-slate-100 rounded-full py-1.5 px-4 w-fit mx-auto">
+                                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Shop</span>
+                                    <span className="text-sm font-bold text-slate-700">{vendor?.shop_name}</span>
+                                </div>
+                            )}
+
                             <div className="flex items-center justify-center gap-4 mb-4">
                                 <span className="text-sm font-bold text-slate-400">Entry for Date:</span>
                                 <input
@@ -486,6 +535,54 @@ const FoodVendorDashboard = () => {
     const cycleProgress = getCycleDay();
     const daysRemaining = getDaysRemaining();
 
+    if (vendors.length === 0 && !isLoading) {
+        return (
+            <div className="min-h-screen bg-[#F8F9FC] flex flex-col items-center justify-center font-inter p-6 text-center">
+                <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-3xl flex items-center justify-center mb-8 mx-auto shadow-sm">
+                    <Store className="w-10 h-10" />
+                </div>
+                <h2 className="text-3xl font-black text-slate-900 mb-3">No Shops Setup Yet</h2>
+                <p className="text-slate-500 font-medium mb-10 max-w-md leading-relaxed text-lg">
+                    You haven't added any shops yet. Setup your first shop to start tracking your daily revenue and commissions.
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
+                    <button
+                        onClick={() => setIsManageModalOpen(true)}
+                        className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-200/50 w-full sm:w-auto"
+                    >
+                        <Plus className="w-5 h-5" /> Add Your First Shop
+                    </button>
+                    <button
+                        onClick={() => setShowSignOutModal(true)}
+                        className="px-8 py-4 bg-white text-slate-600 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-50 transition-all border border-slate-100 w-full sm:w-auto"
+                    >
+                        <LogOut className="w-5 h-5" /> Sign Out
+                    </button>
+                </div>
+
+                <SignOutModal
+                    isOpen={showSignOutModal}
+                    onClose={() => setShowSignOutModal(false)}
+                    onConfirm={signOut}
+                />
+
+                <VendorManagementModal
+                    isOpen={isManageModalOpen}
+                    onClose={() => setIsManageModalOpen(false)}
+                    propertyId={propertyId}
+                    vendorToEdit={null}
+                    onSuccess={() => {
+                        setIsManageModalOpen(false);
+                        fetchVendors();
+                    }}
+                    isVendorMode={true}
+                    currentUserId={user?.id}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="min-h-screen bg-[#F8F9FC] flex font-inter text-slate-900">
             {/* Sidebar Overlay */}
@@ -500,12 +597,24 @@ const FoodVendorDashboard = () => {
             <aside className={`w-72 bg-white border-r border-slate-100 flex flex-col fixed h-full z-30 p-8 transition-transform duration-300 ease-in-out lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <div className="flex items-center justify-between mb-12">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-text-inverse">
+                        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-text-inverse shrink-0">
                             <Store className="w-5 h-5" />
                         </div>
-                        <div>
-                            <h2 className="font-bold text-sm leading-tight text-slate-900 truncate max-w-[120px]">{vendor?.shop_name}</h2>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{vendor?.property_name}</p>
+                        <div className="flex-1 min-w-0">
+                            {vendors.length > 1 ? (
+                                <select 
+                                    value={activeShopId || ''}
+                                    onChange={(e) => setActiveShopId(e.target.value)}
+                                    className="w-full bg-slate-50 border border-slate-100 rounded-lg p-1.5 text-sm font-bold text-slate-900 truncate outline-none focus:ring-2 focus:ring-primary/20"
+                                >
+                                    {vendors.map(v => (
+                                        <option key={v.id} value={v.id}>{v.shop_name}</option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <h2 className="font-bold text-sm leading-tight text-slate-900 truncate">{vendor?.shop_name}</h2>
+                            )}
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{vendor?.property_name}</p>
                         </div>
                     </div>
                     <button
@@ -548,6 +657,16 @@ const FoodVendorDashboard = () => {
                         Profile
                     </button>
                     <button
+                        onClick={() => { setActiveTab('shops'); setSidebarOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'shops'
+                            ? 'bg-primary/10 text-primary'
+                            : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                            }`}
+                    >
+                        <Store className="w-4 h-4" />
+                        My Shops
+                    </button>
+                    <button
                         onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'settings'
                             ? 'bg-primary/10 text-primary'
@@ -556,6 +675,13 @@ const FoodVendorDashboard = () => {
                     >
                         <Settings className="w-4 h-4" />
                         Settings
+                    </button>
+                    <button
+                        onClick={() => { setIsManageModalOpen(true); setSidebarOpen(false); }}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-bold text-sm text-indigo-600 hover:bg-indigo-50 transition-all mt-4 border border-indigo-100"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add New Shop
                     </button>
                 </nav>
 
@@ -582,12 +708,14 @@ const FoodVendorDashboard = () => {
                             <h1 className="text-xl sm:text-2xl lg:text-3xl font-black tracking-tight text-slate-900">
                                 {activeTab === 'portal' && 'Vendor Portal'}
                                 {activeTab === 'history' && 'Revenue History'}
+                                {activeTab === 'shops' && 'My Shops'}
                                 {activeTab === 'profile' && 'Vendor Profile'}
                                 {activeTab === 'settings' && 'Account Settings'}
                             </h1>
                             <p className="text-slate-500 font-medium text-sm">
                                 {activeTab === 'portal' && 'Monitoring your revenue and commissions.'}
                                 {activeTab === 'history' && 'Track your past submissions and earnings.'}
+                                {activeTab === 'shops' && 'Manage and view all your cafeteria shops.'}
                                 {activeTab === 'profile' && 'View your store and contact information.'}
                                 {activeTab === 'settings' && 'Update your personal account details.'}
                             </p>
@@ -834,6 +962,60 @@ const FoodVendorDashboard = () => {
                                 </table>
                             </div>
                         </motion.div>
+                    ) : activeTab === 'shops' ? (
+                        <motion.div
+                            key="shops"
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
+                        >
+                            {vendors.map((v) => (
+                                <div key={v.id} className={`bg-white border ${activeShopId === v.id ? 'border-indigo-600 ring-2 ring-indigo-600/20' : 'border-slate-100'} rounded-3xl p-6 shadow-sm hover:shadow-md transition-all relative`}>
+                                    {activeShopId === v.id && (
+                                        <span className="absolute top-6 right-6 flex h-3 w-3">
+                                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                          <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                                        </span>
+                                    )}
+                                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mb-4">
+                                        <Store className="w-6 h-6" />
+                                    </div>
+                                    <h3 className="text-xl font-black text-slate-900 mb-1">{v.shop_name}</h3>
+                                    <p className="text-sm font-bold text-slate-500 mb-6">{v.property_name}</p>
+                                    
+                                    <div className="flex items-center justify-between py-3 border-y border-slate-50 mb-6">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Commission Rate</span>
+                                        <span className="text-sm font-black text-emerald-600">{v.commission_rate}%</span>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <button 
+                                            onClick={() => {
+                                                setActiveShopId(v.id);
+                                                setActiveTab('portal');
+                                            }}
+                                            className={`flex-1 py-3 rounded-xl text-sm font-bold transition-colors ${activeShopId === v.id ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100'}`}
+                                        >
+                                            {activeShopId === v.id ? 'Active Portal' : 'Switch to Portal'}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            
+                            <button
+                                onClick={() => setIsManageModalOpen(true)}
+                                className="flex flex-col items-center justify-center gap-4 bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-6 hover:bg-slate-100 hover:border-slate-300 transition-all min-h-[280px]"
+                            >
+                                <div className="w-12 h-12 bg-white text-slate-400 rounded-full flex items-center justify-center shadow-sm">
+                                    <Plus className="w-6 h-6" />
+                                </div>
+                                <div className="text-center">
+                                    <h3 className="text-lg font-black text-slate-900">Add New Shop</h3>
+                                    <p className="text-sm font-medium text-slate-500 mt-1">Register another store</p>
+                                </div>
+                            </button>
+                        </motion.div>
                     ) : activeTab === 'settings' ? (
                         <motion.div
                             key="settings"
@@ -841,7 +1023,7 @@ const FoodVendorDashboard = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
                         >
-                            <SettingsView onUpdate={initializeDashboard} />
+                            <SettingsView onUpdate={fetchVendors} />
                         </motion.div>
                     ) : (
                         <motion.div
@@ -927,6 +1109,16 @@ const FoodVendorDashboard = () => {
                 amountDue={currentCycle?.commission_due || 0}
                 vendorName={vendor?.shop_name || 'Vendor'}
                 onPaymentComplete={handlePaymentComplete}
+            />
+
+            <VendorManagementModal
+                isOpen={isManageModalOpen}
+                onClose={() => setIsManageModalOpen(false)}
+                propertyId={propertyId}
+                vendorToEdit={null} // Vendor can only add NEW shops this way, not edit existing ones
+                onSuccess={() => fetchVendors()}
+                isVendorMode={true}
+                currentUserId={user?.id}
             />
         </div>
     );

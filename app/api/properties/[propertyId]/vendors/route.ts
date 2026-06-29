@@ -38,14 +38,26 @@ export async function POST(
     const supabase = await createClient();
     const body = await request.json();
 
+    // Fetch organization_id from the property
+    const { data: propData, error: propErr } = await supabase
+        .from('properties')
+        .select('organization_id')
+        .eq('id', propertyId)
+        .single();
+
+    if (propErr || !propData) {
+        return NextResponse.json({ error: 'Property not found' }, { status: 400 });
+    }
+
     // Create vendor
     const { data: vendor, error: vendorError } = await supabase
         .from('vendors')
         .insert({
+            organization_id: propData.organization_id,
             property_id: propertyId,
             user_id: body.user_id || null,
             shop_name: body.shop_name,
-            owner_name: body.owner_name || null,
+            vendor_name: body.shop_name, // Mapping this to satisfy DB constraint
             commission_rate: body.commission_rate || 10,
             payment_gateway_enabled: body.payment_gateway_enabled || false,
             status: 'active',
@@ -93,7 +105,7 @@ export async function PATCH(
         .from('vendors')
         .update({
             shop_name: body.shop_name,
-            owner_name: body.owner_name,
+            vendor_name: body.shop_name,
             commission_rate: body.commission_rate,
             payment_gateway_enabled: body.payment_gateway_enabled,
             status: body.status,

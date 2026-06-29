@@ -43,6 +43,7 @@ import ProcurementModule from '../procurement/ProcurementModule';
 import VMSOrgVisitorDashboard from '@/frontend/components/vms/VMSOrgVisitorDashboard';
 import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
+import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
 
 import { BDQuickStats } from './UnifiedDashboard';
 
@@ -3221,6 +3222,8 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
     const [vendors, setVendors] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedProperty, setSelectedProperty] = useState(selectedPropertyId);
+    const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+    const [vendorToEdit, setVendorToEdit] = useState<any | null>(null);
     const supabase = createClient();
 
     useEffect(() => {
@@ -3294,6 +3297,19 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
                         {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                     <button
+                        onClick={() => {
+                            if (selectedProperty === 'all') {
+                                alert('Please select a specific property from the dropdown to add a vendor.');
+                                return;
+                            }
+                            setVendorToEdit(null);
+                            setIsManageModalOpen(true);
+                        }}
+                        className="p-3.5 bg-indigo-600 text-white rounded-2xl font-black text-xs hover:bg-indigo-500 transition-all flex items-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" /> Add Vendor
+                    </button>
+                    <button
                         onClick={handleExportAll}
                         className="p-3.5 bg-slate-900 text-white rounded-2xl font-black text-xs hover:bg-slate-800 transition-all flex items-center gap-2"
                     >
@@ -3331,12 +3347,13 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Revenue</th>
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Last Entry</th>
                                 <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Commission</th>
+                                <th className="px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {vendors.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-8 py-16 text-center text-slate-400 font-bold italic">No vendor data available.</td>
+                                    <td colSpan={7} className="px-8 py-16 text-center text-slate-400 font-bold italic">No vendor data available.</td>
                                 </tr>
                             ) : (
                                 vendors.map((v) => {
@@ -3362,6 +3379,35 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
                                             <td className="px-8 py-5 text-right font-black text-sm text-slate-900">₹{rev.toLocaleString()}</td>
                                             <td className="px-8 py-5 text-center text-xs font-bold text-slate-500">{lastEntryDisplay}</td>
                                             <td className="px-8 py-5 text-right font-black text-sm text-emerald-600">₹{comm.toLocaleString()}</td>
+                                            <td className="px-8 py-5 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            setVendorToEdit(v);
+                                                            setIsManageModalOpen(true);
+                                                        }}
+                                                        className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors"
+                                                    >
+                                                        <Settings className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (confirm('Are you sure you want to delete this vendor? This cannot be undone.')) {
+                                                                try {
+                                                                    const res = await fetch(`/api/properties/${v.property_id}/vendors?id=${v.id}`, { method: 'DELETE' });
+                                                                    if (res.ok) fetchRevenueData();
+                                                                    else alert('Failed to delete vendor');
+                                                                } catch (e) {
+                                                                    console.error(e);
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
                                         </tr>
                                     );
                                 })
@@ -3370,6 +3416,16 @@ const RevenueTab = ({ properties, selectedPropertyId }: { properties: any[], sel
                     </table>
                 </div>
             </div>
+
+            {isManageModalOpen && (
+                <VendorManagementModal
+                    isOpen={isManageModalOpen}
+                    onClose={() => setIsManageModalOpen(false)}
+                    propertyId={vendorToEdit?.property_id || selectedProperty}
+                    vendorToEdit={vendorToEdit}
+                    onSuccess={() => fetchRevenueData()}
+                />
+            )}
         </div>
     );
 };

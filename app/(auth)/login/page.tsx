@@ -270,7 +270,7 @@ function AuthContent() {
                         router.replace(
                             redirectPath && redirectPath !== '/'
                                 ? redirectPath
-                                : `/${best.organization_id}/dashboard`
+                                : `/org/${best.organization_id}/dashboard`
                         );
                     }
                     return;

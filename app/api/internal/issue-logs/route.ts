@@ -9,7 +9,12 @@ import { createAdminClient } from '@/frontend/utils/supabase/admin';
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch (e) {
+      // Allow empty bodies
+    }
     const adminSupabase = createAdminClient();
     const {
       category,
