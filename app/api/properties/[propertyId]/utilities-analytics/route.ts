@@ -63,17 +63,22 @@ export async function GET(
             if (error) {
                 console.error('[UtilitiesAnalytics] Error fetching electricity data:', error.message);
             } else {
+                // For combined scope, only aggregate 'main' meters to prevent double-counting sub-meters
+                const filteredData = scope === 'meter-wise' 
+                    ? data 
+                    : (data?.filter(r => (r.meter as any)?.meter_type === 'main') || []);
+
                 // Aggregate data
-                const totalUnits = data?.reduce((sum, r) => sum + (r.final_units || r.computed_units || 0), 0) || 0;
-                const totalCost = data?.reduce((sum, r) => sum + (r.computed_cost || 0), 0) || 0;
+                const totalUnits = filteredData?.reduce((sum, r) => sum + (r.final_units || r.computed_units || 0), 0) || 0;
+                const totalCost = filteredData?.reduce((sum, r) => sum + (r.computed_cost || 0), 0) || 0;
 
                 // Today's data
-                const todayReadings = data?.filter(r => r.reading_date === today) || [];
+                const todayReadings = filteredData?.filter(r => r.reading_date === today) || [];
                 const todayUnits = todayReadings.reduce((sum, r) => sum + (r.final_units || r.computed_units || 0), 0);
                 const todayCost = todayReadings.reduce((sum, r) => sum + (r.computed_cost || 0), 0);
 
                 // Group by date for trends
-                const dailyTrends = data?.reduce((acc: any, r) => {
+                const dailyTrends = filteredData?.reduce((acc: any, r) => {
                     const date = r.reading_date;
                     if (!acc[date]) {
                         acc[date] = { date, units: 0, cost: 0 };
@@ -84,7 +89,7 @@ export async function GET(
                 }, {});
 
                 // Group by meter for breakdown
-                const meterBreakdown = data?.reduce((acc: any, r) => {
+                const meterBreakdown = filteredData?.reduce((acc: any, r) => {
                     // Cast embedded relation to single object (Supabase returns single for many-to-one)
                     const meter = r.meter as unknown as { id: string; name: string; meter_type?: string } | null;
                     const meterName = meter?.name || 'Unknown';

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Allow localtunnel domains in dev
-  allowedDevOrigins: ['*.loca.lt'],
+  allowedDevOrigins: ['*.loca.lt', '192.168.0.224:3000', '192.168.0.224'],
 
   // Optimized standalone output for Vercel deployment
   // output: 'standalone',

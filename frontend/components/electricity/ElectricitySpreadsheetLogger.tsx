@@ -27,8 +27,8 @@ interface Category {
 interface Reading {
     meter_id: string;
     reading_date: string;
-    initial_reading: number | null;
-    final_reading: number | null;
+    initial_reading: number | string | null;
+    final_reading: number | string | null;
     consumption: number | null;
     meter_constant_used: number;
     is_rollover: boolean;
@@ -127,7 +127,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                 // First, try to seed lastKnownFinal from previous month's data (which the API now includes)
                 data.forEach(r => {
                     if (r.reading_date < month + '-01' && r.final_reading !== null) {
-                        lastKnownFinal[r.meter_id] = r.final_reading;
+                        lastKnownFinal[r.meter_id] = Number(r.final_reading);
                     }
                 });
 
@@ -144,7 +144,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                                 }
                                 // Update tracker for the next day
                                 if (existingRecord.final_reading !== null) {
-                                    lastKnownFinal[m.id] = existingRecord.final_reading;
+                                    lastKnownFinal[m.id] = Number(existingRecord.final_reading);
                                 } else {
                                     // If there's an existing record but no final reading, we still want to carry forward
                                     // the last known final to the next day's initial reading, so we don't delete it.
@@ -189,8 +189,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
     }, [propertyId, activeTabId, month, daysInMonth]);
 
     const handleValueChange = (dateStr: string, meterId: string, field: 'initial_reading' | 'final_reading', valueStr: string, meterConstant: number) => {
-        const val = valueStr === '' ? null : parseFloat(valueStr);
-        
+        const val = valueStr === '' ? null : valueStr;
         setReadings(prev => {
             const newState = { ...prev };
             if (!newState[dateStr]) newState[dateStr] = {};
@@ -208,13 +207,20 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
             const updatedReading = { ...currentReading, [field]: val };
             
             // Auto calculate consumption
-            if (updatedReading.initial_reading !== null && updatedReading.final_reading !== null) {
-                let diff = updatedReading.final_reading - updatedReading.initial_reading;
-                if (diff < 0) {
-                    updatedReading.is_rollover = true; // Auto-detect rollover edge case
+            if (updatedReading.initial_reading !== null && updatedReading.initial_reading !== '' && updatedReading.final_reading !== null && updatedReading.final_reading !== '') {
+                const initVal = typeof updatedReading.initial_reading === 'string' ? parseFloat(updatedReading.initial_reading) : updatedReading.initial_reading;
+                const finalVal = typeof updatedReading.final_reading === 'string' ? parseFloat(updatedReading.final_reading) : updatedReading.final_reading;
+                
+                if (!isNaN(initVal) && !isNaN(finalVal)) {
+                    let diff = finalVal - initVal;
+                    if (diff < 0) {
+                        updatedReading.is_rollover = true; // Auto-detect rollover edge case
+                    } else {
+                        updatedReading.is_rollover = false;
+                        updatedReading.consumption = Number((diff * updatedReading.meter_constant_used).toFixed(2));
+                    }
                 } else {
-                    updatedReading.is_rollover = false;
-                    updatedReading.consumption = Number((diff * updatedReading.meter_constant_used).toFixed(2));
+                    updatedReading.consumption = null;
                 }
             } else {
                 updatedReading.consumption = null;
@@ -240,9 +246,14 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                     };
                     
                     nextDay.initial_reading = val;
-                    if (nextDay.final_reading !== null) {
-                        const diff = nextDay.final_reading - nextDay.initial_reading;
-                        nextDay.consumption = diff >= 0 ? Number((diff * nextDay.meter_constant_used).toFixed(2)) : null;
+                    if (nextDay.final_reading !== null && nextDay.final_reading !== '') {
+                        const initVal = typeof nextDay.initial_reading === 'string' ? parseFloat(nextDay.initial_reading) : nextDay.initial_reading;
+                        const finalVal = typeof nextDay.final_reading === 'string' ? parseFloat(nextDay.final_reading) : nextDay.final_reading;
+                        
+                        if (!isNaN(initVal) && !isNaN(finalVal)) {
+                            const diff = finalVal - initVal;
+                            nextDay.consumption = diff >= 0 ? Number((diff * nextDay.meter_constant_used).toFixed(2)) : null;
+                        }
                     }
                     newState[nextDateStr][meterId] = nextDay;
                 }
@@ -258,8 +269,12 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
             const payload: Reading[] = [];
             Object.values(readings).forEach(dayObj => {
                 Object.values(dayObj).forEach(reading => {
-                    if (reading.initial_reading !== null && reading.final_reading !== null) {
-                        payload.push(reading);
+                    if (reading.initial_reading !== null && reading.initial_reading !== '' && reading.final_reading !== null && reading.final_reading !== '') {
+                        payload.push({
+                            ...reading,
+                            initial_reading: typeof reading.initial_reading === 'string' ? parseFloat(reading.initial_reading) : reading.initial_reading,
+                            final_reading: typeof reading.final_reading === 'string' ? parseFloat(reading.final_reading) : reading.final_reading,
+                        });
                     }
                 });
             });
@@ -339,7 +354,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                                 const reading = { ...newState[dateStr][meter.id] };
                                 reading.meter_constant_used = parsed;
                                 if (reading.initial_reading !== null && reading.final_reading !== null) {
-                                    let diff = reading.final_reading - reading.initial_reading;
+                                    let diff = Number(reading.final_reading) - Number(reading.initial_reading);
                                     if (diff >= 0) {
                                         reading.consumption = Number((diff * parsed).toFixed(2));
                                         reading.is_rollover = false;
@@ -752,11 +767,12 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                                             return (
                                                 <React.Fragment key={meter.id}>
                                                     <td className={`border-r border-b p-1 text-center text-xs font-bold bg-transparent ${isDark ? 'border-[#30363d] text-white' : 'border-slate-200 text-black'}`}>
-                                                        {reading?.initial_reading !== undefined && reading?.initial_reading !== null ? Number(reading.initial_reading.toFixed(2)) : '-'}
+                                                        {reading?.initial_reading !== undefined && reading?.initial_reading !== null ? Number(Number(reading.initial_reading).toFixed(2)) : '-'}
                                                     </td>
                                                     <td className={`border-r border-b p-0 bg-transparent ${isDark ? 'border-[#30363d]' : 'border-slate-200'}`}>
                                                         <input 
-                                                            type="number"
+                                                            type="text"
+                                                            inputMode="decimal"
                                                             value={reading?.final_reading ?? ''}
                                                             onChange={(e) => handleValueChange(day.dateStr, meter.id, 'final_reading', e.target.value, meter.meter_constant)}
                                                             className={`w-full h-full p-1 text-xs bg-transparent text-center focus:outline-none focus:bg-primary/10 transition-colors font-bold ${isDark ? 'text-white placeholder:text-slate-600' : 'text-black placeholder:text-slate-300'}`}

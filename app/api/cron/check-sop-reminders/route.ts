@@ -64,13 +64,14 @@ export async function GET(request: NextRequest) {
 
             let recipientIds: string[] = assignedUsers;
 
-            // If no specific users assigned, notify ALL active property members
+            // If no specific users assigned, notify active property staff only
             if (recipientIds.length === 0) {
                 const { data: allMembers } = await supabaseAdmin
                     .from('property_memberships')
                     .select('user_id')
                     .eq('property_id', template.property_id)
-                    .eq('is_active', true);
+                    .eq('is_active', true)
+                    .in('role', ['property_admin', 'staff', 'mst', 'security']);
                 recipientIds = (allMembers || []).map((m: any) => String(m.user_id));
             }
 

@@ -42,9 +42,10 @@ import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/sha
 import { RosterDashboard } from '@/frontend/components/roster/RosterDashboard';
 import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
+import FacilityQRDashboard from '@/frontend/components/facility-qr/FacilityQRDashboard';
 
 // Types
-type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics';
+type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics' | 'facility_qr';
 
 interface Property {
     id: string;
@@ -154,7 +155,7 @@ const PropertyAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics'].includes(tab)) {
+        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics', 'facility_qr'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
         const filter = searchParams.get('filter');
@@ -520,6 +521,16 @@ const PropertyAdminDashboard = () => {
                                 Checklists
                             </button>
                             <button
+                                onClick={() => handleTabChange('facility_qr')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'facility_qr'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Scan className="w-4 h-4" />
+                                Facility QR
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('ppm')}
                                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'ppm'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -755,6 +766,7 @@ const PropertyAdminDashboard = () => {
                         />}
                         {openTab === 'roster' && property && <RosterDashboard propertyId={property.id} />}
                         {openTab === 'water' && property && <WaterDashboard propertyId={property.id} />}
+                        {openTab === 'facility_qr' && property && <FacilityQRDashboard propertyId={property.id} />}
                         {openTab === 'water_analytics' && property && <WaterAnalyticsDashboard propertyId={property.id} />}
                         {openTab === 'vendor_revenue' && <VendorRevenueTab propertyId={propertyId} />}
                         {openTab === 'requests' && property && (

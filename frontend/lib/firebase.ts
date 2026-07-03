@@ -16,9 +16,16 @@ const app = typeof window !== "undefined" && isConfigValid
     ? (getApps().length === 0 ? initializeApp(firebaseConfig) : getApp())
     : null;
 
-const messaging = typeof window !== "undefined" && app
-    ? getMessaging(app)
-    : null;
+let messaging: any = null;
+if (typeof window !== "undefined" && app) {
+    try {
+        if ('serviceWorker' in navigator) {
+            messaging = getMessaging(app);
+        }
+    } catch (e) {
+        console.warn('FCM not supported (likely insecure context):', e);
+    }
+}
 
 export { app, messaging };
 
