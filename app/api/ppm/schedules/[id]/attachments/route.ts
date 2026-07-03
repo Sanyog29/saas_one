@@ -48,7 +48,7 @@ export async function POST(
         // Fall back gracefully if specific columns don't exist yet
         const { data: existing } = await supabaseAdmin
             .from('ppm_schedules')
-            .select('attachments')
+            .select('attachments, completion_photos, completion_doc_url, invoice_url')
             .eq('id', id)
             .single();
 
@@ -63,9 +63,19 @@ export async function POST(
             currentAttachments.invoice = url;
         }
 
+        let updatePayload: Record<string, unknown> = { attachments: currentAttachments, updated_at: new Date().toISOString() };
+        if (attachType === 'photo') {
+            const existing_photos: string[] = existing?.completion_photos || [];
+            updatePayload.completion_photos = [...existing_photos, url];
+        } else if (attachType === 'doc') {
+            updatePayload.completion_doc_url = url;
+        } else {
+            updatePayload.invoice_url = url;
+        }
+
         const { error: updateError } = await supabaseAdmin
             .from('ppm_schedules')
-            .update({ attachments: currentAttachments, updated_at: new Date().toISOString() })
+            .update(updatePayload)
             .eq('id', id);
 
         if (updateError) {
@@ -120,16 +130,29 @@ export async function DELETE(
             return NextResponse.json({ error: fetchError.message }, { status: 500 });
         }
 
+        const { data: existingAttachmentsData } = await supabaseAdmin
+            .from('ppm_schedules')
+            .select('attachments')
+            .eq('id', id)
+            .single();
+        const currentAttachments: Record<string, any> = existingAttachmentsData?.attachments || {};
+
         let updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
         if (attachType === 'photo') {
             const existing_photos: string[] = existing?.completion_photos || [];
             updatePayload.completion_photos = existing_photos.filter(p => p !== url);
+            const json_photos: string[] = Array.isArray(currentAttachments.photos) ? currentAttachments.photos : [];
+            currentAttachments.photos = json_photos.filter(p => p !== url);
         } else if (attachType === 'doc') {
             updatePayload.completion_doc_url = null;
+            currentAttachments.certificate = null;
         } else {
             updatePayload.invoice_url = null;
+            currentAttachments.invoice = null;
         }
+        
+        updatePayload.attachments = currentAttachments;
 
         const { error: updateError } = await supabaseAdmin
             .from('ppm_schedules')

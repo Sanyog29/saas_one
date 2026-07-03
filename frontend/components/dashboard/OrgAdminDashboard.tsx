@@ -134,6 +134,7 @@ const OrgAdminDashboard = () => {
     });
     const [electricitySummary, setElectricitySummary] = useState({
         total_units: 0,
+        latest_reading: 0,
         total_units_today: 0,
         total_cost: 0,
         properties: [] as any[],
@@ -527,7 +528,8 @@ const OrgAdminDashboard = () => {
             if (timePeriod === 'today') {
                 elecStartDate = todayDate;
             } else if (timePeriod === 'month') {
-                elecStartDate = new Date(new Date().setDate(1)).toISOString().split('T')[0];
+                const d = new Date();
+                elecStartDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
             } else {
                 elecStartDate = '2000-01-01'; // All time
             }
@@ -539,7 +541,8 @@ const OrgAdminDashboard = () => {
             if (timePeriod === 'today') {
                 checklistQuery = checklistQuery.eq('completion_date', todayDate);
             } else if (timePeriod === 'month') {
-                checklistQuery = checklistQuery.gte('completion_date', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+                const d = new Date();
+                checklistQuery = checklistQuery.gte('completion_date', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
             }
 
             let ppmQuery = supabase.from('ppm_schedules')
@@ -592,6 +595,7 @@ const OrgAdminDashboard = () => {
                 });
                 setElectricitySummary({
                     total_units: Math.round(totalUnits),
+                    latest_reading: electricityData.length > 0 ? (electricityData[0].closing_reading || 0) : 0,
                     total_units_today: Math.round(todayUnits),
                     total_cost: Math.round(totalCost),
                     properties: Object.values(propMap),
@@ -663,9 +667,10 @@ const OrgAdminDashboard = () => {
                 ticketSummary: ticketsData || ticketSummary,
                 electricitySummary: (electricityData && Array.isArray(electricityData)) ? {
                     total_units: Math.round(electricityData.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0)),
+                    latest_reading: electricityData.length > 0 ? (electricityData[0].closing_reading || 0) : 0,
                     total_units_today: Math.round(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0)),
                     total_cost: Math.round(electricityData.reduce((acc: number, r: any) => acc + (r.computed_cost || 0), 0)),
-                    properties: Object.values(electricityData.reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += (r.final_units ?? r.computed_units ?? 0); return acc; }, {})),
+                    properties: Object.values(electricityData.reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0, latest: 0 }; acc[r.property_id].units += (r.final_units ?? r.computed_units ?? 0); if (r.closing_reading && !acc[r.property_id].latest) acc[r.property_id].latest = r.closing_reading; return acc; }, {})),
                     properties_today: Object.values(electricityData.filter((r: any) => r.reading_date === todayDate).reduce((acc: any, r: any) => { if (!acc[r.property_id]) acc[r.property_id] = { property_id: r.property_id, units: 0 }; acc[r.property_id].units += (r.final_units ?? r.computed_units ?? 0); return acc; }, {})),
                 } : electricitySummary,
                 vmsSummary: vmsData ? {
@@ -2065,6 +2070,7 @@ const OverviewTab = memo(function OverviewTab({
         if (selectedPropertyId === 'all') {
             return {
                 total_units: isToday ? electricitySummary.total_units_today : electricitySummary.total_units,
+                latest_reading: electricitySummary.latest_reading,
                 total_cost: electricitySummary.total_cost,
                 properties: electricitySummary.properties,
             };
@@ -2073,6 +2079,7 @@ const OverviewTab = memo(function OverviewTab({
         const propStats = propsSource?.find((p: any) => p.property_id === selectedPropertyId);
         return {
             total_units: propStats?.units || 0,
+            latest_reading: propStats?.latest || 0,
             total_cost: 0,
             properties: electricitySummary.properties,
         };
@@ -2471,9 +2478,9 @@ const OverviewTab = memo(function OverviewTab({
                                         <motion.circle
                                             cx="60" cy="60" r="52" fill="none"
                                             stroke="url(#elecGradient)" strokeWidth="10" strokeLinecap="round"
-                                            strokeDasharray={`${Math.min(326, (displayElectricityStats.total_units / Math.max(displayElectricityStats.total_units, 1000)) * 326)} 326`}
+                                            strokeDasharray={`${Math.min(326, ((displayElectricityStats.total_units || 0) / Math.max(displayElectricityStats.total_units || 0, 1000)) * 326)} 326`}
                                             initial={{ strokeDasharray: '0 326' }}
-                                            animate={{ strokeDasharray: `${Math.min(326, (displayElectricityStats.total_units / Math.max(displayElectricityStats.total_units, 1000)) * 326)} 326` }}
+                                            animate={{ strokeDasharray: `${Math.min(326, ((displayElectricityStats.total_units || 0) / Math.max(displayElectricityStats.total_units || 0, 1000)) * 326)} 326` }}
                                             transition={{ duration: 1.5, ease: 'circOut' }}
                                         />
                                         <defs>
@@ -2491,7 +2498,7 @@ const OverviewTab = memo(function OverviewTab({
                                             animate={{ opacity: 1, scale: 1 }}
                                             className="text-2xl font-black text-slate-900"
                                         >
-                                            {displayElectricityStats.total_units.toLocaleString()}
+                                            {(displayElectricityStats.total_units || 0).toLocaleString()}
                                         </motion.span>
                                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">kWh</span>
                                     </div>
@@ -2499,10 +2506,13 @@ const OverviewTab = memo(function OverviewTab({
                             </div>
 
                             <div className="space-y-1">
-                                <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Units Consumed</div>
+                                <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Main Meter Consumed</div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
-                                    {displayElectricityStats.total_units.toLocaleString()}
+                                    {(displayElectricityStats.total_units || 0).toLocaleString()}
                                     <span className="text-sm text-slate-400 font-bold">kWh</span>
+                                </div>
+                                <div className="text-sm font-bold text-slate-600">
+                                    ₹{displayElectricityStats.total_cost?.toLocaleString()}
                                 </div>
                                 <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-2">
                                     <span className="text-[10px] font-bold text-yellow-600 uppercase flex items-center gap-1 group-hover:underline">

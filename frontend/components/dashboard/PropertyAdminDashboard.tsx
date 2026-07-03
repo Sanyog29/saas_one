@@ -42,11 +42,11 @@ import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/sha
 import { RosterDashboard } from '@/frontend/components/roster/RosterDashboard';
 import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
-import FacilityQRDashboard from '@/frontend/components/facility-qr/FacilityQRDashboard';
+
 import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
 
 // Types
-type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics' | 'facility_qr';
+type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics';
 
 interface Property {
     id: string;
@@ -156,7 +156,7 @@ const PropertyAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics', 'facility_qr'].includes(tab)) {
+        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
         const filter = searchParams.get('filter');
@@ -521,16 +521,7 @@ const PropertyAdminDashboard = () => {
                                 <ClipboardCheck className="w-4 h-4" />
                                 Checklists
                             </button>
-                            <button
-                                onClick={() => handleTabChange('facility_qr')}
-                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'facility_qr'
-                                    ? 'bg-primary text-text-inverse shadow-sm'
-                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
-                                    }`}
-                            >
-                                <Scan className="w-4 h-4" />
-                                Facility QR
-                            </button>
+
                             <button
                                 onClick={() => handleTabChange('ppm')}
                                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'ppm'
@@ -767,7 +758,7 @@ const PropertyAdminDashboard = () => {
                         />}
                         {openTab === 'roster' && property && <RosterDashboard propertyId={property.id} />}
                         {openTab === 'water' && property && <WaterDashboard propertyId={property.id} />}
-                        {openTab === 'facility_qr' && property && <FacilityQRDashboard propertyId={property.id} />}
+
                         {openTab === 'water_analytics' && property && <WaterAnalyticsDashboard propertyId={property.id} />}
                         {openTab === 'vendor_revenue' && <VendorRevenueTab propertyId={propertyId} />}
                         {openTab === 'requests' && property && (
@@ -1059,7 +1050,17 @@ const OverviewTab = memo(function OverviewTab({
     // Stats State initialized from cache if available
     const [ticketStats, setTicketStats] = useState(initialCached?.ticketStats || { total: 0, open: 0, waitlist: 0, in_progress: 0, resolved: 0, sla_breached: 0, avg_resolution_hours: 0, pending_validation: 0, urgent_open: 0 });
     const [validationEnabled, setValidationEnabled] = useState<boolean>(initialCached?.validationEnabled ?? false);
-    const [electricityStats, setElectricityStats] = useState(initialCached?.electricityStats || { total_units: 0, total_units_today: 0, total_units_month: 0 });
+    const [electricityStats, setElectricityStats] = useState(initialCached?.electricityStats || { 
+        total_units: 0, 
+        total_units_today: 0, 
+        total_units_month: 0, 
+        total_cost: 0, 
+        total_cost_month: 0, 
+        total_cost_today: 0,
+        latest_reading: 0,
+        latest_reading_month: 0,
+        latest_reading_today: 0,
+    });
     const [dieselStats, setDieselStats] = useState(initialCached?.dieselStats || { total_units: 0, total_units_today: 0, total_units_month: 0, total_kwh: 0, total_kwh_today: 0, total_kwh_month: 0, total_litres: 0, total_litres_today: 0, total_litres_month: 0 });
     const [vmsStats, setVmsStats] = useState(initialCached?.vmsStats || { total_visitors: 0, checked_in: 0, checked_out: 0 });
     const [vendorStats, setVendorStats] = useState(initialCached?.vendorStats || { total_revenue: 0, total_commission: 0, total_vendors: 0 });
@@ -1102,7 +1103,8 @@ const OverviewTab = memo(function OverviewTab({
             try {
                 // --- Tickets (all in parallel) ---
                 const todayForTickets = new Date().toISOString().split('T')[0];
-                const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+                const d = new Date();
+                const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 
                 let openQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['open', 'waitlist', 'blocked', 'client_raised']);
                 let waitlistQuery = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('property_id', propertyId).in('status', ['waitlist']);
@@ -1151,7 +1153,7 @@ const OverviewTab = memo(function OverviewTab({
                 const apiPeriod = timePeriod; // 'today' | 'month' | 'all'
 
                 // Optimize electricity fetch: only fetch what's needed for the period
-                let electricityQuery = supabase.from('electricity_readings').select('computed_units, final_units, reading_date').eq('property_id', propertyId);
+                let electricityQuery = supabase.from('electricity_readings').select('computed_units, final_units, computed_cost, closing_reading, reading_date, electricity_meters!inner(meter_type)').eq('property_id', propertyId).eq('electricity_meters.meter_type', 'main').order('reading_date', { ascending: false });
                 if (timePeriod === 'today') {
                     electricityQuery = electricityQuery.eq('reading_date', today);
                 } else if (timePeriod === 'month') {
@@ -1167,7 +1169,7 @@ const OverviewTab = memo(function OverviewTab({
                 
                 // Checklist progress
                 const todayForChecklist = new Date().toISOString().split('T')[0];
-                const monthStartForChecklist = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+                const monthStartForChecklist = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 
                 let checklistQuery = supabase.from('sop_completions').select('status, due_at').eq('property_id', propertyId);
                 if (timePeriod === 'today') {
@@ -1203,6 +1205,8 @@ const OverviewTab = memo(function OverviewTab({
 
                 // Process electricity
                 const periodUnits = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.final_units ?? r.computed_units ?? 0), 0) || 0;
+                const periodCost = electricityRes.data?.reduce((acc: number, r: any) => acc + (r.computed_cost ?? 0), 0) || 0;
+                const latestReading = electricityRes.data?.[0]?.closing_reading || 0;
                 
                 // Process diesel
                 const periodDieselLitres = dieselRes?.data?.reduce((acc: number, r: any) => acc + (r.computed_consumed_litres || 0), 0) || 0;
@@ -1258,7 +1262,13 @@ const OverviewTab = memo(function OverviewTab({
                     electricityStats: { 
                         total_units: timePeriod === 'all' ? Math.round(periodUnits) : (electricityStats.total_units || 0), 
                         total_units_month: timePeriod === 'month' ? Math.round(periodUnits) : (electricityStats.total_units_month || 0), 
-                        total_units_today: timePeriod === 'today' ? Math.round(periodUnits) : (electricityStats.total_units_today || 0) 
+                        total_units_today: timePeriod === 'today' ? Math.round(periodUnits) : (electricityStats.total_units_today || 0),
+                        total_cost: timePeriod === 'all' ? Math.round(periodCost) : (electricityStats.total_cost || 0),
+                        total_cost_month: timePeriod === 'month' ? Math.round(periodCost) : (electricityStats.total_cost_month || 0),
+                        total_cost_today: timePeriod === 'today' ? Math.round(periodCost) : (electricityStats.total_cost_today || 0),
+                        latest_reading: timePeriod === 'all' ? latestReading : (electricityStats.latest_reading || 0),
+                        latest_reading_month: timePeriod === 'month' ? latestReading : (electricityStats.latest_reading_month || 0),
+                        latest_reading_today: timePeriod === 'today' ? latestReading : (electricityStats.latest_reading_today || 0)
                     },
                     dieselStats: {
                         total_units: timePeriod === 'all' ? Math.round(periodDieselUnits) : (dieselStats.total_units || 0),
@@ -1581,7 +1591,7 @@ const OverviewTab = memo(function OverviewTab({
                                         <circle
                                             cx="60" cy="60" r="52" fill="none"
                                             stroke="url(#propElecGrad)" strokeWidth="10" strokeLinecap="round"
-                                            strokeDasharray={`${Math.min(326, ((timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units) / (timePeriod === 'today' ? 100 : 1000)) * 326)} 326`}
+                                            strokeDasharray={`${Math.min(326, (((timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units) || 0) / (timePeriod === 'today' ? 100 : 1000)) * 326)} 326`}
                                         />
                                         <defs>
                                             <linearGradient id="propElecGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -1593,17 +1603,20 @@ const OverviewTab = memo(function OverviewTab({
                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                                         <Zap className="w-5 h-5 text-yellow-500 mb-1" />
                                         <span className="text-xl font-black text-slate-900">
-                                            {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}
+                                            {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units || 0).toLocaleString()}
                                         </span>
                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">kWh</span>
                                     </div>
                                 </div>
                             </div>
                             <div className="space-y-1" onClick={() => onTabChange('electricity_analytics' as any)}>
-                                <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Units Consumed</div>
+                                <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest">Main Meter Consumed</div>
                                 <div className="text-3xl font-black text-slate-900 flex items-baseline gap-1">
-                                    {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units).toLocaleString()}
+                                    {(timePeriod === 'today' ? electricityStats.total_units_today : timePeriod === 'month' ? electricityStats.total_units_month : electricityStats.total_units || 0).toLocaleString()}
                                     <span className="text-sm text-slate-400 font-bold">kWh</span>
+                                </div>
+                                <div className="text-sm font-bold text-slate-600">
+                                    ₹{(timePeriod === 'today' ? electricityStats.total_cost_today : timePeriod === 'month' ? electricityStats.total_cost_month : electricityStats.total_cost)?.toLocaleString()}
                                 </div>
                                 <div className="pt-2 border-t border-slate-50 mt-2">
                                     <span className="text-[10px] font-bold text-yellow-600 uppercase group-hover:underline cursor-pointer">View Analytics →</span>
@@ -1894,9 +1907,8 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
                 params.append('startDate', today);
                 params.append('endDate', today);
             } else if (options.period === 'month') {
-                const monthStart = new Date();
-                monthStart.setDate(1);
-                params.append('startDate', monthStart.toISOString().split('T')[0]);
+                const d = new Date();
+                params.append('startDate', `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
                 params.append('endDate', new Date().toISOString().split('T')[0]);
             } else if (options.period === 'year') {
                 const yearStart = new Date();

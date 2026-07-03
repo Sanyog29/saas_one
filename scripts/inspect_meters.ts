@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as dotenv from 'dotenv';
 import path from 'path';
 
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,14 +11,21 @@ const supabase = createClient(
 );
 
 async function run() {
-    const { data: meters } = await supabase.from('electricity_meters').select('id, name').ilike('name', '%EB-1%');
-    console.log("Legacy:", meters);
+    const { data: readings } = await supabase
+        .from('electricity_readings')
+        .select('id, final_units, tariff_rate_used, computed_cost')
+        .not('computed_cost', 'is', null);
 
-    const { data: facMeters } = await supabase.from('facility_meters').select('id, name').ilike('name', '%EB-1%');
-    console.log("Facility:", facMeters);
-
-    const { data: readings } = await supabase.from('electricity_readings').select('id, meter_id, reading_date, closing_reading').eq('reading_date', '2026-06-22');
-    console.log("Readings Today:", readings);
+    if (readings) {
+        for (const r of readings) {
+            const expectedCost = (r.final_units || 0) * (r.tariff_rate_used || 0);
+            if (r.computed_cost !== expectedCost) {
+                console.log(`Fixing ${r.id}: cost ${r.computed_cost} -> ${expectedCost}`);
+                await supabase.from('electricity_readings').update({ computed_cost: expectedCost }).eq('id', r.id);
+            }
+        }
+    }
+    console.log("Done");
 }
 
 run();

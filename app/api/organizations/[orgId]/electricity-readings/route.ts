@@ -15,8 +15,9 @@ export async function GET(
     // Select all fields including relations so OCR dashboard receives full data
     let query = supabase
         .from('electricity_readings')
-        .select('*, meter:electricity_meters(name, meter_type, meter_number), property:properties!inner(id, organization_id), created_by_user:users(full_name)')
+        .select('*, meter:electricity_meters!inner(name, meter_type, meter_number), property:properties!inner(id, organization_id), created_by_user:users(full_name)')
         .eq('property.organization_id', orgId)
+        .eq('meter.meter_type', 'main')
         .order('reading_date', { ascending: false });
 
     if (startDate) query = query.gte('reading_date', startDate);

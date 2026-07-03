@@ -663,9 +663,9 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                             </label>
                                             )}
                                         </div>
-                                        {(selectedTask.completion_photos || []).length > 0 ? (
+                                        {((selectedTask.attachments?.photos as string[]) || selectedTask.completion_photos || []).length > 0 ? (
                                             <div className="flex flex-wrap gap-2">
-                                                {(selectedTask.completion_photos || []).map((photoUrl, idx) => (
+                                                {((selectedTask.attachments?.photos as string[]) || selectedTask.completion_photos || []).map((photoUrl, idx) => (
                                                     <div key={idx} className="relative group">
                                                         <img src={photoUrl} alt={`Photo ${idx + 1}`} className="w-16 h-16 object-cover rounded-lg border border-slate-200" />
                                                         {isEditMode && (
@@ -690,12 +690,12 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                             <FileText className="w-3.5 h-3.5 text-slate-500" />
                                             <span className="text-xs font-bold text-slate-600">Completion Certificate</span>
                                         </div>
-                                        {selectedTask.completion_doc_url ? (
+                                        {selectedTask.attachments?.certificate || selectedTask.completion_doc_url ? (
                                             <div className="flex items-center gap-2">
-                                                <a href={selectedTask.completion_doc_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary underline">View Certificate</a>
+                                                <a href={(selectedTask.attachments?.certificate as string) || selectedTask.completion_doc_url!} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary underline">View Certificate</a>
                                                 {isEditMode && (
                                                     <button
-                                                        onClick={() => handleAttachmentDelete(selectedTask.completion_doc_url!, 'doc')}
+                                                        onClick={() => handleAttachmentDelete(((selectedTask.attachments?.certificate as string) || selectedTask.completion_doc_url)!, 'doc')}
                                                         className="text-rose-500 hover:text-rose-700 transition-colors"
                                                     >
                                                         <X className="w-3.5 h-3.5" />
@@ -730,12 +730,12 @@ export default function PPMCalendar({ organizationId, propertyId, properties = [
                                             <Receipt className="w-3.5 h-3.5 text-slate-500" />
                                             <span className="text-xs font-bold text-slate-600">Invoice</span>
                                         </div>
-                                        {selectedTask.invoice_url ? (
+                                        {selectedTask.attachments?.invoice || selectedTask.invoice_url ? (
                                             <div className="flex items-center gap-2">
-                                                <a href={selectedTask.invoice_url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary underline">View Invoice</a>
+                                                <a href={(selectedTask.attachments?.invoice as string) || selectedTask.invoice_url!} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary underline">View Invoice</a>
                                                 {isEditMode && (
                                                     <button
-                                                        onClick={() => handleAttachmentDelete(selectedTask.invoice_url!, 'invoice')}
+                                                        onClick={() => handleAttachmentDelete(((selectedTask.attachments?.invoice as string) || selectedTask.invoice_url)!, 'invoice')}
                                                         className="text-rose-500 hover:text-rose-700 transition-colors"
                                                     >
                                                         <X className="w-3.5 h-3.5" />

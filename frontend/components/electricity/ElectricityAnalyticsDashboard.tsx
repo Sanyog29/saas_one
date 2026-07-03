@@ -178,12 +178,14 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                     : null;
 
             if (readingsBaseUrl) {
+                const getLocalYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const now = new Date();
                 const dates = {
                     today: today,
-                    monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-                    prevMonthStart: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split('T')[0],
-                    prevMonthEnd: new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().split('T')[0],
-                    trendStart: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                    monthStart: getLocalYMD(new Date(now.getFullYear(), now.getMonth(), 1)),
+                    prevMonthStart: getLocalYMD(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+                    prevMonthEnd: getLocalYMD(new Date(now.getFullYear(), now.getMonth(), 0)),
+                    trendStart: getLocalYMD(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30))
                 };
 
                 const handleFetch = (url: string) => fetch(url).then(r => r.ok ? r.json() : []).catch(() => []);
@@ -798,8 +800,10 @@ const ElectricityAnalyticsDashboard: React.FC<ElectricityAnalyticsDashboardProps
                     </button>
                     <button
                         onClick={() => {
-                            const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                            const today = new Date().toISOString().split('T')[0];
+                            const now = new Date();
+                            const today = now.toISOString().split('T')[0];
+                            const monthAgoDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                            const monthAgo = `${monthAgoDate.getFullYear()}-${String(monthAgoDate.getMonth() + 1).padStart(2, '0')}-${String(monthAgoDate.getDate()).padStart(2, '0')}`;
                             window.open(`/api/properties/${propertyId}/electricity-export?startDate=${monthAgo}&endDate=${today}`, '_blank');
                         }}
                         className="h-14 w-14 rounded-full bg-white text-slate-900 shadow-xl border border-slate-200 hover:bg-slate-50 transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
