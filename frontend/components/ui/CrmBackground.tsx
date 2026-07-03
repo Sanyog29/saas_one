@@ -2,7 +2,6 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useAuth } from '@/frontend/context/AuthContext';
-import { createClient } from '@/frontend/utils/supabase/client';
 
 // Per-user wallpaper for the CRM shell. The URL + opacity live on
 // users.metadata (so they sync across devices, including the mobile app) and
@@ -276,45 +275,44 @@ export default function CrmBackground() {
     // and save it.
     useEffect(() => {
         if (!user?.id) return;
-        const supabase = createClient();
         let cancelled = false;
-        supabase
-            .from('users')
-            .select('metadata')
-            .eq('id', user.id)
-            .maybeSingle()
-            .then(async ({ data }) => {
-                if (cancelled || !data) return;
-                const meta = (data.metadata || {}) as Record<string, unknown>;
-                let accent = typeof meta.crm_background_accent === 'string' ? (meta.crm_background_accent as string) : '';
-                const url = typeof meta.crm_background_url === 'string' ? (meta.crm_background_url as string) : '';
+        (async () => {
+            try {
+                // Read the authoritative value via the server (service-role, RLS-proof).
+                const res = await fetch('/api/crm/wallpaper');
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                const url = typeof data.url === 'string' ? data.url : '';
+                let accent = typeof data.accent === 'string' ? data.accent : '';
+                const opacity = typeof data.opacity === 'number' ? data.opacity : DEFAULT_WALLPAPER_OPACITY;
 
-                // If wallpaper exists but accent is missing, extract it.
+                // If a wallpaper exists but the accent is missing (uploaded before the
+                // chameleon feature), extract it and persist it back via the server.
                 if (url && !accent) {
                     try {
                         accent = (await extractAccentFromSrc(url)) || '';
-                        // Persist the extracted accent back to the database.
-                        const nextMeta = { ...meta, crm_background_accent: accent };
-                        await supabase.from('users').update({ metadata: nextMeta }).eq('id', user.id);
+                        if (accent && !cancelled) {
+                            await fetch('/api/crm/wallpaper', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ url, opacity, accent }),
+                            });
+                        }
                     } catch (err) {
                         console.warn('Failed to extract/save wallpaper accent:', err);
-                        // Continue anyway — wallpaper still works without accent (just no tint).
                     }
                 }
 
-                const next: WallpaperState = {
-                    url,
-                    opacity:
-                        typeof meta.crm_background_opacity === 'number'
-                            ? (meta.crm_background_opacity as number)
-                            : DEFAULT_WALLPAPER_OPACITY,
-                    accent,
-                };
+                if (cancelled) return;
+                const next: WallpaperState = { url, opacity, accent };
                 const cur = readWallpaper(user.id);
                 if (cur.url !== next.url || cur.opacity !== next.opacity || cur.accent !== next.accent) {
                     saveWallpaperLocal(user.id, next);
                 }
-            });
+            } catch {
+                /* offline / transient — keep the local value */
+            }
+        })();
         return () => {
             cancelled = true;
         };

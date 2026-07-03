@@ -290,19 +290,39 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
         } catch {}
     };
 
+    // Timeline items carry a type prefix ("a-<id>"); the API needs the raw id.
+    const rawActivityId = (timelineId: string) => timelineId.replace(/^a-/, '');
+
     const handleSaveActivityEdit = async () => {
         if (!editingActivity || !leadId) return;
+        const id = rawActivityId(editingActivity.id);
         setSavingActivity(true);
         try {
-            await fetch(`/api/crm/activities/${editingActivity.id}`, {
+            const res = await fetch(`/api/crm/activities/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ description: editingActivity.description }),
             });
-            setActivities(prev => prev.map(a => a.id === editingActivity.id ? { ...a, description: editingActivity.description } : a));
-            setEditingActivity(null);
+            if (res.ok) {
+                setActivities(prev => prev.map(a => a.id === id ? { ...a, description: editingActivity.description } : a));
+                setEditingActivity(null);
+            }
         } catch {}
         setSavingActivity(false);
+    };
+
+    const handleDeleteActivity = async (timelineId: string) => {
+        const id = rawActivityId(timelineId);
+        // Optimistic remove; restore on failure.
+        const prev = activities;
+        setActivities(prev.filter(a => a.id !== id));
+        setEditingActivity(curr => (curr?.id === timelineId ? null : curr));
+        try {
+            const res = await fetch(`/api/crm/activities/${id}`, { method: 'DELETE' });
+            if (!res.ok) setActivities(prev);
+        } catch {
+            setActivities(prev);
+        }
     };
 
     const handleEventCreated = (event: CRMEvent) => {
@@ -528,7 +548,39 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
 
                                     {/* Follow-up */}
                                     <div className="bg-surface-elevated rounded-xl p-4 space-y-3">
-                                        <h3 className="font-bold text-text-primary">Follow-up</h3>
+                                        <div className="flex items-center justify-between gap-3">
+                                            <h3 className="font-bold text-text-primary">Follow-up</h3>
+                                            {(lead.next_followup_date || lead.followup_notes) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={async () => {
+                                                        try {
+                                                            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                                                                method: 'PATCH',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({
+                                                                    next_followup_date: null,
+                                                                    last_contacted: new Date().toISOString(),
+                                                                }),
+                                                            });
+                                                            if (res.ok) {
+                                                                const updated: CRMLead = {
+                                                                    ...lead,
+                                                                    next_followup_date: undefined,
+                                                                    last_contacted: new Date().toISOString(),
+                                                                };
+                                                                setLead(updated);
+                                                                onLeadUpdate?.(updated);
+                                                            }
+                                                        } catch {}
+                                                    }}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 transition-colors shrink-0"
+                                                    title="Mark this follow-up done — records the contact and clears the date"
+                                                >
+                                                    <CheckCircle className="w-3.5 h-3.5" /> Mark done
+                                                </button>
+                                            )}
+                                        </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="text-xs text-text-tertiary block mb-1">Next Follow-up Date</label>
@@ -907,14 +959,24 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                                     <span className="text-xs text-text-tertiary whitespace-nowrap">
                                                                         {formatDate(item.timestamp)}
                                                                     </span>
-                                                                    {!isEditing && (
-                                                                        <button
-                                                                            onClick={() => setEditingActivity({ id: item.id, description: item.description || '' })}
-                                                                            className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-elevated transition-all"
-                                                                            title="Edit"
-                                                                        >
-                                                                            <Pencil className="w-3 h-3 text-text-tertiary" />
-                                                                        </button>
+                                                                    {/* Edit + Delete — only timeline activities have an API for this */}
+                                                                    {!isEditing && item.type === 'activity' && (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => setEditingActivity({ id: item.id, description: item.description || '' })}
+                                                                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-surface-elevated transition-all"
+                                                                                title="Edit"
+                                                                            >
+                                                                                <Pencil className="w-3 h-3 text-text-tertiary" />
+                                                                            </button>
+                                                                            <button
+                                                                                onClick={() => { if (confirm('Remove this timeline entry?')) handleDeleteActivity(item.id); }}
+                                                                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all"
+                                                                                title="Delete"
+                                                                            >
+                                                                                <Trash2 className="w-3 h-3 text-text-tertiary hover:text-rose-500" />
+                                                                            </button>
+                                                                        </>
                                                                     )}
                                                                 </div>
                                                             </div>

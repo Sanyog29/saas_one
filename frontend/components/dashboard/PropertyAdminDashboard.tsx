@@ -43,6 +43,7 @@ import { RosterDashboard } from '@/frontend/components/roster/RosterDashboard';
 import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
 import FacilityQRDashboard from '@/frontend/components/facility-qr/FacilityQRDashboard';
+import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
 
 // Types
 type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics' | 'facility_qr';
@@ -1843,6 +1844,12 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
     const [isLoading, setIsLoading] = useState(true);
     const [showExportModal, setShowExportModal] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
+    const [selectedRevenueDate, setSelectedRevenueDate] = useState<string>(new Date().toISOString().split('T')[0]);
+    
+    // CRUD State
+    const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+    const [vendorToEdit, setVendorToEdit] = useState<any | null>(null);
+
     const supabase = useMemo(() => createClient(), []);
     const hasFetched = useRef(false);
 
@@ -1924,19 +1931,18 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
         }
     };
 
-    // Calculate pending payments (vendors who haven't submitted today)
-    const today = new Date().toISOString().split('T')[0];
+    // Calculate pending payments (vendors who haven't submitted for selected date)
     const pendingCount = vendors.filter(v =>
-        !v.vendor_daily_revenue?.some((r: any) => r.revenue_date === today)
+        !v.vendor_daily_revenue?.some((r: any) => r.revenue_date === selectedRevenueDate)
     ).length;
 
     const totalRevenue = vendors.reduce((acc, v) => {
-        const entry = v.vendor_daily_revenue?.find((r: any) => r.revenue_date === today);
+        const entry = v.vendor_daily_revenue?.find((r: any) => r.revenue_date === selectedRevenueDate);
         return acc + (entry?.revenue_amount || 0);
     }, 0);
 
     const totalCommission = vendors.reduce((acc, v) => {
-        const entry = v.vendor_daily_revenue?.find((r: any) => r.revenue_date === today);
+        const entry = v.vendor_daily_revenue?.find((r: any) => r.revenue_date === selectedRevenueDate);
         const rev = entry?.revenue_amount || 0;
         return acc + (rev * ((v.commission_rate || 0) / 100));
     }, 0);
@@ -1947,7 +1953,7 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
         <div className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <StatCard
-                    title="Total Revenue (Today)"
+                    title={`Total Revenue (${new Date(selectedRevenueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})`}
                     value={`₹${totalRevenue.toLocaleString('en-IN')}`}
                     icon={IndianRupee}
                     color="text-blue-600"
@@ -1980,14 +1986,33 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
                 <div className="p-8 border-b border-border flex justify-between items-center bg-white">
                     <div>
                         <h3 className="text-xl font-bold text-text-primary">Cafeteria Performance</h3>
-                        <p className="text-text-secondary text-xs font-medium mt-1">Real-time revenue tracking per vendor.</p>
+                        <div className="flex items-center gap-3 mt-2">
+                            <p className="text-text-secondary text-xs font-medium">Revenue tracking for:</p>
+                            <input 
+                                type="date" 
+                                value={selectedRevenueDate}
+                                onChange={(e) => setSelectedRevenueDate(e.target.value)}
+                                className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-1 outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            />
+                        </div>
                     </div>
-                    <button
-                        onClick={() => setShowExportModal(true)}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-primary text-text-inverse rounded-xl text-sm font-black hover:opacity-90 transition-all shadow-lg shadow-primary/20"
-                    >
-                        <FileDown className="w-4 h-4" /> Export
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => {
+                                setVendorToEdit(null);
+                                setIsManageModalOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-black hover:opacity-90 transition-all shadow-lg shadow-indigo-600/20"
+                        >
+                            <Plus className="w-4 h-4" /> Add Vendor
+                        </button>
+                        <button
+                            onClick={() => setShowExportModal(true)}
+                            className="flex items-center gap-2 px-6 py-2.5 bg-primary text-text-inverse rounded-xl text-sm font-black hover:opacity-90 transition-all shadow-lg shadow-primary/20"
+                        >
+                            <FileDown className="w-4 h-4" /> Export
+                        </button>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1996,19 +2021,20 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
                             <tr>
                                 <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest">Vendor / Shop</th>
                                 <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-center">Commission %</th>
-                                <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Today's Revenue</th>
+                                <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Revenue</th>
                                 <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Commission Due</th>
                                 <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-center">Status</th>
+                                <th className="px-8 py-4 text-[10px] font-black text-text-tertiary uppercase tracking-widest text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {vendors.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-8 py-12 text-center text-slate-400 italic">No vendors found for this property.</td>
+                                    <td colSpan={6} className="px-8 py-12 text-center text-slate-400 italic">No vendors found for this property.</td>
                                 </tr>
                             ) : (
                                 vendors.map((vendor) => {
-                                    const entry = vendor.vendor_daily_revenue?.find((r: any) => r.revenue_date === today);
+                                    const entry = vendor.vendor_daily_revenue?.find((r: any) => r.revenue_date === selectedRevenueDate);
                                     const todayRevenue = entry?.revenue_amount || 0;
                                     const commission = (todayRevenue * ((vendor.commission_rate || 0) / 100)).toFixed(2);
 
@@ -2038,8 +2064,37 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
                                                     ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
                                                     : 'bg-amber-50 text-amber-600 border-amber-100'
                                                     }`}>
-                                                    {todayRevenue > 0 ? 'Paid' : 'Pending'}
+                                                    {todayRevenue > 0 ? 'Submitted' : 'Pending'}
                                                 </span>
+                                            </td>
+                                            <td className="px-8 py-5 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            setVendorToEdit(vendor);
+                                                            setIsManageModalOpen(true);
+                                                        }}
+                                                        className="p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-lg transition-colors"
+                                                    >
+                                                        <Settings className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (confirm('Are you sure you want to delete this vendor? This cannot be undone.')) {
+                                                                try {
+                                                                    const res = await fetch(`/api/properties/${propertyId}/vendors?id=${vendor.id}`, { method: 'DELETE' });
+                                                                    if (res.ok) fetchVendors();
+                                                                    else alert('Failed to delete vendor');
+                                                                } catch (e) {
+                                                                    console.error(e);
+                                                                }
+                                                            }
+                                                        }}
+                                                        className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -2055,6 +2110,14 @@ const VendorRevenueTab = memo(function VendorRevenueTab({ propertyId }: { proper
                 onClose={() => setShowExportModal(false)}
                 onExport={handleExport}
                 isExporting={isExporting}
+            />
+
+            <VendorManagementModal
+                isOpen={isManageModalOpen}
+                onClose={() => setIsManageModalOpen(false)}
+                propertyId={propertyId}
+                vendorToEdit={vendorToEdit}
+                onSuccess={() => fetchVendors()}
             />
         </div>
     );

@@ -1,12 +1,9 @@
 'use client';
 
 import { CrmOnboardingGate } from '@/frontend/components/crm/onboarding';
-import { SoundProvider } from '@/frontend/context/SoundContext';
 
+// SoundProvider lives at the app root (app/layout.tsx) so the sound toggle —
+// which also appears on the non-CRM settings page — always has its context.
 export default function CrmLayout({ children }: { children: React.ReactNode }) {
-    return (
-        <SoundProvider>
-            <CrmOnboardingGate>{children}</CrmOnboardingGate>
-        </SoundProvider>
-    );
+    return <CrmOnboardingGate>{children}</CrmOnboardingGate>;
 }

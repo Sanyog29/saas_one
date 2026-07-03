@@ -208,33 +208,21 @@ export default function CRMDashboard() {
 
     const todaysFollowups = s.todays_followups || [];
 
-    // Unified pending-task feed: new leads → due follow-ups → status actions →
-    // stale leads. Deduped by lead, with the tick-off filtering applied.
-    const daysAgo = (iso?: string | null) => {
-        if (!iso) return '';
-        const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-        return d <= 0 ? 'today' : d === 1 ? '1 day' : `${d} days`;
-    };
-    const isFresh = (iso?: string | null) =>
-        !!iso && Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000;
+    // Follow-ups feed: leads whose follow-up is due/overdue, plus status-action
+    // leads needing attention. This is where a lead surfaces once its follow-up is
+    // set/updated. Tick-off marks the lead contacted and clears the row.
     type TaskItem = { id: string; title: string; sub: string | null; tag: string; tagClass: string; clearFollowup: boolean };
-    const pendingTasks: TaskItem[] = (() => {
+    const followupTasks: TaskItem[] = (() => {
         const out: TaskItem[] = [];
         const seen = new Set<string>();
         const push = (t: TaskItem) => { if (!seen.has(t.id) && !dismissedTasks.has(t.id)) { seen.add(t.id); out.push(t); } };
-        // New leads (arrived <24h, not yet contacted)
-        (s.latest_leads || [])
-            .filter((l) => isFresh(l.created_at) && !l.last_contacted)
-            .forEach((l) => push({ id: l.id, title: l.full_name, sub: l.company_name || 'New lead — reach out', tag: 'New', tagClass: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40', clearFollowup: false }));
-        // Follow-ups due today
-        todaysFollowups.forEach((fu) => push({ id: fu.id, title: `Follow up with ${fu.company_name || fu.full_name}`, sub: fu.followup_notes || null, tag: 'Due Today', tagClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40', clearFollowup: true }));
-        // Status-action leads (hold / no status), overdue flagged
+        // Follow-ups due (today / this period)
+        todaysFollowups.forEach((fu) => push({ id: fu.id, title: fu.company_name || fu.full_name, sub: fu.followup_notes || 'Follow-up due', tag: 'Due', tagClass: 'text-amber-600 bg-amber-50 dark:bg-amber-950/40', clearFollowup: true }));
+        // Status-action leads — overdue follow-ups flagged
         (s.action_leads || []).forEach((l) => {
             const overdue = !!l.next_followup_date && new Date(l.next_followup_date) < new Date();
             push({ id: l.id, title: l.company_name || l.full_name, sub: l.status_name || 'Needs attention', tag: overdue ? 'Overdue' : 'Open', tagClass: overdue ? 'text-rose-600 bg-rose-50 dark:bg-rose-950/40' : 'text-text-secondary bg-muted', clearFollowup: true });
         });
-        // Stale — quiet beyond the timeframe
-        (s.stale_leads || []).forEach((l) => push({ id: l.id, title: l.company_name || l.full_name, sub: `No update · ${daysAgo(l.last_activity)}`, tag: 'Stale', tagClass: 'text-orange-600 bg-orange-50 dark:bg-orange-950/40', clearFollowup: false }));
         return out;
     })();
 
@@ -390,7 +378,7 @@ export default function CRMDashboard() {
                         iconBg="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400"
                         label="New Leads"
                         value={s.new_leads}
-                        sub={statPeriod === 'all' ? 'All time' : `This ${statPeriod}`}
+                        sub={statPeriod === 'all' ? 'All time' : statPeriod === 'today' ? 'Last 24h' : `This ${statPeriod}`}
                         href={`/${orgId}/crm/leads`}
                     />
                     <StatCard
@@ -404,7 +392,7 @@ export default function CRMDashboard() {
                 </div>
             </div>
 
-            {/* Three Column Grid: AI Copilot, High Signal Leads, Pending Tasks */}
+            {/* Three Column Grid: AI Copilot, Latest Leads, Follow-ups */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* AI Deal Copilot */}
                 <div className="bg-surface rounded-2xl border border-border overflow-hidden">
@@ -450,73 +438,35 @@ export default function CRMDashboard() {
                     </div>
                 </div>
 
-                {/* High Signal Leads */}
-                <div data-tour="crm-priority-leads" className="bg-surface rounded-2xl border border-border overflow-hidden">
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                        <h2 className="text-sm font-black text-text-primary">High Signal Leads</h2>
-                        <Link href={`/${orgId}/crm/leads?status=hot,mql`} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
-                            View all <ArrowRight className="w-3 h-3" />
-                        </Link>
-                    </div>
-                    <div className="px-5 py-1">
-                        <table className="w-full">
-                            <thead>
-                                <tr className="text-[10px] text-text-tertiary font-bold uppercase tracking-wider">
-                                    <th className="text-left py-2">Lead</th>
-                                    <th className="text-left py-2">Company</th>
-                                    <th className="text-left py-2">Signal</th>
-                                    <th className="text-right py-2">Activity</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                                {s.priority_leads.length === 0 ? (
-                                    <tr><td colSpan={4} className="py-8 text-center text-xs text-text-tertiary">No high signal leads</td></tr>
-                                ) : (
-                                    s.priority_leads.slice(0, 5).map((lead) => (
-                                        <tr key={lead.id} className="hover:bg-surface-elevated cursor-pointer transition-colors" onClick={() => router.push(`/${orgId}/crm/leads?lead=${lead.id}`)}>
-                                            <td className="py-2.5">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-black text-primary">
-                                                        {(lead.full_name || '?').charAt(0).toUpperCase()}
-                                                    </div>
-                                                    <span className="text-xs font-bold text-text-primary truncate max-w-[80px]">{lead.full_name}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-2.5 text-xs text-text-secondary truncate max-w-[80px]">{lead.company_name || '—'}</td>
-                                            <td className="py-2.5">
-                                                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${/hot/i.test(lead.status_name) ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}`}>
-                                                    {lead.status_name}
-                                                </span>
-                                            </td>
-                                            <td className="py-2.5 text-right text-[10px] text-text-tertiary">{formatTimeAgo(lead.last_update)}</td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                {/* Latest Leads — newest first, so reps catch fresh leads fast */}
+                <LatestLeadsCard orgId={orgId} leads={s.latest_leads || []} userId={user?.id} />
 
-                {/* Pending Tasks / Follow-ups */}
-                <div data-tour="crm-action-leads" className="bg-surface rounded-2xl border border-border overflow-hidden">
+                {/* Follow-ups — leads surface here once a follow-up is set/updated */}
+                <div data-tour="crm-followups" className="bg-surface rounded-2xl border border-border overflow-hidden">
                     <div className="flex items-center justify-between px-5 py-4 border-b border-border">
                         <div className="flex items-center gap-3">
-                            <h2 className="text-sm font-black text-text-primary">Pending Tasks</h2>
-                            <span className="text-xs font-bold text-text-secondary">{pendingTasks.length} <span className="text-[10px] text-text-tertiary">Open</span></span>
+                            <div className="flex items-center gap-2">
+                                <BellRing className="w-4 h-4 text-primary" />
+                                <h2 className="text-sm font-black text-text-primary">Follow-ups</h2>
+                            </div>
+                            <span className="text-xs font-bold text-text-secondary">{followupTasks.length} <span className="text-[10px] text-text-tertiary">Due</span></span>
                             {s.overdue_followups > 0 && (
                                 <span className="text-xs font-bold text-rose-500">{s.overdue_followups} <span className="text-[10px]">Overdue</span></span>
                             )}
                         </div>
+                        <Link href={`/${orgId}/crm/followups`} className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1">
+                            View all <ArrowRight className="w-3 h-3" />
+                        </Link>
                     </div>
                     <div className="divide-y divide-border max-h-[320px] overflow-y-auto">
-                        {pendingTasks.length === 0 ? (
+                        {followupTasks.length === 0 ? (
                             <div className="py-8 text-center">
                                 <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">All caught up!</p>
+                                <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">No follow-ups due</p>
                             </div>
                         ) : (
                             <AnimatePresence initial={false}>
-                                {pendingTasks.map((t) => (
+                                {followupTasks.map((t) => (
                                     <motion.div
                                         key={t.id}
                                         layout={!reduceMotion}
@@ -547,9 +497,6 @@ export default function CRMDashboard() {
                     </div>
                 </div>
             </div>
-
-            {/* Latest Leads — newest first, so reps catch fresh leads fast */}
-            <LatestLeadsCard orgId={orgId} leads={s.latest_leads || []} />
 
             {/* Bottom Row: Recent Activity + Performance */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

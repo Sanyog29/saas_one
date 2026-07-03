@@ -6,6 +6,7 @@ import { GlobalProvider } from "@/frontend/context/GlobalContext";
 import { ThemeProvider } from "@/frontend/context/ThemeContext";
 import { DataCacheProvider } from "@/frontend/context/DataCacheContext";
 import { SessionProvider, CookieConsentToast } from "@/frontend/components/analytics";
+import { SoundProvider } from "@/frontend/context/SoundContext";
 import NotificationSystem from "@/frontend/components/ops/NotificationSystem";
 import ErrorTrackingProvider from "@/frontend/components/ErrorTrackingProvider";
 
@@ -134,9 +135,11 @@ export default function RootLayout({
                         <GlobalProvider>
                             <DataCacheProvider>
                                 <SessionProvider>
-                                    {children}
-                                    <NotificationSystem />
-                                    <CookieConsentToast />
+                                    <SoundProvider>
+                                        {children}
+                                        <NotificationSystem />
+                                        <CookieConsentToast />
+                                    </SoundProvider>
                                 </SessionProvider>
                             </DataCacheProvider>
                         </GlobalProvider>

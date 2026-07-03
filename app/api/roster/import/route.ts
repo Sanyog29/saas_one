@@ -80,22 +80,30 @@ export async function POST(request: NextRequest) {
         let maxDatesFound = 0;
         let bestDates: { col: number; dateStr: string }[] = [];
         let bestDebugVals: any[] = [];
+        let detectedNameCol = 0;
+        let hasSlNoInCol1 = false;
         
         // Scan up to row 10 to find the row with the most dates (this is the true header row)
         for (let i = 1; i <= 10; i++) {
             const row = worksheet.getRow(i);
             const tempDates: { col: number; dateStr: string }[] = [];
             const tempDebugVals: any[] = [];
-            let tempNameCol = 1; // Default to column 1
 
             row.eachCell((cell, colNum) => {
                 const val = getCellValue(cell).trim();
                 if (!val) return;
                 tempDebugVals.push(val);
 
-                const lowerVal = val.toLowerCase();
-                if (lowerVal === 'name' || lowerVal === 'staff name' || lowerVal === 'employee name') {
-                    tempNameCol = colNum;
+                const lowerVal = val.toLowerCase().replace(/[^a-z0-9]/g, '');
+                
+                // Detect Name Column across any header row
+                if (['name', 'staffname', 'employeename', 'staff', 'employee'].includes(lowerVal)) {
+                    detectedNameCol = colNum;
+                }
+                
+                // Detect if Col 1 is Sl.No
+                if (colNum === 1 && ['slno', 'sno', 'sn', 'serialno'].includes(lowerVal)) {
+                    hasSlNoInCol1 = true;
                 }
 
                 // Check if this cell is a valid date
@@ -143,14 +151,27 @@ export async function POST(request: NextRequest) {
                 }
             });
 
-            if (tempDates.length > maxDatesFound) {
-                maxDatesFound = tempDates.length;
+            // Count how many UNIQUE dates were found in this row
+            // This prevents a merged title cell (like "Shift Roster July-2026") from inflating
+            // the score to 31 identical dates and beating the real header row.
+            const uniqueDatesCount = new Set(tempDates.map(t => t.dateStr)).size;
+
+            if (uniqueDatesCount > maxDatesFound) {
+                maxDatesFound = uniqueDatesCount;
                 headerRowNumber = i;
                 headerRow = row;
                 bestDates = tempDates;
                 bestDebugVals = tempDebugVals;
-                nameColNumber = tempNameCol;
             }
+        }
+        
+        // Finalize Name Column logic
+        if (detectedNameCol > 0) {
+            nameColNumber = detectedNameCol;
+        } else if (hasSlNoInCol1) {
+            nameColNumber = 2; // If Col 1 is Sl.No, Name is usually Col 2
+        } else {
+            nameColNumber = 1; // Fallback
         }
 
         const dates = bestDates;
@@ -240,8 +261,14 @@ export async function POST(request: NextRequest) {
             const nameCell = getCellValue(row.getCell(nameColNumber)).trim();
             if (!nameCell) return;
 
+            // Safeguard against vertically merged header cells repeating the 'Name' string in subsequent rows
+            const lowerName = nameCell.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (['name', 'staffname', 'employeename', 'staff', 'employee'].includes(lowerName)) {
+                return;
+            }
+
             // If the row is ALL CAPS (and not a time string), it's likely a designation header
-            if (nameCell.toUpperCase() === nameCell && nameCell.length > 3 && !nameCell.includes('AM to') && !nameCell.includes('PM to') && !['DAY', 'DATE'].includes(nameCell)) {
+            if (nameCell.toUpperCase() === nameCell && nameCell.length > 3 && !nameCell.includes('AM to') && !nameCell.includes('PM to') && !['DAY', 'DATE'].includes(nameCell.toUpperCase())) {
                 currentDesignation = nameCell;
                 return;
             }
@@ -250,29 +277,76 @@ export async function POST(request: NextRequest) {
             
             if (!userId) {
                 // Fallback: Fuzzy matching
-                const normalize = (s: string) => s.replace(/[^a-z]/gi, '').toLowerCase();
+                const normalize = (s: string) => s.replace(/[^a-z0-9]/gi, '').toLowerCase();
                 const normalizedCellName = normalize(nameCell);
+                
+                const getLevenshteinRatio = (a: string, b: string) => {
+                    if (a.length === 0) return 0;
+                    if (b.length === 0) return 0;
+                    const matrix: number[][] = [];
+                    for (let i = 0; i <= b.length; i++) {
+                        matrix[i] = [i];
+                    }
+                    for (let j = 0; j <= a.length; j++) {
+                        matrix[0][j] = j;
+                    }
+                    for (let i = 1; i <= b.length; i++) {
+                        for (let j = 1; j <= a.length; j++) {
+                            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                                matrix[i][j] = matrix[i - 1][j - 1];
+                            } else {
+                                matrix[i][j] = Math.min(
+                                    matrix[i - 1][j - 1] + 1, // substitution
+                                    Math.min(matrix[i][j - 1] + 1, // insertion
+                                    matrix[i - 1][j] + 1) // deletion
+                                );
+                            }
+                        }
+                    }
+                    const distance = matrix[b.length][a.length];
+                    const maxLength = Math.max(a.length, b.length);
+                    return (maxLength - distance) / maxLength;
+                };
+
+                const getWordMatchRatio = (a: string, b: string) => {
+                    const wordsA = a.toLowerCase().replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length > 0);
+                    const wordsB = b.toLowerCase().replace(/[^a-z0-9\s]/gi, ' ').split(/\s+/).filter(w => w.length > 0);
+                    if (wordsA.length === 0 || wordsB.length === 0) return 0;
+                    
+                    let matches = 0;
+                    wordsA.forEach(wa => {
+                        let bestW = 0;
+                        wordsB.forEach(wb => {
+                            const r = getLevenshteinRatio(wa, wb);
+                            if (r > bestW) bestW = r;
+                        });
+                        if (bestW > 0.65) matches++;
+                    });
+                    
+                    return matches / Math.max(wordsA.length, wordsB.length);
+                };
                 
                 let bestMatchId = null;
                 let highestSimilarity = 0;
 
                 Array.from(staffMap.entries()).forEach(([staffName, id]) => {
                     const normStaff = normalize(staffName);
-                    if (normStaff.includes(normalizedCellName) || normalizedCellName.includes(normStaff)) {
-                        const similarity = Math.min(normStaff.length, normalizedCellName.length) / Math.max(normStaff.length, normalizedCellName.length);
-                        if (similarity > highestSimilarity) {
-                            highestSimilarity = similarity;
-                            bestMatchId = id;
-                        }
-                    }
                     
-                    let matches = 0;
-                    for (let i = 0; i < Math.min(normStaff.length, normalizedCellName.length); i++) {
-                        if (normStaff[i] === normalizedCellName[i]) matches++;
-                    }
-                    const ratio = matches / Math.max(normStaff.length, normalizedCellName.length);
-                    if (ratio > 0.8 && ratio > highestSimilarity) {
-                        highestSimilarity = ratio;
+                    // Option 1: Levenshtein on full stripped name (handles Likhithgowda vs Likith Gowda)
+                    const levRatio = getLevenshteinRatio(normStaff, normalizedCellName);
+                    
+                    // Option 2: Word-by-word fuzzy match (handles Anil Kumar Jena vs Anil Jena)
+                    const wrdRatio = getWordMatchRatio(staffName, nameCell);
+                    
+                    // Option 3: Substring exact match (handles Manjunatha A S vs Manjunatha AS)
+                    const containsRatio = (normStaff.includes(normalizedCellName) || normalizedCellName.includes(normStaff)) 
+                        ? Math.min(normStaff.length, normalizedCellName.length) / Math.max(normStaff.length, normalizedCellName.length)
+                        : 0;
+
+                    const finalRatio = Math.max(levRatio, wrdRatio, containsRatio);
+                    
+                    if (finalRatio > 0.65 && finalRatio > highestSimilarity) {
+                        highestSimilarity = finalRatio;
                         bestMatchId = id;
                     }
                 });
@@ -385,13 +459,16 @@ export async function POST(request: NextRequest) {
         // Filter out any assignments that failed to resolve a shift_id
         const finalAssignments = assignments.filter((a: any) => a.shift_id !== null);
 
+        console.log('[POST /api/roster/import] first 5 assignments:', finalAssignments.slice(0, 5));
+        
         return NextResponse.json({
             success: true,
             assignments: finalAssignments,
             stats: {
                 totalImported: finalAssignments.length,
                 unknownNames: Array.from(new Set(unknownNames)),
-                unknownShifts: Array.from(new Set(unknownShifts))
+                unknownShifts: Array.from(new Set(unknownShifts)),
+                parsedDates: bestDates.map((d: any) => d.dateStr)
             }
         });
 

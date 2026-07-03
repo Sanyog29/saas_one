@@ -31,16 +31,18 @@ const EVENT_TYPES: { value: EventType; label: string }[] = [
 ];
 
 const QUICK_LOG_TYPES = [
-    { label: 'Visit Pending', activityType: 'site_visit', color: 'amber' },
-    { label: 'Visit Done',    activityType: 'site_visit', color: 'teal' },
-    { label: 'Layout Shared', activityType: 'updated',    color: 'purple' },
-    { label: 'LOI',           activityType: 'proposal_sent', color: 'indigo' },
+    { label: 'Visit Pending',           activityType: 'site_visit',    color: 'amber' },
+    { label: 'Visit Done',              activityType: 'site_visit',    color: 'teal' },
+    { label: 'Layout Shared',           activityType: 'updated',       color: 'purple' },
+    { label: 'Company Profiles Shared', activityType: 'updated',       color: 'blue' },
+    { label: 'LOI',                     activityType: 'proposal_sent', color: 'indigo' },
 ] as const;
 
 const QUICK_COLOR_MAP: Record<string, string> = {
     amber:  'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
     teal:   'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100',
     purple: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100',
+    blue:   'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100',
     indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100',
 };
 

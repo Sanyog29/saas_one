@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/frontend/utils/supabase/server';
 import { supabaseAdmin } from '@/backend/lib/supabase/admin';
+import { cityFilterOr, parentCity } from '@/backend/lib/crm/cityGroups';
 
 /**
  * CRM access resolution.
@@ -11,8 +12,10 @@ import { supabaseAdmin } from '@/backend/lib/supabase/admin';
  *   - A user must be an ACTIVE member of the organization (org- or property-level)
  *     with a CRM-capable role, OR a master admin.
  *   - bd_admin / org_admin / org_super_admin / master_admin  -> see the whole org.
- *   - bd_rep -> sees leads they created or are assigned to, PLUS leads in the
- *     markets (cities) assigned to them in BD-admin settings (crm_territories).
+ *   - bd_rep -> sees leads they created or are assigned to (assignment = ownership,
+ *     always visible), PLUS leads in the markets (cities) assigned to them in
+ *     BD-admin settings (crm_territories). Cross-territory leakage is prevented at
+ *     the distribution layer (don't mis-assign), not by hiding owned leads.
  */
 
 export const CRM_ADMIN_ROLES = ['bd_admin', 'bd_super_admin', 'org_admin', 'org_super_admin'] as const;
@@ -155,7 +158,13 @@ export function isCrmAccessError(x: CrmAccess | NextResponse): x is NextResponse
 
 /**
  * Apply org + rep-market visibility to a crm_leads PostgREST query builder.
- * Admins get the whole org; reps get (mine OR market-matched).
+ * Admins get the whole org; reps see (mine OR market-matched): leads they created
+ * or are ASSIGNED to (assignment = ownership, always visible), PLUS leads in the
+ * cities/campaigns granted to them as territory.
+ *
+ * NOTE: We deliberately do NOT hide assigned-but-out-of-territory leads — a rep
+ * must always see/work a lead that's theirs. Stopping cross-territory leakage
+ * belongs in lead DISTRIBUTION (don't mis-assign), not here.
  */
 export function scopeLeadsQuery(query: any, access: CrmAccess) {
     query = query.eq('organization_id', access.organizationId);
@@ -163,9 +172,11 @@ export function scopeLeadsQuery(query: any, access: CrmAccess) {
 
     const ors: string[] = [`created_by.eq.${access.user.id}`, `assigned_to.eq.${access.user.id}`];
     if (access.territoryCities.length > 0) {
-        // PostgREST in.() — quote values to tolerate spaces in city names.
-        const list = access.territoryCities.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
-        ors.push(`city.in.(${list})`);
+        // Metro-aware: a "Mumbai" grant must cover its neighbourhoods (Lower Parel,
+        // Andheri, …), matched against city AND location — so reps in the same city
+        // see each other's whole-market leads. cityFilterOr expands the aliases.
+        const cityOr = cityFilterOr(access.territoryCities);
+        if (cityOr) ors.push(cityOr);
     }
     if (access.territoryCampaigns.length > 0) {
         const list = access.territoryCampaigns.map((c) => `"${c.replace(/"/g, '')}"`).join(',');
@@ -181,10 +192,18 @@ export function canAccessLead(
 ): boolean {
     if (lead.organization_id && lead.organization_id !== access.organizationId) return false;
     if (access.isAdmin) return true;
+    // Ownership always grants access — a rep can open any lead they created or are
+    // assigned to, regardless of territory (territory only widens DISCOVERY).
     if (lead.created_by === access.user.id) return true;
     if (lead.assigned_to === access.user.id) return true;
-    if (lead.city && access.territoryCities.map((c) => c.toLowerCase()).includes(lead.city.toLowerCase())) return true;
-    if (lead.campaign && access.territoryCampaigns.map((c) => c.toLowerCase()).includes(lead.campaign.toLowerCase())) return true;
+    // Metro-aware territory match: a "Mumbai" grant covers "Lower Parel"/"Andheri"
+    // (and the lead's location field too), so it agrees with scopeLeadsQuery.
+    if (lead.city || lead.campaign) {
+        const leadMetro = lead.city ? parentCity(lead.city).toLowerCase() : '';
+        if (leadMetro && access.territoryCities.some((c) => parentCity(c).toLowerCase() === leadMetro)) return true;
+        const leadCampaign = (lead.campaign || '').toLowerCase();
+        if (leadCampaign && access.territoryCampaigns.some((c) => c.toLowerCase() === leadCampaign)) return true;
+    }
     return false;
 }
 

@@ -35,6 +35,12 @@ export async function GET(request: NextRequest) {
             if (!dateStr) return NextResponse.json({ error: 'date is required for daily export' }, { status: 400 });
             startDate = new Date(dateStr);
             endDate = new Date(dateStr);
+        } else if (exportType === 'custom') {
+            const startStr = searchParams.get('startDate');
+            const endStr = searchParams.get('endDate');
+            if (!startStr || !endStr) return NextResponse.json({ error: 'startDate and endDate are required for custom export' }, { status: 400 });
+            startDate = new Date(startStr);
+            endDate = new Date(endStr);
         } else {
             return NextResponse.json({ error: 'Invalid export type' }, { status: 400 });
         }

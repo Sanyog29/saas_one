@@ -58,14 +58,20 @@ export default function WallpaperSettings({ showToast: externalToast }: Wallpape
         extractAccentFromSrc(objectUrl).then((c) => setAccent(c || ''));
     };
 
-    // Merge wallpaper fields into users.metadata without clobbering other keys.
+    // Persist via the server (service-role) so it isn't silently dropped by RLS on
+    // the users table — a direct browser update saved 0 rows without erroring, so the
+    // value reverted on refresh. The server route writes users.metadata reliably.
     const persist = async (url: string, op: number, acc: string) => {
         if (!user) return;
-        const { data } = await supabase.from('users').select('metadata').eq('id', user.id).maybeSingle();
-        const meta = (data?.metadata || {}) as Record<string, unknown>;
-        const nextMeta = { ...meta, crm_background_url: url, crm_background_opacity: op, crm_background_accent: acc };
-        const { error } = await supabase.from('users').update({ metadata: nextMeta }).eq('id', user.id);
-        if (error) throw error;
+        const res = await fetch('/api/crm/wallpaper', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, opacity: op, accent: acc }),
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(() => ({}));
+            throw new Error(e?.error || 'Failed to save wallpaper');
+        }
         saveWallpaperLocal(user.id, { url, opacity: op, accent: acc });
     };
 

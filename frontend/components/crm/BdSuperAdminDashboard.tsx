@@ -16,6 +16,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '@/frontend/context/AuthContext';
 import { useSound } from '@/frontend/context/SoundContext';
 import { useCountUp } from '@/frontend/hooks/useCountUp';
+import { parentCity } from '@/backend/lib/crm/cityGroups';
 import { TextShimmer } from '@/frontend/components/ui/text-shimmer';
 import RepTimeGridCalendar from '@/frontend/components/crm/RepTimeGridCalendar';
 
@@ -198,9 +199,17 @@ export default function BdSuperAdminDashboard() {
             // UNFILTERED ("All Cities") dataset. When a specific city is selected the
             // stats are filtered to that one city, so territory_performance would
             // otherwise collapse the dropdown to just that city + All Cities.
+            // Roll neighbourhood values (Lower Parel, Andheri…) up to their parent
+            // metro (Mumbai) so the dropdown lists cities, and selecting one matches
+            // all of its areas (the filter expands via cityFilterOr server-side).
             if (city === 'All Cities') {
                 const tp = s?.territory_performance || [];
-                if (tp.length) setCities(['All Cities', ...Array.from(new Set<string>(tp.map((t: any) => t.city).filter(Boolean)))]);
+                if (tp.length) {
+                    const parents = Array.from(new Set<string>(
+                        tp.map((t: any) => parentCity(t.city)).filter(Boolean)
+                    ));
+                    setCities(['All Cities', ...parents]);
+                }
             }
             setLoading(false);
         });
