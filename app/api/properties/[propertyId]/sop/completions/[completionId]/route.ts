@@ -116,6 +116,9 @@ export async function PUT(
             if (is_late !== undefined) updates.is_late = is_late;
             if (status === 'completed') {
                 updates.completed_at = new Date().toISOString();
+                if (!existing.completed_by) {
+                    updates.completed_by = user.id;
+                }
                 
                 // Final hard-check for lateness if template window exists
                 const { data: fullComp } = await supabaseAdmin
