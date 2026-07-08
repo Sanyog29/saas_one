@@ -52,20 +52,44 @@ function ResetPasswordContent() {
                 }
             } else {
                 // Using Supabase session
-                try {
-                    const { data: { session } } = await supabase.auth.getSession();
+                // The implicit flow sends tokens in the URL hash (#access_token=...)
+                // getSession() might fire before the hash is parsed, so we also listen to onAuthStateChange
+
+                // First check if it's already parsed
+                supabase.auth.getSession().then(({ data: { session } }) => {
                     if (session) {
                         console.log('Recovery session found');
                         setSessionReady(true);
-                    } else {
-                        setError('No active reset session found. Please request a new password reset link.');
+                        setCheckingSession(false);
                     }
-                } catch (err: any) {
+                }).catch(err => {
                     console.error('Session check error:', err);
-                    setError('Something went wrong. Please request a new reset link.');
-                } finally {
-                    setCheckingSession(false);
-                }
+                });
+
+                // Listen for the recovery event or signed_in event parsed from the URL
+                const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+                    if (event === 'PASSWORD_RECOVERY' || session) {
+                        console.log('Auth state changed to recovery/signed_in');
+                        setSessionReady(true);
+                        setCheckingSession(false);
+                        setError('');
+                    }
+                });
+                
+                // Fallback timeout in case the hash is invalid or missing
+                const timer = setTimeout(() => {
+                    setCheckingSession((prev) => {
+                        if (prev) {
+                            setError('No active reset session found. Please request a new password reset link.');
+                        }
+                        return false;
+                    });
+                }, 2000);
+
+                return () => {
+                    subscription.unsubscribe();
+                    clearTimeout(timer);
+                };
             }
         };
 

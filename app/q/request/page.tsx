@@ -6,7 +6,7 @@ import { Camera, MapPin, UploadCloud, CheckCircle2, AlertCircle, Loader2, X } fr
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/frontend/components/ui/card';
 import { Button } from '@/frontend/components/ui/button';
 import { Input } from '@/frontend/components/ui/input';
-
+import imageCompression from 'browser-image-compression';
 import { Suspense } from 'react';
 
 function GuestRequestContent() {
@@ -69,11 +69,26 @@ function GuestRequestContent() {
     };
 
     const uploadPhoto = async (file: File): Promise<string> => {
+        // Compress the image
+        const options = {
+            maxSizeMB: 1, // Target max size
+            maxWidthOrHeight: 1920, // Max dimension
+            useWebWorker: true,
+            fileType: file.type
+        };
+        
+        let fileToUpload = file;
+        try {
+            fileToUpload = await imageCompression(file, options);
+        } catch (error) {
+            console.warn('Image compression failed, using original file', error);
+        }
+
         // Get presigned URL
         const res = await fetch('/api/public/get-presigned-url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ zoneId, sig, fileName: file.name })
+            body: JSON.stringify({ zoneId, sig, fileName: fileToUpload.name })
         });
         
         if (!res.ok) throw new Error('Failed to get upload URL');
@@ -82,14 +97,13 @@ function GuestRequestContent() {
         // Upload to Supabase Storage
         const uploadRes = await fetch(data.signedUrl, {
             method: 'PUT',
-            headers: { 'Content-Type': file.type },
-            body: file
+            headers: { 'Content-Type': fileToUpload.type },
+            body: fileToUpload
         });
         
         if (!uploadRes.ok) throw new Error('Failed to upload photo');
         
-        // Return public URL (assuming bucket is public or we construct path)
-        return data.path; // Store the relative path, backend/frontend can resolve full URL later
+        return data.path;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -227,11 +241,51 @@ function GuestRequestContent() {
                         <div className="space-y-2">
                             <label className="text-sm font-medium">Photos (Optional, max 3)</label>
                             <div 
-                                className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50 transition-colors"
-                                onClick={() => fileInputRef.current?.click()}
+                                className={`border-2 border-dashed border-gray-300 rounded-lg transition-colors ${photos.length === 0 ? 'p-6 hover:bg-gray-50 cursor-pointer flex flex-col items-center justify-center' : 'p-2'}`}
+                                onClick={() => {
+                                    if (photos.length === 0) fileInputRef.current?.click();
+                                }}
                             >
-                                <Camera className="w-8 h-8 text-gray-400 mb-2" />
-                                <span className="text-sm text-gray-500">Tap to take or upload a photo</span>
+                                {photos.length === 0 ? (
+                                    <>
+                                        <Camera className="w-8 h-8 text-gray-400 mb-2" />
+                                        <span className="text-sm text-gray-500">Tap to take or upload a photo</span>
+                                    </>
+                                ) : (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {photos.map((file, idx) => (
+                                            <div key={idx} className="relative group aspect-square rounded-md overflow-hidden bg-gray-100 border">
+                                                <img 
+                                                    src={URL.createObjectURL(file)} 
+                                                    alt="Preview" 
+                                                    className="w-full h-full object-cover"
+                                                />
+                                                <button 
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        removePhoto(idx);
+                                                    }}
+                                                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-80 hover:opacity-100 shadow-sm"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {photos.length < 3 && (
+                                            <div 
+                                                className="aspect-square flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-md bg-white hover:bg-gray-50 cursor-pointer"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    fileInputRef.current?.click();
+                                                }}
+                                            >
+                                                <Camera className="w-6 h-6 text-gray-400" />
+                                                <span className="text-[10px] text-gray-500 mt-1">Add More</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <input 
                                     type="file" 
                                     accept="image/*" 
@@ -243,27 +297,6 @@ function GuestRequestContent() {
                                     disabled={photos.length >= 3 || status === 'loading'}
                                 />
                             </div>
-                            
-                            {photos.length > 0 && (
-                                <div className="flex gap-2 flex-wrap mt-3">
-                                    {photos.map((file, idx) => (
-                                        <div key={idx} className="relative group w-20 h-20 rounded-md overflow-hidden bg-gray-100 border">
-                                            <img 
-                                                src={URL.createObjectURL(file)} 
-                                                alt="Preview" 
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <button 
-                                                type="button"
-                                                onClick={() => removePhoto(idx)}
-                                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-80 hover:opacity-100"
-                                            >
-                                                <X className="w-3 h-3" />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
                         </div>
                     </CardContent>
                     

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/frontend/utils/supabase/server';
+import { createAdminClient } from '@/frontend/utils/supabase/admin';
 
 export async function DELETE(request: NextRequest) {
     try {
@@ -34,7 +35,7 @@ export async function DELETE(request: NextRequest) {
         // Deactivate membership
         const { error } = await supabase
             .from('property_memberships')
-            .update({ is_active: false })
+            .update({ is_active: false, updated_by: user.id, updated_at: new Date().toISOString() })
             .eq('user_id', staffUserId)
             .eq('property_id', propertyId);
 
@@ -42,6 +43,14 @@ export async function DELETE(request: NextRequest) {
             console.error('[DELETE /api/roster/remove-staff] Update error:', error);
             return NextResponse.json({ error: 'Failed to remove staff from property' }, { status: 500 });
         }
+
+        const adminClient = createAdminClient();
+        await adminClient.from('user_management_audit_logs').insert({
+            action: 'remove_staff',
+            target_user_id: staffUserId,
+            admin_user_id: user.id,
+            details: { propertyId }
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

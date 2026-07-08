@@ -1,16 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@lib/supabase/admin';
+import { checkRateLimit, getClientIP } from '@/frontend/utils/rate-limiter';
+import { z } from 'zod';
+
+const guestRequestSchema = z.object({
+    zoneId: z.string().min(1),
+    sig: z.string().min(1),
+    guestName: z.string().min(1).max(100),
+    guestPhone: z.string().max(50).optional().nullable().or(z.literal('')),
+    guestEmail: z.string().email().max(255).optional().nullable().or(z.literal('')),
+    description: z.string().min(1).max(1000),
+    photoUrls: z.array(z.string().min(1)).max(3).optional().default([]),
+    deviceInfo: z.object({
+        userAgent: z.string().max(300).optional(),
+        platform: z.string().max(100).optional(),
+        language: z.string().max(50).optional(),
+        screenResolution: z.string().max(50).optional()
+    }).strict().optional().default({}),
+    locationData: z.object({
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+        accuracy: z.number().optional()
+    }).strict().optional().default({})
+});
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { zoneId, sig, guestName, guestPhone, guestEmail, description, photoUrls, deviceInfo, locationData } = body;
 
-        if (!zoneId || !sig || !guestName || !description) {
-            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+        // --- 1. Rate Limiting ---
+        const ip = getClientIP(req);
+        // Max 5 requests per minute for submitting guest requests
+        const limit = checkRateLimit(ip, { maxRequests: 5, windowMs: 60 * 1000 });
+        if (!limit.allowed) {
+            return NextResponse.json({ error: 'Too many requests, please try again later.' }, { status: 429 });
         }
 
-        // 1. Verify the signature matches the zone in the database
+        // --- 2. Payload Validation ---
+        const parseResult = guestRequestSchema.safeParse(body);
+        if (!parseResult.success) {
+            return NextResponse.json({ error: 'Invalid payload data', details: parseResult.error.flatten() }, { status: 400 });
+        }
+        
+        const { zoneId, sig, guestName, guestPhone, guestEmail, description, photoUrls, deviceInfo, locationData } = parseResult.data;
+
+        // 3. Verify the signature matches the zone in the database
         const { data: zone, error: zoneError } = await supabaseAdmin
             .from('qr_facility_zones')
             .select('id, property_id, qr_signature')

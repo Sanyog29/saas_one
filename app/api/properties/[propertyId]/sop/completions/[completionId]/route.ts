@@ -97,7 +97,7 @@ export async function PUT(
         // IDOR guard: confirm this completion belongs to this property before any mutation
         const { data: existing } = await supabaseAdmin
             .from('sop_completions')
-            .select('id, property_id')
+            .select('id, property_id, completed_by')
             .eq('id', completionId)
             .eq('property_id', propertyId)
             .maybeSingle();

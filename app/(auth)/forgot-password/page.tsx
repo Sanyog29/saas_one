@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { ArrowRight, Mail, CheckCircle2, ArrowLeft, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Loader from '@/frontend/components/ui/Loader';
+import { createClient } from '@/frontend/utils/supabase/client';
 
 function ForgotPasswordContent() {
     const router = useRouter();
@@ -16,22 +17,24 @@ function ForgotPasswordContent() {
     const [showPopup, setShowPopup] = useState(false);
     const [emailSent, setEmailSent] = useState('');
 
+    const supabase = React.useMemo(() => createClient(), []);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setLoading(true);
 
         try {
-            const res = await fetch('/api/users/reset-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email }),
+            const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+                redirectTo: `${window.location.origin}/api/auth/callback?next=/reset-password`,
             });
 
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.error || 'Failed to send reset email');
+            if (resetError) {
+                console.error('Password reset error:', resetError);
+                // We still show success popup to prevent email enumeration, unless it's a rate limit
+                if (resetError.status === 429) {
+                    throw new Error('Too many requests. Please try again later.');
+                }
             }
 
             setEmailSent(email);

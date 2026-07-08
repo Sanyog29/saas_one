@@ -1,11 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@lib/supabase/admin';
 import { v4 as uuidv4 } from 'uuid';
+import { checkRateLimit, getClientIP } from '@/frontend/utils/rate-limiter';
 
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
         const { zoneId, sig, fileName } = body;
+
+        // Rate Limiting
+        const ip = getClientIP(req);
+        // Max 10 requests per minute for signed urls
+        const limit = checkRateLimit(ip, { maxRequests: 10, windowMs: 60 * 1000 });
+        if (!limit.allowed) {
+            return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
+        }
 
         if (!zoneId || !sig || !fileName) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -23,7 +32,14 @@ export async function POST(req: NextRequest) {
         }
 
         // Extract file extension and sanitize
-        const fileExt = fileName.split('.').pop();
+        const fileExt = fileName.split('.').pop()?.toLowerCase();
+        
+        // Strict file extension whitelist
+        const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+        if (!fileExt || !allowedExtensions.includes(fileExt)) {
+            return NextResponse.json({ error: 'Invalid file type. Only images are allowed.' }, { status: 400 });
+        }
+
         const safeName = `${uuidv4()}.${fileExt}`;
         const filePath = `${zone.property_id}/${safeName}`;
 

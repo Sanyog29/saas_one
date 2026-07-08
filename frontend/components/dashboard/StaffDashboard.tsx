@@ -34,9 +34,10 @@ import type { QRScanResult } from '@/frontend/components/shared/UniversalQRScann
 const UniversalQRScannerModal = dynamic(() => import('@/frontend/components/shared/UniversalQRScannerModal'), { ssr: false });
 
 import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
+import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
 
 // Types
-type Tab = 'dashboard' | 'requests' | 'create_request' | 'visitors' | 'rooms' | 'diesel' | 'electricity' | 'stock' | 'checklist' | 'settings' | 'profile' | 'flow-map' | 'water';
+type Tab = 'dashboard' | 'requests' | 'guest_experience' | 'create_request' | 'visitors' | 'rooms' | 'diesel' | 'electricity' | 'stock' | 'checklist' | 'settings' | 'profile' | 'flow-map' | 'water';
 
 interface Property {
     id: string;
@@ -149,7 +150,7 @@ const StaffDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['dashboard', 'requests', 'create_request', 'visitors', 'rooms', 'diesel', 'electricity', 'stock', 'checklist', 'settings', 'profile', 'flow-map', 'water'].includes(tab)) {
+        if (tab && ['dashboard', 'requests', 'guest_experience', 'create_request', 'visitors', 'rooms', 'diesel', 'electricity', 'stock', 'checklist', 'settings', 'profile', 'flow-map', 'water'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -499,6 +500,16 @@ const StaffDashboard = () => {
                                 Requests
                             </button>
                             <button
+                                onClick={() => handleTabChange('guest_experience')}
+                                className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === 'guest_experience'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Ticket className="w-4 h-4" />
+                                Client Support
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('flow-map')}
                                 className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === 'flow-map'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -743,6 +754,9 @@ const StaffDashboard = () => {
                             )}
                             {activeTab === 'flow-map' && (
                                 <TicketFlowMap propertyId={propertyId} />
+                            )}
+                            {activeTab === 'guest_experience' && propertyId && (
+                                <GuestExperienceDashboard propertyId={propertyId} />
                             )}
                             {activeTab === 'visitors' && <VMSAdminDashboard propertyId={propertyId} />}
                             {activeTab === 'rooms' && property && user && <AdminRoomManager propertyId={property.id} user={user} />}

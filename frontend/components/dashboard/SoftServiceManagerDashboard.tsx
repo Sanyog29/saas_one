@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
-    Sparkles, Package, ClipboardCheck, LogOut, Menu, X, LayoutDashboard, Settings, UserCircle, Bell, ScanLine
+    Sparkles, Package, ClipboardCheck, LogOut, Menu, X, LayoutDashboard, Settings, UserCircle, Bell, ScanLine, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
@@ -23,6 +23,8 @@ const SOPDashboard = dynamic(
     { ssr: false, loading: () => <div className="p-8"><Skeleton className="h-96" /></div> }
 );
 
+import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
+
 const StockMovementModal = dynamic(
     () => import('@/frontend/components/stock/StockMovementModal'),
     { ssr: false }
@@ -34,7 +36,7 @@ const UniversalQRScannerModal = dynamic(
     { ssr: false }
 );
 
-type Tab = 'stock' | 'scanner' | 'checklist' | 'settings' | 'profile';
+type Tab = 'stock' | 'scanner' | 'checklist' | 'guest_experience' | 'settings' | 'profile';
 
 interface SoftServiceManagerDashboardProps {
     propertyId: string;
@@ -50,7 +52,7 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
     const isManager = userRole === 'soft_service_manager' || userRole === 'soft_service_supervisor';
     const [activeTab, setActiveTab] = useState<Tab>(() => {
         const tab = searchParams?.get('tab') as Tab;
-        if (tab && ['stock', 'scanner', 'checklist', 'settings', 'profile'].includes(tab)) return tab;
+        if (tab && ['stock', 'scanner', 'checklist', 'guest_experience', 'settings', 'profile'].includes(tab)) return tab;
         return isManager ? 'stock' : 'checklist';
     });
     const [property, setProperty] = useState<any>(null);
@@ -63,7 +65,7 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
     // Sync tab with URL
     useEffect(() => {
         const tab = searchParams?.get('tab') as Tab;
-        if (tab && tab !== activeTab && ['stock', 'scanner', 'checklist', 'settings', 'profile'].includes(tab)) {
+        if (tab && tab !== activeTab && ['stock', 'scanner', 'checklist', 'guest_experience', 'settings', 'profile'].includes(tab)) {
             setActiveTab(tab);
         }
     }, [searchParams]);
@@ -162,6 +164,16 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
                             >
                                 <ClipboardCheck className="w-4 h-4" />
                                 Checklists
+                            </button>
+                            <button
+                                onClick={() => handleTabChange('guest_experience')}
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'guest_experience'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Smartphone className="w-4 h-4" />
+                                Client Support
                             </button>
                         </div>
                     </div>
@@ -287,6 +299,10 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
 
                             {activeTab === 'checklist' && (
                                 <SOPDashboard propertyId={propertyId} />
+                            )}
+
+                            {activeTab === 'guest_experience' && (
+                                <GuestExperienceDashboard propertyId={propertyId} />
                             )}
 
                             {activeTab === 'settings' && (

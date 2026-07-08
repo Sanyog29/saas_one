@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
             // Deactivate the membership (don't delete, preserves history)
             const { error } = await adminClient
                 .from('property_memberships')
-                .update({ is_active: false })
+                .update({ is_active: false, updated_by: user.id, updated_at: new Date().toISOString() })
                 .eq('user_id', userId)
                 .eq('property_id', propertyId);
 
@@ -70,6 +70,13 @@ export async function POST(request: NextRequest) {
                 console.error('Remove property membership error:', error);
                 return NextResponse.json({ error: 'Failed to remove property access' }, { status: 500 });
             }
+
+            await adminClient.from('user_management_audit_logs').insert({
+                action: 'assign_property_remove',
+                target_user_id: userId,
+                admin_user_id: user.id,
+                details: { propertyId, organizationId }
+            });
 
             return NextResponse.json({ success: true, action: 'removed' });
         }
@@ -86,7 +93,7 @@ export async function POST(request: NextRequest) {
             // Reactivate and update role
             const { error } = await adminClient
                 .from('property_memberships')
-                .update({ is_active: true, role: role || existing.role })
+                .update({ is_active: true, role: role || existing.role, updated_by: user.id, updated_at: new Date().toISOString() })
                 .eq('user_id', userId)
                 .eq('property_id', propertyId);
 
@@ -104,6 +111,8 @@ export async function POST(request: NextRequest) {
                     organization_id: organizationId,
                     role: role || 'property_admin',
                     is_active: true,
+                    updated_by: user.id,
+                    updated_at: new Date().toISOString(),
                 });
 
             if (error) {
@@ -111,6 +120,13 @@ export async function POST(request: NextRequest) {
                 return NextResponse.json({ error: 'Failed to assign property access' }, { status: 500 });
             }
         }
+
+        await adminClient.from('user_management_audit_logs').insert({
+            action: 'assign_property_add',
+            target_user_id: userId,
+            admin_user_id: user.id,
+            details: { propertyId, organizationId, role: role || (existing ? existing.role : 'property_admin') }
+        });
 
         return NextResponse.json({ success: true, action: 'added' });
     } catch (error) {

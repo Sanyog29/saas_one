@@ -45,8 +45,8 @@ export default function FacilityQRDashboard({ propertyId }: { propertyId: string
 
         setIsCreating(true);
         
-        // Generate a random signature for security
-        const signature = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        // Generate a secure signature
+        const signature = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
 
         const { error } = await supabase
             .from('qr_facility_zones')
@@ -100,11 +100,11 @@ export default function FacilityQRDashboard({ propertyId }: { propertyId: string
     };
 
     return (
-        <div className="p-6 space-y-6 max-w-6xl mx-auto">
-            <div className="flex items-center justify-between">
+        <div className="p-4 sm:p-6 space-y-6 max-w-6xl mx-auto w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-gray-900">Facility QR Codes</h1>
-                    <p className="text-gray-500">Generate QR codes for guests to report issues without an app.</p>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">Facility QR Codes</h1>
+                    <p className="text-sm sm:text-base text-gray-500 mt-1">Generate QR codes for guests to report issues without an app.</p>
                 </div>
             </div>
 
@@ -113,8 +113,8 @@ export default function FacilityQRDashboard({ propertyId }: { propertyId: string
                     <CardTitle>Create New QR Zone</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <form onSubmit={handleCreateZone} className="flex gap-4 items-end">
-                        <div className="space-y-2 flex-1">
+                    <form onSubmit={handleCreateZone} className="flex flex-col sm:flex-row gap-4 sm:items-end w-full">
+                        <div className="space-y-2 flex-1 w-full">
                             <label className="text-sm font-medium">Floor (Optional)</label>
                             <Input 
                                 placeholder="e.g. 1st Floor" 
@@ -122,7 +122,7 @@ export default function FacilityQRDashboard({ propertyId }: { propertyId: string
                                 onChange={e => setNewFloor(e.target.value)} 
                             />
                         </div>
-                        <div className="space-y-2 flex-1">
+                        <div className="space-y-2 flex-1 w-full">
                             <label className="text-sm font-medium">Zone Name *</label>
                             <Input 
                                 placeholder="e.g. Lobby Restroom" 
@@ -131,7 +131,7 @@ export default function FacilityQRDashboard({ propertyId }: { propertyId: string
                                 onChange={e => setNewZone(e.target.value)} 
                             />
                         </div>
-                        <Button type="submit" disabled={isCreating || !newZone}>
+                        <Button type="submit" className="w-full sm:w-auto" disabled={isCreating || !newZone}>
                             {isCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
                             Generate QR
                         </Button>

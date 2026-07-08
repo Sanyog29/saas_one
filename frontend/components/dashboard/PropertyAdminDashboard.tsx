@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Ticket, Settings, UserCircle, UsersRound,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Building2,
     Calendar, CheckCircle2, AlertCircle, Clock, Coffee, IndianRupee, FileDown, Fuel, Store, Activity, Upload, FileBarChart, Menu, X, Zap, RefreshCw,
-    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets, TrendingUp
+    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets, TrendingUp, QrCode, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -44,9 +44,10 @@ import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
 
 import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
+import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
 
 // Types
-type Tab = 'overview' | 'requests' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics';
+type Tab = 'overview' | 'requests' | 'guest_experience' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics';
 
 interface Property {
     id: string;
@@ -156,7 +157,7 @@ const PropertyAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics'].includes(tab)) {
+        if (tab && ['overview', 'requests', 'reports', 'users', 'visitors', 'rooms', 'diesel', 'diesel_analytics', 'electricity', 'electricity_analytics', 'cafeteria', 'settings', 'profile', 'units', 'vendor_revenue', 'stock', 'checklist', 'roster', 'water', 'water_analytics', 'facility_qr'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
         const filter = searchParams.get('filter');
@@ -371,6 +372,16 @@ const PropertyAdminDashboard = () => {
                                 Requests
                             </button>
                             <button
+                                onClick={() => handleTabChange('guest_experience')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'guest_experience'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Smartphone className="w-4 h-4" />
+                                Client Support
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('reports')}
                                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'reports'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -380,6 +391,7 @@ const PropertyAdminDashboard = () => {
                                 <FileBarChart className="w-4 h-4" />
                                 Reports
                             </button>
+
                         </div>
                     </div>
 
@@ -760,6 +772,7 @@ const PropertyAdminDashboard = () => {
                         {openTab === 'water' && property && <WaterDashboard propertyId={property.id} />}
 
                         {openTab === 'water_analytics' && property && <WaterAnalyticsDashboard propertyId={property.id} />}
+                        {openTab === 'guest_experience' && property && <GuestExperienceDashboard propertyId={property.id} />}
                         {openTab === 'vendor_revenue' && <VendorRevenueTab propertyId={propertyId} />}
                         {openTab === 'requests' && property && (
                             <TicketsView

@@ -41,29 +41,38 @@ export async function POST(request: NextRequest) {
         const adminClient = createAdminClient()
 
         // Step 1: Mark user as deleted and set offline in our DB (preserves all their data)
+        const now = new Date().toISOString()
         const { error: softDeleteError } = await adminClient
             .from('users')
-            .update({ online_status: 'offline', deleted_at: new Date().toISOString() })
+            .update({ online_status: 'offline', deleted_at: now, updated_by: currentUser.id, updated_at: now })
             .eq('id', userId)
 
         if (softDeleteError) {
             // deleted_at column may not exist yet — fallback to just setting offline
             await adminClient
                 .from('users')
-                .update({ online_status: 'offline' })
+                .update({ online_status: 'offline', updated_by: currentUser.id, updated_at: now })
                 .eq('id', userId)
         }
 
         // Step 2: Deactivate all memberships so user disappears from all user management views
         await adminClient
             .from('organization_memberships')
-            .update({ is_active: false })
+            .update({ is_active: false, updated_by: currentUser.id, updated_at: now })
             .eq('user_id', userId)
 
         await adminClient
             .from('property_memberships')
-            .update({ is_active: false })
+            .update({ is_active: false, updated_by: currentUser.id, updated_at: now })
             .eq('user_id', userId)
+
+        // Step 2.5: Log the action in the audit logs
+        await adminClient.from('user_management_audit_logs').insert({
+            action: 'delete_user',
+            target_user_id: userId,
+            admin_user_id: currentUser.id,
+            details: { reason: 'Deleted via admin dashboard' }
+        })
 
         // Step 3: Delete from Supabase Auth entirely so they can re-register if needed.
         // NOTE: If your users table has ON DELETE CASCADE on the id FK, Supabase will

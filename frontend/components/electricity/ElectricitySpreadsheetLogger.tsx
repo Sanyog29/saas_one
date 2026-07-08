@@ -229,7 +229,7 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
             newState[dateStr][meterId] = updatedReading;
             
             // Auto fill next day's initial reading if modifying today's final reading
-            if (field === 'final_reading' && val !== null) {
+            if (field === 'final_reading') {
                 const currDate = new Date(dateStr);
                 currDate.setDate(currDate.getDate() + 1);
                 const nextDateStr = currDate.toISOString().split('T')[0];
@@ -247,13 +247,17 @@ export default function ElectricitySpreadsheetLogger({ propertyId, isDark = fals
                     
                     nextDay.initial_reading = val;
                     if (nextDay.final_reading !== null && nextDay.final_reading !== '') {
-                        const initVal = typeof nextDay.initial_reading === 'string' ? parseFloat(nextDay.initial_reading) : nextDay.initial_reading;
+                        const initVal = val !== null && val !== '' ? parseFloat(val as string) : NaN;
                         const finalVal = typeof nextDay.final_reading === 'string' ? parseFloat(nextDay.final_reading) : nextDay.final_reading;
                         
                         if (!isNaN(initVal) && !isNaN(finalVal)) {
                             const diff = finalVal - initVal;
                             nextDay.consumption = diff >= 0 ? Number((diff * nextDay.meter_constant_used).toFixed(2)) : null;
+                        } else {
+                            nextDay.consumption = null;
                         }
+                    } else {
+                        nextDay.consumption = null;
                     }
                     newState[nextDateStr][meterId] = nextDay;
                 }

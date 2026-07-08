@@ -20,6 +20,7 @@ export interface TicketCardProps {
     // Core Data
     id: string;
     title: string;
+    description?: string;
     priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     status: 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'OPEN' | 'PENDING_VALIDATION' | 'WAITLISTED';
 
@@ -70,6 +71,7 @@ const STATUS_STYLES = {
 export default function TicketCard({
     id,
     title,
+    description,
     priority,
     status,
     ticketNumber,
@@ -222,6 +224,11 @@ export default function TicketCard({
                     <h3 className="text-sm font-semibold text-gray-900 leading-snug line-clamp-2 break-words pr-2" title={title}>
                         {title}
                     </h3>
+                    {description && (
+                        <p className="text-xs text-gray-500 mt-1 leading-snug line-clamp-2 break-words pr-2" title={description}>
+                            {description}
+                        </p>
+                    )}
                 </div>
 
                 {/* Actions Container: Grouped and Top-Right - Compact on mobile */}

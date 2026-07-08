@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
                 // Update existing row
                 const { error: orgUpdateError } = await adminClient
                     .from('organization_memberships')
-                    .update({ role: newRole, is_active: true })
+                    .update({ role: newRole, is_active: true, updated_by: currentUser.id, updated_at: new Date().toISOString() })
                     .eq('user_id', userId)
                     .eq('organization_id', organizationId);
                 if (orgUpdateError) throw orgUpdateError;
@@ -148,6 +148,8 @@ export async function POST(request: NextRequest) {
                         organization_id: organizationId,
                         role: newRole,
                         is_active: true,
+                        updated_by: currentUser.id,
+                        updated_at: new Date().toISOString()
                     });
                 if (orgInsertError) throw orgInsertError;
             }
@@ -162,7 +164,7 @@ export async function POST(request: NextRequest) {
                 const propIds = orgProperties.map(p => p.id);
                 const { error: deactivateError } = await adminClient
                     .from('property_memberships')
-                    .update({ is_active: false })
+                    .update({ is_active: false, updated_by: currentUser.id, updated_at: new Date().toISOString() })
                     .eq('user_id', userId)
                     .in('property_id', propIds);
 
@@ -217,7 +219,7 @@ export async function POST(request: NextRequest) {
                 // Update existing row — set role and reactivate
                 const { error: propUpdateError } = await adminClient
                     .from('property_memberships')
-                    .update({ role: newRole, is_active: true })
+                    .update({ role: newRole, is_active: true, updated_by: currentUser.id, updated_at: new Date().toISOString() })
                     .eq('user_id', userId)
                     .eq('property_id', targetPropertyId);
                 if (propUpdateError) throw propUpdateError;
@@ -230,6 +232,8 @@ export async function POST(request: NextRequest) {
                         property_id: targetPropertyId,
                         role: newRole,
                         is_active: true,
+                        updated_by: currentUser.id,
+                        updated_at: new Date().toISOString()
                     });
                 if (propInsertError) throw propInsertError;
             }
@@ -237,7 +241,7 @@ export async function POST(request: NextRequest) {
             // Step B: Deactivate org membership (set is_active = false, don't delete)
             const { error: orgDeactivateError } = await adminClient
                 .from('organization_memberships')
-                .update({ is_active: false })
+                .update({ is_active: false, updated_by: currentUser.id, updated_at: new Date().toISOString() })
                 .eq('user_id', userId)
                 .eq('organization_id', organizationId);
 
@@ -251,7 +255,7 @@ export async function POST(request: NextRequest) {
             // Same-level property role change (e.g., staff → mst)
             const { error: propUpdateError } = await adminClient
                 .from('property_memberships')
-                .update({ role: newRole })
+                .update({ role: newRole, updated_by: currentUser.id, updated_at: new Date().toISOString() })
                 .eq('user_id', userId)
                 .eq('property_id', propertyId);
 
@@ -260,7 +264,7 @@ export async function POST(request: NextRequest) {
             // Same-level org role change
             const { error: orgUpdateError } = await adminClient
                 .from('organization_memberships')
-                .update({ role: newRole })
+                .update({ role: newRole, updated_by: currentUser.id, updated_at: new Date().toISOString() })
                 .eq('user_id', userId)
                 .eq('organization_id', organizationId);
 
@@ -343,6 +347,14 @@ export async function POST(request: NextRequest) {
                 // Actually, the user specifically asked for checkboxes, so we'll rely on those.
             }
         }
+
+        // 4. Log the action in audit logs
+        await adminClient.from('user_management_audit_logs').insert({
+            action: 'update_role',
+            target_user_id: userId,
+            admin_user_id: currentUser.id,
+            details: { oldRole, newRole, oldRoleSource, organizationId, propertyId }
+        });
 
         return NextResponse.json({ success: true })
     } catch (error: any) {
