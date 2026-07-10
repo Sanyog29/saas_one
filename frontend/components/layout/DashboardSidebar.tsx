@@ -8,7 +8,7 @@ import {
     Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
     FileUp, Bot, Building2, Send, CalendarDays, Droplets, Coffee,
     Sparkles, DollarSign, ClipboardList, Target, TrendingUp,
-    BellRing, HelpCircle, Megaphone, Radio, BookOpen,
+    BellRing, HelpCircle, Megaphone, Radio, BookOpen, Smartphone
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -52,6 +52,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
 
         if (isAdmin) {
             items.push({ label: 'Roster Management', href: `/${orgId}/dashboard?tab=roster`, icon: CalendarDays, domain: 'dashboards' as const });
+            items.push({ label: 'Client Support', href: `/${orgId}/dashboard?tab=guest_experience`, icon: Smartphone, domain: 'dashboards' as const });
         }
 
         items.push({ label: 'Cafeteria', href: `/${orgId}/dashboard?tab=cafeteria`, icon: Coffee, domain: 'dashboards' as const });

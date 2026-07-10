@@ -56,6 +56,7 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
     const wheelRef = useRef<HTMLDivElement>(null);
     const [pendingBooking, setPendingBooking] = useState<{ room: any; slot: any } | null>(null);
     const [isBooking, setIsBooking] = useState(false);
+    const [bookingComment, setBookingComment] = useState('');
     const [bookingError, setBookingError] = useState('');
     const [bookingSuccess, setBookingSuccess] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
@@ -228,6 +229,7 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
         setPendingBooking({ room, slot });
         setBookingError('');
         setBookingSuccess(false);
+        setBookingComment('');
     };
 
     const handleConfirmBook = async () => {
@@ -245,7 +247,8 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
                     propertyId,
                     date: dateStr,
                     startTime: slot.start,
-                    endTime: slot.end
+                    endTime: slot.end,
+                    comment: bookingComment
                 })
             });
             const data = await res.json();
@@ -480,6 +483,18 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
                                     </div>
                                 </div>
 
+                                {/* Comment */}
+                                <div className="px-5 py-3 border-b border-border">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1.5 block">Comment (Optional)</label>
+                                    <textarea
+                                        value={bookingComment}
+                                        onChange={(e) => setBookingComment(e.target.value)}
+                                        placeholder="Add any special requirements or notes..."
+                                        rows={2}
+                                        className="w-full px-3 py-2 text-sm bg-muted/50 border border-border rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-primary/20"
+                                    />
+                                </div>
+
                                 {/* Error */}
                                 {bookingError && (
                                     <div className="mx-5 mt-3 px-3 py-2 bg-rose-50 border border-rose-100 rounded-lg">
@@ -671,6 +686,9 @@ const TenantRoomBooking: React.FC<TenantRoomBookingProps> = ({ propertyId, user,
                                                             </div>
                                                             {booking.meeting_room?.location && (
                                                                 <p className="text-[11px] text-muted-foreground mt-1 truncate">{booking.meeting_room.location}</p>
+                                                            )}
+                                                            {booking.comment && (
+                                                                <p className="text-xs text-foreground mt-2 italic bg-muted/30 p-2 rounded-lg border border-border">"{booking.comment}"</p>
                                                             )}
                                                             <p className="text-[9px] font-black text-primary/70 uppercase tracking-widest mt-2">
                                                                 Booked at: {new Date(booking.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}

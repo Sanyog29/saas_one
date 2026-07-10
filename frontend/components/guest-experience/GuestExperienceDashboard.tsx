@@ -55,7 +55,7 @@ export default function GuestExperienceDashboard({ propertyId }: { propertyId: s
             </div>
             
             <div className="flex-1 overflow-y-auto">
-                {activeTab === 'requests' && <GuestRequestsPage />}
+                {activeTab === 'requests' && <GuestRequestsPage propertyId={propertyId} />}
                 {activeTab === 'qr_codes' && (
                     <div className="py-6">
                         <FacilityQRDashboard propertyId={propertyId} />

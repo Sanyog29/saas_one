@@ -15,6 +15,7 @@ interface Booking {
     end_time: string;
     status: 'confirmed' | 'cancelled' | 'completed';
     created_at: string;
+    comment?: string;
     meeting_room: {
         name: string;
         photo_url: string;
@@ -239,6 +240,11 @@ const AdminBookingList: React.FC<AdminBookingListProps> = ({ propertyId }) => {
                                                 <span className="text-[10px] font-black uppercase tracking-wider">Booked: {new Date(booking.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
                                             </div>
                                         </div>
+                                        {booking.comment && (
+                                            <div className="mt-2 text-xs text-slate-500 font-medium italic border-l-2 border-slate-200 pl-2">
+                                                {booking.comment}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

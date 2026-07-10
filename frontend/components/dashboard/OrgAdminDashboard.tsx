@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Building2, Users, UserPlus, Ticket, Settings, UserCircle, Activity,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
-    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon, Droplets, TrendingUp
+    AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon, Droplets, TrendingUp, Smartphone
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -44,11 +44,12 @@ import VMSOrgVisitorDashboard from '@/frontend/components/vms/VMSOrgVisitorDashb
 import UniversalQRScannerModal, { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
 import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsDashboard';
 import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
+import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
 
 import { BDQuickStats } from './UnifiedDashboard';
 
 // Types
-type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel_logger' | 'diesel' | 'electricity_logger' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement' | 'roster' | 'water_logger' | 'water';
+type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel_logger' | 'diesel' | 'electricity_logger' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement' | 'roster' | 'water_logger' | 'water' | 'guest_experience';
 
 interface Property {
     id: string;
@@ -399,7 +400,7 @@ const OrgAdminDashboard = () => {
     // Restore tab from URL
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel_logger', 'diesel', 'electricity_logger', 'electricity', 'stock_reports', 'checklist', 'super_tenants', 'escalation', 'rooms', 'ppm', 'vendors', 'procurement', 'roster', 'water_logger', 'water'].includes(tab)) {
+        if (tab && ['overview', 'properties', 'requests', 'reports', 'visitors', 'settings', 'profile', 'revenue', 'users', 'diesel_logger', 'diesel', 'electricity_logger', 'electricity', 'stock_reports', 'checklist', 'super_tenants', 'escalation', 'rooms', 'ppm', 'vendors', 'procurement', 'roster', 'water_logger', 'water', 'guest_experience'].includes(tab)) {
             setActiveTab(tab as Tab);
         }
     }, [searchParams]);
@@ -977,6 +978,16 @@ const OrgAdminDashboard = () => {
                                 <FileBarChart className="w-4 h-4" />
                                 Reports
                             </button>
+                            <button
+                                onClick={() => handleTabChange('guest_experience')}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'guest_experience'
+                                    ? 'bg-primary text-text-inverse shadow-sm'
+                                    : 'text-text-secondary hover:bg-muted hover:text-text-primary'
+                                    }`}
+                            >
+                                <Smartphone className="w-4 h-4" />
+                                Client Support
+                            </button>
                         </div>
                     </div>
 
@@ -1435,6 +1446,21 @@ const OrgAdminDashboard = () => {
                             </div>
                         )}
                         {activeTab === 'water_logger' && selectedPropertyId !== 'all' && <WaterDashboard propertyId={selectedPropertyId} />}
+                        
+                        {activeTab === 'guest_experience' && selectedPropertyId === 'all' && (
+                            <div className="flex flex-col items-center justify-center py-16 text-center">
+                                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+                                    <Smartphone className="w-8 h-8 text-blue-600" />
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">Select a Property</h3>
+                                <p className="text-sm text-gray-500 max-w-xs">Please select a specific property from the dropdown above to view client support requests.</p>
+                            </div>
+                        )}
+                        {activeTab === 'guest_experience' && selectedPropertyId !== 'all' && (
+                            <div className="h-full bg-slate-50 relative min-h-[calc(100vh-12rem)]">
+                                <GuestExperienceDashboard propertyId={selectedPropertyId} />
+                            </div>
+                        )}
                         
                         {activeTab === 'water' && (
                             <WaterAnalyticsDashboard

@@ -38,8 +38,10 @@ const getDeviceName = (userAgent?: string, platform?: string) => {
     return platform || 'Mobile Device';
 };
 
-export default function GuestRequestsPage() {
-    const { propertyId } = useParams() as { propertyId: string };
+export default function GuestRequestsPage(props: any = {}) {
+    const { propertyId: propPropertyId } = props;
+    const params = useParams();
+    const propertyId = propPropertyId || (params?.propertyId as string);
     const supabase = createClient();
     
     const [requests, setRequests] = useState<any[]>([]);
@@ -67,7 +69,7 @@ export default function GuestRequestsPage() {
 
     useEffect(() => {
         fetchRequests();
-    }, [propertyId, filterStatus]);
+    }, [propertyId]);
 
     const fetchRequests = async () => {
         setLoading(true);
@@ -94,10 +96,6 @@ export default function GuestRequestsPage() {
             `)
             .eq('property_id', propertyId)
             .order('created_at', { ascending: false });
-            
-        if (filterStatus !== 'ALL') {
-            query = query.eq('status', filterStatus);
-        }
 
         const { data, error } = await query;
             
@@ -230,7 +228,10 @@ export default function GuestRequestsPage() {
 
     const displayRequests = requests.filter(req => {
         let matches = true;
-        if (searchQuery) {
+        if (filterStatus !== 'ALL' && req.status !== filterStatus) {
+            matches = false;
+        }
+        if (matches && searchQuery) {
             const q = searchQuery.toLowerCase();
             const ticket = req.ticket_number?.toLowerCase() || `gr-${req.id.substring(0, 6).toLowerCase()}`;
             const desc = req.description?.toLowerCase() || '';
@@ -276,19 +277,32 @@ export default function GuestRequestsPage() {
                         )}
                         <div className="flex items-center gap-2 bg-white rounded-lg border p-1 shadow-sm overflow-x-auto no-scrollbar whitespace-nowrap w-full sm:w-auto h-10">
                             <Filter className="w-4 h-4 text-gray-400 ml-2 shrink-0" />
-                        {['ALL', 'PENDING', 'IN_PROGRESS', 'RESOLVED'].map((status) => (
-                            <button
-                                key={status}
-                                onClick={() => setFilterStatus(status)}
-                                className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors ${
-                                    filterStatus === status 
-                                    ? 'bg-blue-50 text-blue-700' 
-                                    : 'text-gray-600 hover:bg-gray-100'
-                                }`}
-                            >
-                                {status.replace('_', ' ')}
-                            </button>
-                        ))}
+                        {['ALL', 'PENDING', 'IN_PROGRESS', 'RESOLVED'].map((status) => {
+                            const count = status === 'ALL' 
+                                ? requests.length 
+                                : requests.filter(r => r.status === status).length;
+                                
+                            return (
+                                <button
+                                    key={status}
+                                    onClick={() => setFilterStatus(status)}
+                                    className={`px-3 py-1.5 text-sm rounded-md font-medium transition-colors flex items-center gap-2 ${
+                                        filterStatus === status 
+                                        ? 'bg-blue-50 text-blue-700' 
+                                        : 'text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {status.replace('_', ' ')}
+                                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                        filterStatus === status
+                                        ? 'bg-blue-200 text-blue-800'
+                                        : 'bg-gray-200 text-gray-600'
+                                    }`}>
+                                        {count}
+                                    </span>
+                                </button>
+                            );
+                        })}
                         </div>
                     </div>
                 </div>

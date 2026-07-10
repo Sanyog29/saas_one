@@ -63,7 +63,8 @@ export async function POST(request: NextRequest) {
             propertyId,
             date,
             startTime,
-            endTime
+            endTime,
+            comment
         } = body;
 
         if (!meetingRoomId || !propertyId || !date || !startTime || !endTime) {
@@ -151,7 +152,8 @@ export async function POST(request: NextRequest) {
                 booking_date: date,
                 start_time: startTime,
                 end_time: endTime,
-                status: 'confirmed'
+                status: 'confirmed',
+                comment: comment || null
             })
             .select('*')
             .single();
