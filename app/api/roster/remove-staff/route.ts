@@ -35,7 +35,7 @@ export async function DELETE(request: NextRequest) {
         // Deactivate membership
         const { error } = await supabase
             .from('property_memberships')
-            .update({ is_active: false, updated_by: user.id, updated_at: new Date().toISOString() })
+            .update({ is_active: false })
             .eq('user_id', staffUserId)
             .eq('property_id', propertyId);
 

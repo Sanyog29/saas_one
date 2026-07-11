@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
             // Deactivate the membership (don't delete, preserves history)
             const { error } = await adminClient
                 .from('property_memberships')
-                .update({ is_active: false, updated_by: user.id, updated_at: new Date().toISOString() })
+                .update({ is_active: false })
                 .eq('user_id', userId)
                 .eq('property_id', propertyId);
 
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
             // Reactivate and update role
             const { error } = await adminClient
                 .from('property_memberships')
-                .update({ is_active: true, role: role || existing.role, updated_by: user.id, updated_at: new Date().toISOString() })
+                .update({ is_active: true, role: role || existing.role })
                 .eq('user_id', userId)
                 .eq('property_id', propertyId);
 
@@ -111,8 +111,6 @@ export async function POST(request: NextRequest) {
                     organization_id: organizationId,
                     role: role || 'property_admin',
                     is_active: true,
-                    updated_by: user.id,
-                    updated_at: new Date().toISOString(),
                 });
 
             if (error) {

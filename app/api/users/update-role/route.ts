@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
                 // Update existing row
                 const { error: orgUpdateError } = await adminClient
                     .from('organization_memberships')
-                    .update({ role: newRole, is_active: true, updated_by: currentUser.id, updated_at: new Date().toISOString() })
+                    .update({ role: newRole, is_active: true })
                     .eq('user_id', userId)
                     .eq('organization_id', organizationId);
                 if (orgUpdateError) throw orgUpdateError;
@@ -147,9 +147,7 @@ export async function POST(request: NextRequest) {
                         user_id: userId,
                         organization_id: organizationId,
                         role: newRole,
-                        is_active: true,
-                        updated_by: currentUser.id,
-                        updated_at: new Date().toISOString()
+                        is_active: true
                     });
                 if (orgInsertError) throw orgInsertError;
             }
@@ -164,7 +162,7 @@ export async function POST(request: NextRequest) {
                 const propIds = orgProperties.map(p => p.id);
                 const { error: deactivateError } = await adminClient
                     .from('property_memberships')
-                    .update({ is_active: false, updated_by: currentUser.id, updated_at: new Date().toISOString() })
+                    .update({ is_active: false })
                     .eq('user_id', userId)
                     .in('property_id', propIds);
 
@@ -219,7 +217,7 @@ export async function POST(request: NextRequest) {
                 // Update existing row — set role and reactivate
                 const { error: propUpdateError } = await adminClient
                     .from('property_memberships')
-                    .update({ role: newRole, is_active: true, updated_by: currentUser.id, updated_at: new Date().toISOString() })
+                    .update({ role: newRole, is_active: true })
                     .eq('user_id', userId)
                     .eq('property_id', targetPropertyId);
                 if (propUpdateError) throw propUpdateError;
@@ -231,9 +229,7 @@ export async function POST(request: NextRequest) {
                         user_id: userId,
                         property_id: targetPropertyId,
                         role: newRole,
-                        is_active: true,
-                        updated_by: currentUser.id,
-                        updated_at: new Date().toISOString()
+                        is_active: true
                     });
                 if (propInsertError) throw propInsertError;
             }
@@ -241,7 +237,7 @@ export async function POST(request: NextRequest) {
             // Step B: Deactivate org membership (set is_active = false, don't delete)
             const { error: orgDeactivateError } = await adminClient
                 .from('organization_memberships')
-                .update({ is_active: false, updated_by: currentUser.id, updated_at: new Date().toISOString() })
+                .update({ is_active: false })
                 .eq('user_id', userId)
                 .eq('organization_id', organizationId);
 
@@ -255,7 +251,7 @@ export async function POST(request: NextRequest) {
             // Same-level property role change (e.g., staff → mst)
             const { error: propUpdateError } = await adminClient
                 .from('property_memberships')
-                .update({ role: newRole, updated_by: currentUser.id, updated_at: new Date().toISOString() })
+                .update({ role: newRole })
                 .eq('user_id', userId)
                 .eq('property_id', propertyId);
 
@@ -264,7 +260,7 @@ export async function POST(request: NextRequest) {
             // Same-level org role change
             const { error: orgUpdateError } = await adminClient
                 .from('organization_memberships')
-                .update({ role: newRole, updated_by: currentUser.id, updated_at: new Date().toISOString() })
+                .update({ role: newRole })
                 .eq('user_id', userId)
                 .eq('organization_id', organizationId);
 

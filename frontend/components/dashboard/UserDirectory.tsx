@@ -279,43 +279,23 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
         if (!confirm(`Are you sure you want to remove ${userName}? This action cannot be undone.`)) return;
 
         try {
-            // Remove from property memberships
-            if (propertyId) {
-                await supabase
-                    .from('property_memberships')
-                    .delete()
-                    .eq('user_id', userId)
-                    .eq('property_id', propertyId);
-            } else if (orgId) {
-                // Remove from org memberships
-                await supabase
-                    .from('organization_memberships')
-                    .delete()
-                    .eq('user_id', userId)
-                    .eq('organization_id', orgId);
+            const response = await fetch('/api/users/remove-membership', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, orgId, propertyId })
+            });
 
-                // Also remove from property memberships for this org
-                const { data: props } = await supabase
-                    .from('properties')
-                    .select('id')
-                    .eq('organization_id', orgId);
-
-                if (props) {
-                    for (const prop of props) {
-                        await supabase
-                            .from('property_memberships')
-                            .delete()
-                            .eq('user_id', userId)
-                            .eq('property_id', prop.id);
-                    }
-                }
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Failed to remove user');
             }
 
             showToast('User removed successfully');
             fetchUsers();
             onUserUpdated?.();
-        } catch (err) {
-            showToast('Failed to remove user', 'error');
+        } catch (err: any) {
+            console.error('Error removing user:', err);
+            showToast(err.message || 'Failed to remove user', 'error');
         }
     };
 
