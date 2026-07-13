@@ -8,10 +8,11 @@ import {
     Menu, X, GitMerge, Calendar, ShoppingCart, UsersRound, BarChart3,
     FileUp, Bot, Building2, Send, CalendarDays, Droplets, Coffee,
     Sparkles, DollarSign, ClipboardList, Target, TrendingUp,
-    BellRing, HelpCircle, Megaphone, Radio, BookOpen, Smartphone
+    BellRing, HelpCircle, Megaphone, Radio, BookOpen, Smartphone, MessageSquarePlus
 } from 'lucide-react';
 import CapabilityWrapper from '../auth/CapabilityWrapper';
 import { useAuth } from '@/frontend/context/AuthContext';
+import FeedbackModal from '../ui/FeedbackModal';
 import { isBdSuperAdmin as checkBdSuperAdmin } from '@/frontend/constants/bdSuperAdmins';
 import SignOutModal from '../ui/SignOutModal';
 import ThemeToggle from '../ui/ThemeToggle';
@@ -28,6 +29,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
     const orgId = params.orgId as string;
     const { signOut, user, membership } = useAuth();
     const [showSignOutModal, setShowSignOutModal] = React.useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = React.useState(false);
 
     const userRole = user?.user_metadata?.role;
     // Gate the BD Super Admin nav off the SAME source as page.tsx / layout.tsx /
@@ -298,6 +300,15 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                             </Link>
                         )}
                         <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="flex-1 flex items-center gap-2 px-3 py-2.5 lg:py-2 rounded-[var(--radius-md)] bg-primary/10 text-primary hover:bg-primary/20 transition-smooth"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 shrink-0" />
+                                <span className="text-xs font-semibold font-body">Feedback / Bug</span>
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2">
                             <Link
                                 href={isBdSuperAdmin ? `/${orgId}/crm/settings` : `/${orgId}/settings`}
                                 onClick={handleLinkClick}
@@ -322,6 +333,11 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                         isOpen={showSignOutModal}
                         onClose={() => setShowSignOutModal(false)}
                         onConfirm={signOut}
+                    />
+
+                    <FeedbackModal
+                        isOpen={showFeedbackModal}
+                        onClose={() => setShowFeedbackModal(false)}
                     />
                 </div>
             </aside >
