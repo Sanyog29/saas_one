@@ -5,6 +5,7 @@ import {
     LayoutDashboard, Ticket as TicketIcon, Settings, LogOut, Plus,
     CheckCircle2, Clock, MessageSquare, UsersRound, Coffee, UserCircle,
     Calendar, Building2, Shield, ChevronRight, Sun, Moon, Menu, X, Camera, Pencil, Loader2, Filter, ArrowLeft
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -75,6 +76,7 @@ const TenantDashboard = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [errorMsg, setErrorMsg] = useState('');
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { getCachedData, setCachedData } = useDataCache();
     const cacheKeyPrefix = `tenant-${propertyId}`;
@@ -384,7 +386,15 @@ const TenantDashboard = () => {
         <div className="p-10 text-center">
             <h2 className="text-xl font-bold text-error">Error Loading Dashboard</h2>
             <p className="text-text-secondary mt-2">{errorMsg || 'Property not found.'}</p>
-            <button onClick={() => router.back()} className="mt-4 text-primary font-bold hover:underline">Go Back</button>
+            
+                    <button
+                        onClick={() => setShowFeedbackModal(true)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-[var(--radius-md)] transition-smooth font-bold text-sm ${activeTab === 'overview' ? 'bg-primary text-text-inverse shadow-sm' : 'text-text-secondary hover:bg-muted hover:text-text-primary' } group"
+                    >
+                        <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                        Feedback / Bug
+                    </button>
+<button onClick={() => router.back()} className="mt-4 text-primary font-bold hover:underline">Go Back</button>
         </div>
     );
 
@@ -767,6 +777,11 @@ const TenantDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Edit Request Modal */}

@@ -6,6 +6,7 @@ import {
     LogOut, Settings, Search, UserCircle, Coffee, Fuel, UsersRound,
     ClipboardList, FolderKanban, Moon, Sun, ChevronRight, RefreshCw, Cog, X,
     AlertOctagon, BarChart3, FileText, Camera, Menu, Pencil, Loader2, Zap, Activity, Filter, Calendar, Package, Scan, Droplets
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -95,6 +96,7 @@ const StaffDashboard = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [errorMsg, setErrorMsg] = useState('');
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const { theme, toggleTheme } = useTheme();
     const isDarkMode = theme === 'dark';
     const [showQuickActions, setShowQuickActions] = useState(true);
@@ -396,7 +398,15 @@ const StaffDashboard = () => {
             <div className="text-center">
                 <h2 className="text-xl font-bold text-red-400">Error Loading Dashboard</h2>
                 <p className="text-muted-foreground mt-2">{errorMsg || 'Property not found.'}</p>
-                <button onClick={() => router.back()} className="mt-4 text-brand-orange font-bold hover:underline">Go Back</button>
+                
+                            <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="w-64 bg-white border-r border-slate-300 flex flex-col h-screen z-50 transition-all duration-300 fixed top-0 text-text-secondary hover:bg-muted hover:text-text-primary group"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                Feedback / Bug
+                            </button>
+<button onClick={() => router.back()} className="mt-4 text-brand-orange font-bold hover:underline">Go Back</button>
             </div>
         </div>
     );
@@ -897,6 +907,11 @@ const StaffDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
             <ShiftToast
                 message={toast.message}

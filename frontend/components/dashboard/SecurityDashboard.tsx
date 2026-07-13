@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import {
     LayoutDashboard, Ticket, Settings, LogOut, Plus,
     Clock, UsersRound, UserCircle, Shield, Fuel, LogIn, Menu, X, AlertCircle, ClipboardCheck
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -46,6 +47,7 @@ const SecurityDashboard = () => {
     const [isLoading, setIsLoading] = useState(!property);
     const [errorMsg, setErrorMsg] = useState('');
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [userRole, setUserRole] = useState('Security Officer');
     const [kpiStats, setKpiStats] = useState(() => getCachedData(`${cacheKeyPrefix}-kpis`) || {
         activeVisitors: 0,
@@ -256,7 +258,15 @@ const SecurityDashboard = () => {
         <div className="p-10 text-center">
             <h2 className="text-xl font-bold text-red-600">Error Loading Dashboard</h2>
             <p className="text-muted-foreground mt-2">{errorMsg || 'Property not found.'}</p>
-            <button onClick={() => router.back()} className="mt-4 text-foreground font-bold hover:underline">Go Back</button>
+            
+                            <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="w-72 bg-white border-r border-slate-300 flex flex-col inset-y-0 z-50 transition-all duration-300 fixed left-0 text-text-secondary hover:bg-muted hover:text-text-primary overflow-hidden group"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                Feedback / Bug
+                            </button>
+<button onClick={() => router.back()} className="mt-4 text-foreground font-bold hover:underline">Go Back</button>
         </div>
     );
 
@@ -643,6 +653,11 @@ const SecurityDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
         </div>
     );

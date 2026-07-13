@@ -486,10 +486,16 @@ export default function ProcurementDashboard() {
                                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Access: Procurement</p>
                             </div>
                         </div>
-                        <button onClick={() => setShowSignOutModal(true)} className="flex items-center gap-2 text-rose-500 hover:text-rose-600 transition-all font-black text-[10px] uppercase tracking-widest">
-                            <LogOut className="w-3.5 h-3.5" />
-                            Sign Out
-                        </button>
+                        <div className="flex items-center justify-between">
+                            <button onClick={() => setShowFeedbackModal(true)} className="flex items-center gap-2 text-slate-500 hover:text-primary transition-all font-black text-[10px] uppercase tracking-widest group">
+                                <MessageSquarePlus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
+                                Feedback
+                            </button>
+                            <button onClick={() => setShowSignOutModal(true)} className="flex items-center gap-2 text-rose-500 hover:text-rose-600 transition-all font-black text-[10px] uppercase tracking-widest group">
+                                <LogOut className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                                Sign Out
+                            </button>
+                        </div>
                     </div>
                 </div>
             </aside>

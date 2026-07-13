@@ -7,6 +7,7 @@ import {
     History, ShieldCheck, Mail, LogOut, Command,
     ClipboardList, Package, Map, PieChart, ExternalLink, IndianRupee, Store, UsersRound, Activity,
     Key, X
+, MessageSquarePlus
 } from 'lucide-react';
 import PropertyManagement from './PropertyManagement';
 import UserManagement from './UserManagement';
@@ -35,6 +36,7 @@ const OrgDashboard = ({ orgId }: { orgId: string }) => {
     const [properties, setProperties] = useState<Property[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const { signOut } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const supabase = createClient();
@@ -180,6 +182,13 @@ const OrgDashboard = ({ orgId }: { orgId: string }) => {
 
                 <div className="p-4 border-t border-border space-y-2">
                     <button
+                        onClick={() => setShowFeedbackModal(true)}
+                        className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all font-bold group"
+                    >
+                        <MessageSquarePlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        {isSidebarOpen && <span className="text-sm font-black tracking-tight">Feedback / Bug</span>}
+                    </button>
+                    <button
                         onClick={() => setShowSignOutModal(true)}
                         className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 transition-all font-bold"
                     >
@@ -193,6 +202,11 @@ const OrgDashboard = ({ orgId }: { orgId: string }) => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Main Panel */}

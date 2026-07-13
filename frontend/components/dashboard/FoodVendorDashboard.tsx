@@ -5,6 +5,7 @@ import {
     IndianRupee, LogOut, CheckCircle2, LayoutDashboard,
     FileDown, Clock, Store, Percent, Wallet, ChevronRight, X, History,
     UserCircle, Settings, Mail, Phone, Building, Save, Loader2, Camera, Plus, Menu
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -59,6 +60,7 @@ const FoodVendorDashboard = () => {
     const [isManageModalOpen, setIsManageModalOpen] = useState(false);
     const [currentCycle, setCurrentCycle] = useState<CommissionCycle | null>(null);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [showExportModal, setShowExportModal] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
@@ -426,7 +428,15 @@ const FoodVendorDashboard = () => {
                             </div>
                         </div>
 
-                        <button
+                        
+                    <button
+                        onClick={() => setShowFeedbackModal(true)}
+                        className="w-72 bg-white border-r border-slate-100 flex flex-col fixed h-full z-30 p-8 transition-transform duration-300 ease-in-out lg:translate-x-0 text-slate-400 hover:text-slate-600 hover:bg-slate-50 group"
+                    >
+                        <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                        Feedback / Bug
+                    </button>
+<button
                             onClick={handleSubmitRevenue}
                             disabled={isSubmitting || !revenue}
                             className="w-full bg-slate-900 text-white py-6 rounded-3xl font-black text-xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-200 disabled:opacity-50 flex items-center justify-center gap-2"
@@ -471,6 +481,11 @@ const FoodVendorDashboard = () => {
                     onClose={() => setShowSignOutModal(false)}
                     onConfirm={signOut}
                 />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
+            />
             </div>
         );
     }

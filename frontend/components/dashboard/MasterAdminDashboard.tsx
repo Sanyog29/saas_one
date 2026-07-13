@@ -8,6 +8,7 @@ import {
     Key, Eye, EyeOff, Globe, Copy, X, Ticket, Link as LinkIcon, LogOut,
     UserCircle, FileDown, Brain, Wrench, MessageCircle,
     TrendingUp, MapPin, Radio, Flame, Phone, Gauge
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -108,6 +109,7 @@ const MasterAdminDashboard = () => {
     const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
     const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null); // For drill-down
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const router = useRouter();
     const searchParams = useSearchParams();
     const supabase = createClient();
@@ -450,6 +452,13 @@ const MasterAdminDashboard = () => {
                     </div>
 
                     <button
+                        onClick={() => setShowFeedbackModal(true)}
+                        className="flex items-center gap-3 px-4 py-3.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-2xl w-full transition-all duration-300 text-sm font-bold group mb-1"
+                    >
+                        <MessageSquarePlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        Feedback / Bug
+                    </button>
+                    <button
                         onClick={() => setShowSignOutModal(true)}
                         className="flex items-center gap-3 px-4 py-3.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 rounded-2xl w-full transition-all duration-300 text-sm font-bold group"
                     >
@@ -463,6 +472,11 @@ const MasterAdminDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Main Content */}

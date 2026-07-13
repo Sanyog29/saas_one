@@ -6,6 +6,7 @@ import {
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Edit, Trash2, X, Check, UsersRound,
     Coffee, IndianRupee, FileDown, ChevronDown, Fuel, Menu, Upload, FileBarChart, Zap, Package, ClipboardCheck, Scan, Key,
     AlertCircle, CheckCircle2, Clock, GitBranch, DoorOpen, MessageCircle, Send, Loader2, CalendarDays, Calendar, Wrench, ShoppingCart, Sun, Moon, Droplets, TrendingUp, Smartphone
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -102,6 +103,7 @@ const OrgAdminDashboard = () => {
     const [showAddMemberModal, setShowAddMemberModal] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [showTicketCreateModal, setShowTicketCreateModal] = useState(false);
     const [selectedPropertyId, setSelectedPropertyId] = useState('all');
     const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
@@ -886,7 +888,15 @@ const OrgAdminDashboard = () => {
                 overflow-hidden
             `}>
                 {/* Mobile Close Button */}
-                <button
+                
+                            <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="w-full flex flex-col items-center justify-center gap-1.5 p-2 bg-white text-text-primary rounded-xl transition-all border-2 border-primary/20 group shadow-sm ${selectedPropertyId === 'all' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted' } group"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                Feedback / Bug
+                            </button>
+<button
                     onClick={() => setSidebarOpen(false)}
                     className="absolute top-4 right-4 lg:hidden p-2 rounded-lg hover:bg-surface-elevated transition-colors"
                 >
@@ -1241,6 +1251,11 @@ const OrgAdminDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Main Content */}

@@ -6,6 +6,7 @@ import {
     LogOut, Settings, Search, UserCircle, Coffee, Fuel, UsersRound,
     ClipboardList, FolderKanban, Moon, Sun, ChevronRight, Cog, X,
     AlertOctagon, BarChart3, FileText, Wrench, Camera, Menu, Pencil, Loader2, Filter, Activity, Zap, Calendar, ClipboardCheck, ScanLine, Tag, Droplets
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -96,6 +97,7 @@ const MstDashboard = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [errorMsg, setErrorMsg] = useState('');
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const { theme, toggleTheme } = useTheme();
     const isDarkMode = theme === 'dark';
     const [showQuickActions, setShowQuickActions] = useState(true);
@@ -540,7 +542,15 @@ const MstDashboard = () => {
             <div className="text-center">
                 <h2 className="text-xl font-bold text-error">Error Loading Dashboard</h2>
                 <p className="text-text-secondary mt-2">{errorMsg || 'Property not found.'}</p>
-                <button onClick={() => router.back()} className="mt-4 text-primary font-bold hover:underline">Go Back</button>
+                
+                            <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="w-64 bg-sidebar border-r border-slate-300 flex flex-col inset-y-0 z-50 transition-all duration-300 fixed left-0 text-text-secondary hover:bg-muted hover:text-text-primary overflow-hidden group"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                Feedback / Bug
+                            </button>
+<button onClick={() => router.back()} className="mt-4 text-primary font-bold hover:underline">Go Back</button>
             </div>
         </div>
     );
@@ -1007,6 +1017,11 @@ const MstDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             {showQRScanner && (

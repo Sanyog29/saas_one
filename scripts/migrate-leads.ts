@@ -141,7 +141,7 @@ function determineActivityType(description: string): string {
     if (desc.includes('whatsapp') || desc.includes('wp') || desc.includes('text')) return 'message';
     if (desc.includes('proposal') || desc.includes('quotation') || desc.includes('commercial')) return 'proposal';
     if (desc.includes('ringing') || desc.includes('tried calling') || desc.includes('call back') || desc.includes('declined')) return 'attempted_contact';
-    if (desc.includes('not interested') || desc.includes('don't need')) return 'lost';
+    if (desc.includes('not interested') || desc.includes("don't need")) return 'lost';
     if (desc.includes('finalized') || desc.includes('closed') || desc.includes('converted')) return 'won';
 
     return 'note';

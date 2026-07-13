@@ -6,6 +6,7 @@ import {
     CheckCircle2, UsersRound, UserCircle,
     Calendar, Building2, ChevronRight, Menu, X,
     ChevronDown, Briefcase, Clock, Activity, AlertCircle,
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -159,6 +160,7 @@ const SuperTenantDashboard = () => {
     const [activeTab, setActiveTabState] = useState<Tab>((searchParams.get('tab') as Tab) || 'overview');
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [showPropDropdown, setShowPropDropdown] = useState(false);
 
     // Sync tab + filter to URL so back button restores state
@@ -462,7 +464,15 @@ const SuperTenantDashboard = () => {
         <>
             {/* Quick Action */}
             <div className="px-4 pt-4 pb-3">
-                <button
+                
+                    <button
+                        onClick={() => setShowFeedbackModal(true)}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${active ? 'bg-primary text-white font-semibold' : 'text-text-secondary hover:text-text-primary hover:bg-muted' } group"
+                    >
+                        <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                        Feedback / Bug
+                    </button>
+<button
                     onClick={() => { setActiveTab('create_request'); setSidebarOpen(false); }}
                     disabled={!selectedPropertyId}
                     className="w-full flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
@@ -1249,6 +1259,11 @@ const SuperTenantDashboard = () => {
             </AnimatePresence>
 
             <SignOutModal isOpen={showSignOutModal} onClose={() => setShowSignOutModal(false)} onConfirm={signOut} />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
+            />
         </div>
     );
 };

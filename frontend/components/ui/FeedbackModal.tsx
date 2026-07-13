@@ -18,8 +18,8 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
     const { user, membership } = useAuth();
     const params = useParams();
     const pathname = usePathname();
-    const orgId = params.orgId as string || membership?.organization_id;
-    const propertyId = membership?.property_id; // Will be defined if property context
+    const orgId = params.orgId as string || membership?.org_id;
+    const propertyId = params.propertyId as string || null; // Will be defined if property context
 
     const [type, setType] = useState<'bug' | 'feature'>('bug');
     const [isLoading, setIsLoading] = useState(false);
@@ -29,9 +29,6 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
 
     // Form state
     const [text, setText] = useState('');
-    const [category, setCategory] = useState('other');
-    const [severity, setSeverity] = useState('medium');
-    const [module, setModule] = useState('');
     
     // Attachments
     const [files, setFiles] = useState<File[]>([]);
@@ -115,20 +112,12 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
             }
 
             const payload = {
-                type,
+                type: 'bug',
                 organization_id: orgId,
                 property_id: propertyId,
                 attachments: uploadedUrls,
-                ...(type === 'bug' ? {
-                    error_text: text,
-                    error_category: category,
-                    severity: severity,
-                    error_page_url: pathname,
-                } : {
-                    feature_description: text,
-                    target_module: module,
-                    priority: severity, // re-using severity state for priority
-                })
+                error_text: text,
+                error_page_url: pathname,
             };
 
             const response = await fetch('/api/feedback', {
@@ -146,10 +135,6 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
             
             // Reset and close
             setTimeout(() => {
-                setText('');
-                setCategory('other');
-                setSeverity('medium');
-                setModule('');
                 setFiles([]);
                 onClose();
                 setIsLoading(false);
@@ -165,20 +150,23 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
     return (
         <AnimatePresence>
             {isOpen && (
-                <>
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={onClose}
-                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-                    />
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-2xl z-50 overflow-hidden flex flex-col max-h-[90vh]"
-                    >
+                <motion.div
+                    key="backdrop"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={onClose}
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+                />
+            )}
+            {isOpen && (
+                <motion.div
+                    key="modal"
+                    initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                    className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-lg bg-surface border border-border shadow-2xl rounded-2xl z-50 overflow-hidden flex flex-col max-h-[90vh]"
+                >
                         {/* Header */}
                         <div className="flex items-center justify-between p-4 border-b border-border bg-surface-elevated shrink-0">
                             <h2 className="text-lg font-bold font-display text-text-primary">Send Feedback</h2>
@@ -208,15 +196,11 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => setType('feature')}
-                                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                                        type === 'feature' 
-                                            ? 'bg-surface text-primary shadow-sm' 
-                                            : 'text-text-secondary hover:text-text-primary'
-                                    }`}
+                                    disabled
+                                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-all text-text-tertiary cursor-not-allowed bg-black/5 dark:bg-white/5 opacity-70"
                                 >
-                                    <Lightbulb className="w-4 h-4" />
-                                    Request Feature
+                                    <Lightbulb className="w-4 h-4 opacity-50" />
+                                    Request Feature <span className="text-[10px] uppercase tracking-wider text-primary font-bold">(Coming Soon)</span>
                                 </button>
                             </div>
 
@@ -235,70 +219,7 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
                                     />
                                 </div>
 
-                                {/* Bug Specifics */}
-                                {type === 'bug' && (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-text-primary mb-1.5">Category</label>
-                                            <select 
-                                                value={category} 
-                                                onChange={(e) => setCategory(e.target.value)}
-                                                className="w-full bg-black/5 dark:bg-white/5 border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                            >
-                                                <option value="ui_broken">UI Broken / Glitch</option>
-                                                <option value="data_not_loading">Data Not Loading</option>
-                                                <option value="permission_error">Permission Error</option>
-                                                <option value="upload_failed">Upload Failed</option>
-                                                <option value="wrong_data">Wrong Data Displayed</option>
-                                                <option value="performance">Too Slow</option>
-                                                <option value="crash">App Crashed</option>
-                                                <option value="other">Other</option>
-                                            </select>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-text-primary mb-1.5">Severity</label>
-                                            <select 
-                                                value={severity} 
-                                                onChange={(e) => setSeverity(e.target.value)}
-                                                className="w-full bg-black/5 dark:bg-white/5 border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                            >
-                                                <option value="low">Low - Minor annoyance</option>
-                                                <option value="medium">Medium - Core function impacted</option>
-                                                <option value="high">High - Cannot proceed</option>
-                                                <option value="critical">Critical - System down</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                )}
 
-                                {/* Feature Specifics */}
-                                {type === 'feature' && (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-text-primary mb-1.5">Module</label>
-                                            <input 
-                                                type="text"
-                                                value={module} 
-                                                onChange={(e) => setModule(e.target.value)}
-                                                placeholder="e.g. CRM, Tickets, Inventory"
-                                                className="w-full bg-black/5 dark:bg-white/5 border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-text-primary mb-1.5">Priority</label>
-                                            <select 
-                                                value={severity} 
-                                                onChange={(e) => setSeverity(e.target.value)}
-                                                className="w-full bg-black/5 dark:bg-white/5 border border-border rounded-xl px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                            >
-                                                <option value="low">Nice to have</option>
-                                                <option value="medium">Important</option>
-                                                <option value="high">Very Important</option>
-                                                <option value="urgent">Urgent</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                )}
 
                                 {/* Screenshots */}
                                 <div>
@@ -367,7 +288,6 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
                             </p>
                         </div>
                     </motion.div>
-                </>
             )}
             
             <Toast 

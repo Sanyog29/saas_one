@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import {
     Sparkles, Package, ClipboardCheck, LogOut, Menu, X, LayoutDashboard, Settings, UserCircle, Bell, ScanLine, Smartphone
+, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
@@ -58,6 +59,7 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
     const [property, setProperty] = useState<any>(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showSignOutModal, setShowSignOutModal] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [showScannerModal, setShowScannerModal] = useState(false);
     const [showUniversalScanner, setShowUniversalScanner] = useState(false);
     const [preSelectedStockItemId, setPreSelectedStockItemId] = useState<string | undefined>();
@@ -113,7 +115,15 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
                 overflow-hidden
             `}>
                 {/* Mobile Close Button */}
-                <button
+                
+                            <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'stock' ? 'bg-primary text-text-inverse shadow-sm' : 'text-text-secondary hover:bg-muted hover:text-text-primary' } group"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                Feedback / Bug
+                            </button>
+<button
                     onClick={() => setSidebarOpen(false)}
                     className="absolute top-4 right-4 lg:hidden p-2 rounded-lg hover:bg-slate-50 transition-colors"
                 >
@@ -224,6 +234,11 @@ const SoftServiceManagerDashboard: React.FC<SoftServiceManagerDashboardProps> = 
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             <StockMovementModal

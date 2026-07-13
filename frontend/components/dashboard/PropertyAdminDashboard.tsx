@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Users, Ticket, Settings, UserCircle, UsersRound,
     Search, Plus, Filter, LogOut, ChevronRight, MapPin, Building2,
     Calendar, CheckCircle2, AlertCircle, Clock, Coffee, IndianRupee, FileDown, Fuel, Store, Activity, Upload, FileBarChart, Menu, X, Zap, RefreshCw,
-    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets, TrendingUp, QrCode, Smartphone
+    Package, ClipboardCheck, Scan, ChevronDown, Check, GitBranch, CalendarDays, ShoppingCart, Droplets, TrendingUp, QrCode, Smartphone, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
@@ -45,6 +45,7 @@ import WaterAnalyticsDashboard from '@/frontend/components/water/WaterAnalyticsD
 
 import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
 import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // Types
 type Tab = 'overview' | 'requests' | 'guest_experience' | 'reports' | 'users' | 'visitors' | 'rooms' | 'diesel' | 'diesel_analytics' | 'electricity' | 'electricity_analytics' | 'cafeteria' | 'settings' | 'profile' | 'units' | 'vendor_revenue' | 'stock' | 'checklist' | 'escalation' | 'ppm' | 'procurement' | 'roster' | 'water' | 'water_analytics';
@@ -120,6 +121,7 @@ const PropertyAdminDashboard = () => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showScannerModal, setShowScannerModal] = useState(false);
     const [showUniversalScanner, setShowUniversalScanner] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [preSelectedStockItemId, setPreSelectedStockItemId] = useState<string | undefined>();
     const [pendingStatusFilter, setPendingStatusFilter] = useState('all');
 
@@ -582,6 +584,13 @@ const PropertyAdminDashboard = () => {
                         </p>
                         <div className="space-y-1">
                             <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm text-text-secondary hover:bg-primary/10 hover:text-primary group"
+                            >
+                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                Feedback / Bug
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('settings')}
                                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${openTab === 'settings'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -620,6 +629,11 @@ const PropertyAdminDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
             />
 
             {
