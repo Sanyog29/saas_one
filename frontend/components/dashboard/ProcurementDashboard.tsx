@@ -7,7 +7,7 @@ import {
     Settings, UserCircle, LogOut, Search, Filter, 
     ChevronDown, ChevronRight, Building2, Calendar, Menu, X,
     ArrowUpRight, Scan, Truck, RefreshCw, Box, Clock,
-    AlertCircle, ExternalLink, Trash2, Camera, Link2, Shield, User, Loader2, FileText
+    AlertCircle, ExternalLink, Trash2, Camera, Link2, Shield, User, Loader2, FileText, MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import NotificationBell from './NotificationBell';
