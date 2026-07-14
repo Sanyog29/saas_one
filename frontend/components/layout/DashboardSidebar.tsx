@@ -53,6 +53,7 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
         ];
 
         if (isAdmin) {
+            items.push({ label: 'AI Automation', href: `/${orgId}/ai-tickets`, icon: Bot, domain: 'dashboards' as const });
             items.push({ label: 'Roster Management', href: `/${orgId}/dashboard?tab=roster`, icon: CalendarDays, domain: 'dashboards' as const });
             items.push({ label: 'Client Support', href: `/${orgId}/dashboard?tab=guest_experience`, icon: Smartphone, domain: 'dashboards' as const });
         }
