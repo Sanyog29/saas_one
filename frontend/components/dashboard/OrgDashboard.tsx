@@ -6,8 +6,8 @@ import {
     Settings, Search, Plus, Zap, AlertTriangle,
     History, ShieldCheck, Mail, LogOut, Command,
     ClipboardList, Package, Map, PieChart, ExternalLink, IndianRupee, Store, UsersRound, Activity,
-    Key, X
-, MessageSquarePlus
+    Key, X,
+  MessageSquarePlus
 } from 'lucide-react';
 import PropertyManagement from './PropertyManagement';
 import UserManagement from './UserManagement';

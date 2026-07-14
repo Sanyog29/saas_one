@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import {
     LayoutDashboard, Ticket, Settings, LogOut, Plus,
-    Clock, UsersRound, UserCircle, Shield, Fuel, LogIn, Menu, X, AlertCircle, ClipboardCheck
-, MessageSquarePlus
+    Clock, UsersRound, UserCircle, Shield, Fuel, LogIn, Menu, X, AlertCircle, ClipboardCheck,
+  MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';

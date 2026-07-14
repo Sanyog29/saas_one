@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import {
     IndianRupee, LogOut, CheckCircle2, LayoutDashboard,
     FileDown, Clock, Store, Percent, Wallet, ChevronRight, X, History,
-    UserCircle, Settings, Mail, Phone, Building, Save, Loader2, Camera, Plus, Menu
-, MessageSquarePlus
+    UserCircle, Settings, Mail, Phone, Building, Save, Loader2, Camera, Plus, Menu,
+  MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';

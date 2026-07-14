@@ -6,7 +6,7 @@ import {
     CheckCircle2, UsersRound, UserCircle,
     Calendar, Building2, ChevronRight, Menu, X,
     ChevronDown, Briefcase, Clock, Activity, AlertCircle,
-, MessageSquarePlus
+  MessageSquarePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/frontend/utils/supabase/client';
