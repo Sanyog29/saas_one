@@ -24,6 +24,7 @@ import SettingsView from './SettingsView';
 import Loader from '@/frontend/components/ui/Loader';
 import TicketCard from '@/frontend/components/shared/TicketCard';
 import TenantRoomBooking from '@/frontend/components/meeting-rooms/TenantRoomBooking';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // Types
 type Tab = 'overview' | 'requests' | 'create_request' | 'visitors' | 'room_booking' | 'settings' | 'profile';

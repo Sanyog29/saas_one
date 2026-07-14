@@ -48,6 +48,7 @@ import VendorManagementModal from '@/frontend/components/vendor/VendorManagement
 import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
 
 import { BDQuickStats } from './UnifiedDashboard';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // Types
 type Tab = 'overview' | 'properties' | 'requests' | 'reports' | 'visitors' | 'settings' | 'profile' | 'revenue' | 'users' | 'diesel_logger' | 'diesel' | 'electricity_logger' | 'electricity' | 'stock_reports' | 'checklist' | 'super_tenants' | 'escalation' | 'rooms' | 'ppm' | 'vendors' | 'procurement' | 'roster' | 'water_logger' | 'water' | 'guest_experience';

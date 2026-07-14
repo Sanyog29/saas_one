@@ -19,6 +19,7 @@ import SignOutModal from '@/frontend/components/ui/SignOutModal';
 import VMSOrgVisitorDashboard from '@/frontend/components/vms/VMSOrgVisitorDashboard';
 import { useTheme } from '@/frontend/context/ThemeContext';
 import { Sun, Moon } from 'lucide-react';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 type SubTab = 'dashboard' | 'properties' | 'requests' | 'alerts' | 'users' | 'analytics' | 'vendors' | 'visitors' | 'flow-map' | 'super-tenants';
 

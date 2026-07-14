@@ -17,6 +17,7 @@ import VendorPaymentModal from '@/frontend/components/vendor/VendorPaymentModal'
 import VendorManagementModal from '@/frontend/components/vendor/VendorManagementModal';
 import SettingsView from './SettingsView';
 import Image from 'next/image';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // Types
 type ViewState = 'entry' | 'already_submitted' | 'dashboard';

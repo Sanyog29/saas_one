@@ -20,6 +20,7 @@ import TicketsView from '@/frontend/components/dashboard/TicketsView';
 import SettingsView from './SettingsView';
 import SOPDashboard from '@/frontend/components/sop/SOPDashboard';
 import { useDataCache } from '@/frontend/context/DataCacheContext';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // Types
 type Tab = 'overview' | 'requests' | 'checkinout' | 'visitors' | 'diesel' | 'checklist' | 'settings' | 'profile';

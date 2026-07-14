@@ -34,6 +34,7 @@ const UniversalQRScannerModal = dynamic(() => import('@/frontend/components/shar
 
 import { WaterDashboard } from '@/frontend/components/water/WaterDashboard';
 import GuestExperienceDashboard from '@/frontend/components/guest-experience/GuestExperienceDashboard';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // Types
 type Tab = 'dashboard' | 'requests' | 'guest_experience' | 'create_request' | 'visitors' | 'diesel' | 'electricity' | 'settings' | 'profile' | 'flow-map' | 'checklist' | 'water';

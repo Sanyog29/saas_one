@@ -20,6 +20,7 @@ import TicketCard from '@/frontend/components/shared/TicketCard';
 import NotificationBell from './NotificationBell';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Filter } from 'lucide-react';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

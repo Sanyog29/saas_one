@@ -34,6 +34,7 @@ import WhatsAppTemplatesManager from '@/frontend/components/admin/WhatsAppTempla
 import WhatsAppSystemControl from '@/frontend/components/ops/WhatsAppSystemControl';
 import IssueTrackingDashboard from '@/frontend/components/master-admin/IssueTrackingDashboard';
 import DailyProgressDashboard from './DailyProgressDashboard';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 type Tab = 'overview' | 'bd-pipeline' | 'analytics' | 'daily-progress' | 'usage' | 'organizations' | 'tickets' | 'users' | 'visitors' | 'invite-links' | 'ai-insights' | 'ai-assistant' | 'issue-config' | 'modules' | 'settings' | 'resolvers' | 'super-tenants' | 'whatsapp-templates' | 'issues';
 

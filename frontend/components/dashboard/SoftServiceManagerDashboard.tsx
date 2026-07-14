@@ -32,6 +32,7 @@ const StockMovementModal = dynamic(
 );
 
 import type { QRScanResult } from '@/frontend/components/shared/UniversalQRScannerModal';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 const UniversalQRScannerModal = dynamic(
     () => import('@/frontend/components/shared/UniversalQRScannerModal'),
     { ssr: false }
