@@ -329,18 +329,19 @@ export default function DashboardSidebar({ isMobileOpen, onMobileClose }: Dashbo
                         </button>
                     </div>
 
-                    <SignOutModal
-                        isOpen={showSignOutModal}
-                        onClose={() => setShowSignOutModal(false)}
-                        onConfirm={signOut}
-                    />
-
-                    <FeedbackModal
-                        isOpen={showFeedbackModal}
-                        onClose={() => setShowFeedbackModal(false)}
-                    />
                 </div>
             </aside >
+
+            <SignOutModal
+                isOpen={showSignOutModal}
+                onClose={() => setShowSignOutModal(false)}
+                onConfirm={signOut}
+            />
+
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
+            />
         </>
     );
 }
