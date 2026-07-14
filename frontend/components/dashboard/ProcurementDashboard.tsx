@@ -14,6 +14,7 @@ import NotificationBell from './NotificationBell';
 import ProcurementPOProcessor from '../procurement/ProcurementPOProcessor';
 import ProcurementStatusModal from './ProcurementStatusModal';
 import ProcurementCatalogModal from '../procurement/ProcurementCatalogModal';
+import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
 // --- Types ---
 interface MaterialRequest {
