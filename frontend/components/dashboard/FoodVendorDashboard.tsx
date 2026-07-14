@@ -437,6 +437,9 @@ const FoodVendorDashboard = () => {
                         <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
                         Feedback / Bug
                     </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
 <button
                             onClick={handleSubmitRevenue}
                             disabled={isSubmitting || !revenue}
@@ -482,11 +485,6 @@ const FoodVendorDashboard = () => {
                     onClose={() => setShowSignOutModal(false)}
                     onConfirm={signOut}
                 />
-
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
-            />
             </div>
         );
     }

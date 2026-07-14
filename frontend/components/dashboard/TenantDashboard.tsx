@@ -395,6 +395,9 @@ const TenantDashboard = () => {
                         <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
                         Feedback / Bug
                     </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
 <button onClick={() => router.back()} className="mt-4 text-primary font-bold hover:underline">Go Back</button>
         </div>
     );
@@ -778,11 +781,6 @@ const TenantDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
-            />
-
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Edit Request Modal */}

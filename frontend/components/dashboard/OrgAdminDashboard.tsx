@@ -897,6 +897,9 @@ const OrgAdminDashboard = () => {
                                 <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
                                 Feedback / Bug
                             </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
 <button
                     onClick={() => setSidebarOpen(false)}
                     className="absolute top-4 right-4 lg:hidden p-2 rounded-lg hover:bg-surface-elevated transition-colors"
@@ -1252,11 +1255,6 @@ const OrgAdminDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
-            />
-
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Main Content */}

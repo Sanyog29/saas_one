@@ -407,6 +407,9 @@ const StaffDashboard = () => {
                                 <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
                                 Feedback / Bug
                             </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
 <button onClick={() => router.back()} className="mt-4 text-brand-orange font-bold hover:underline">Go Back</button>
             </div>
         </div>
@@ -908,11 +911,6 @@ const StaffDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
-            />
-
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
             />
             <ShiftToast
                 message={toast.message}

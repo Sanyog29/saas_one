@@ -459,6 +459,9 @@ const MasterAdminDashboard = () => {
                         <MessageSquarePlus className="w-5 h-5 group-hover:scale-110 transition-transform" />
                         Feedback / Bug
                     </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
                     <button
                         onClick={() => setShowSignOutModal(true)}
                         className="flex items-center gap-3 px-4 py-3.5 text-muted-foreground hover:text-rose-600 hover:bg-rose-500/10 rounded-2xl w-full transition-all duration-300 text-sm font-bold group"
@@ -473,11 +476,6 @@ const MasterAdminDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
-            />
-
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
             />
 
             {/* Main Content */}

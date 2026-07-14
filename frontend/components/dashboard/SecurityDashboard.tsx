@@ -267,6 +267,9 @@ const SecurityDashboard = () => {
                                 <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
                                 Feedback / Bug
                             </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
 <button onClick={() => router.back()} className="mt-4 text-foreground font-bold hover:underline">Go Back</button>
         </div>
     );
@@ -654,11 +657,6 @@ const SecurityDashboard = () => {
                 isOpen={showSignOutModal}
                 onClose={() => setShowSignOutModal(false)}
                 onConfirm={signOut}
-            />
-
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
             />
         </div>
     );

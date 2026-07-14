@@ -493,6 +493,9 @@ export default function ProcurementDashboard() {
                                 <MessageSquarePlus className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" />
                                 Feedback
                             </button>
+
+            <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
+
                             <button onClick={() => setShowSignOutModal(true)} className="flex items-center gap-2 text-rose-500 hover:text-rose-600 transition-all font-black text-[10px] uppercase tracking-widest group">
                                 <LogOut className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                                 Sign Out
@@ -1238,11 +1241,6 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText,
                         </button>
                     </div>
                 </motion.div>
-            
-            <FeedbackModal
-                isOpen={showFeedbackModal}
-                onClose={() => setShowFeedbackModal(false)}
-            />
         </div>
         )}
     </AnimatePresence>
