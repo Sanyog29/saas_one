@@ -51,6 +51,7 @@ type Tab = 'overview' | 'requests' | 'history' | 'manage-items' | 'po-generator'
 
 export default function ProcurementDashboard() {
     const supabase = createClient();
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [user, setUser] = useState<any>(null);
     const [requests, setRequests] = useState<MaterialRequest[]>([]);
     const [activities, setActivities] = useState<any[]>([]);
@@ -1236,7 +1237,12 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, title, message, confirmText,
                         </button>
                     </div>
                 </motion.div>
-            </div>
+            
+            <FeedbackModal
+                isOpen={showFeedbackModal}
+                onClose={() => setShowFeedbackModal(false)}
+            />
+        </div>
         )}
     </AnimatePresence>
 );
