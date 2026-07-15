@@ -159,6 +159,13 @@ const AdminBookingList: React.FC<AdminBookingListProps> = ({ propertyId }) => {
         }
     };
 
+    const formatTime = (t: string) => {
+        const [h, m] = t.split(':').map(Number);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+    };
+
     return (
         <div className="space-y-6">
             {/* Filters */}
@@ -233,7 +240,7 @@ const AdminBookingList: React.FC<AdminBookingListProps> = ({ propertyId }) => {
                                             </div>
                                             <div className="flex items-center gap-1.5 text-slate-400">
                                                 <Clock className="w-3 h-3" />
-                                                <span className="text-[10px] font-bold uppercase tracking-wider">{booking.start_time} - {booking.end_time}</span>
+                                                <span className="text-[10px] font-bold uppercase tracking-wider">{formatTime(booking.start_time)} - {formatTime(booking.end_time)}</span>
                                             </div>
                                             <div className="flex items-center gap-1.5 text-primary/60">
                                                 <div className="w-1 h-1 rounded-full bg-current" />

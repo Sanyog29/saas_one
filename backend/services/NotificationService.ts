@@ -591,50 +591,34 @@ export class NotificationService {
 
             const bookerName = booking.booker?.full_name || 'A tenant';
             const roomName = booking.meeting_room?.name || 'a meeting room';
+            const formatTimeAMPM = (timeStr: string) => {
+                const [hours, minutes] = timeStr.split(':');
+                let h = parseInt(hours, 10);
+                const ampm = h >= 12 ? 'PM' : 'AM';
+                h = h % 12 || 12;
+                return `${h}:${minutes} ${ampm}`;
+            };
+
             const date = booking.booking_date;
-            const startTime = booking.start_time;
-            const endTime = booking.end_time;
+            const startTime = formatTimeAMPM(booking.start_time);
+            const endTime = formatTimeAMPM(booking.end_time);
 
             const message = `${bookerName} has booked "${roomName}" for ${date} from ${startTime} to ${endTime}.`;
 
             // Get relevant recipients (Role based)
-            // Note: 'technical' is a skill/team, not an app_role enum value.
             const { data: members, error: membersError } = await supabaseAdmin
                 .from('property_memberships')
                 .select('user_id, role')
                 .eq('property_id', booking.property_id)
-                .in('role', ['property_admin', 'staff', 'mst', 'security']);
+                .in('role', ['property_admin']);
 
             if (membersError) {
                 console.error('[NotificationService] Error fetching property members for booking notification:', membersError);
                 return;
             }
 
-            const memberIds = (members || []).map(m => String(m.user_id));
-
-            // Fetch users with 'technical' skill
-            const { data: technicalSkills } = await supabaseAdmin
-                .from('mst_skills')
-                .select('user_id')
-                .eq('skill_code', 'technical')
-                .in('user_id', memberIds);
-
-            const technicalUserIds = new Set((technicalSkills || []).map(s => String(s.user_id)));
-
-            const finalRecipients = (members || []).filter(m => {
-                const role = m.role?.toLowerCase();
-                // 1. Property Admins always get notified
-                if (role === 'property_admin') return true;
-                // 2. ONLY Staff members get notified if they have the 'technical' skill
-                // (MST members are excluded even if they have technical skill)
-                if (role === 'staff') {
-                    return technicalUserIds.has(String(m.user_id));
-                }
-                return false;
-            }).map(m => String(m.user_id));
-
+            const finalRecipients = (members || []).map(m => String(m.user_id));
             const uniqueRecipients = Array.from(new Set(finalRecipients));
-
 
             for (const userId of uniqueRecipients) {
                 await this.send({
@@ -644,7 +628,10 @@ export class NotificationService {
                     type: 'ROOM_BOOKED',
                     title: 'New Room Booking',
                     message,
-                    deepLink: `/property-admin/bookings?date=${date}`
+                    deepLink: `/property-admin/bookings?date=${date}`,
+                    whatsapp: {
+                        message: `*New Room Booking*\n\n${message}`
+                    }
                 });
             }
         } catch (error) {
@@ -969,14 +956,16 @@ export class NotificationService {
 
             if (notifError) {
                 console.error('[NS] DB insert failed:', notifError.message);
-                WhatsAppQueueService.enqueue({
-                    ticketId: payload.ticketId ?? '',
-                    userIds: [payload.userId],
-                    message: payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`,
-                    mediaUrl: payload.whatsapp?.mediaUrl,
-                    mediaType: payload.whatsapp?.mediaType,
-                    eventType: payload.type,
-                }).catch(err => console.error('[NS] WhatsApp fallback error:', err));
+                if (payload.type === 'ROOM_BOOKED') {
+                    WhatsAppQueueService.enqueue({
+                        ticketId: payload.ticketId ?? '',
+                        userIds: [payload.userId],
+                        message: payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`,
+                        mediaUrl: payload.whatsapp?.mediaUrl,
+                        mediaType: payload.whatsapp?.mediaType,
+                        eventType: payload.type,
+                    }).catch(err => console.error('[NS] WhatsApp fallback error:', err));
+                }
                 return;
             }
 
@@ -1026,14 +1015,16 @@ export class NotificationService {
                     waMessage = `*${payload.title}*\n\n${payload.message}`;
                 }
 
-                await WhatsAppQueueService.enqueue({
-                    ticketId: payload.ticketId ?? '',
-                    userIds: [payload.userId],
-                    message: waMessage,
-                    mediaUrl: waMediaUrl,
-                    mediaType: waMediaType,
-                    eventType: payload.type,
-                });
+                if (payload.type === 'ROOM_BOOKED') {
+                    await WhatsAppQueueService.enqueue({
+                        ticketId: payload.ticketId ?? '',
+                        userIds: [payload.userId],
+                        message: waMessage,
+                        mediaUrl: waMediaUrl,
+                        mediaType: waMediaType,
+                        eventType: payload.type,
+                    });
+                }
             } catch (err) {
                 console.error('[NS] WhatsApp queue error:', err);
             }
@@ -1068,15 +1059,17 @@ export class NotificationService {
             console.error('[NS] sendToMany DB insert failed:', insertErr.message);
             // Fallback to WhatsApp so bulk notifications don't silently vanish
             try {
-                const waMessage = payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`;
-                await WhatsAppQueueService.enqueue({
-                    ticketId: payload.ticketId ?? '',
-                    userIds: unique,
-                    message: waMessage,
-                    mediaUrl: payload.whatsapp?.mediaUrl,
-                    mediaType: payload.whatsapp?.mediaType,
-                    eventType: payload.type,
-                });
+                if (payload.type === 'ROOM_BOOKED') {
+                    const waMessage = payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`;
+                    await WhatsAppQueueService.enqueue({
+                        ticketId: payload.ticketId ?? '',
+                        userIds: unique,
+                        message: waMessage,
+                        mediaUrl: payload.whatsapp?.mediaUrl,
+                        mediaType: payload.whatsapp?.mediaType,
+                        eventType: payload.type,
+                    });
+                }
             } catch (waErr) {
                 console.error('[NS] sendToMany WhatsApp fallback error:', waErr);
             }
@@ -1104,15 +1097,17 @@ export class NotificationService {
         }
 
         try {
-            const waMessage = payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`;
-            await WhatsAppQueueService.enqueue({
-                ticketId: payload.ticketId ?? '',
-                userIds: unique,
-                message: waMessage,
-                mediaUrl: payload.whatsapp?.mediaUrl,
-                mediaType: payload.whatsapp?.mediaType,
-                eventType: payload.type,
-            });
+            if (payload.type === 'ROOM_BOOKED') {
+                const waMessage = payload.whatsapp?.message || `*${payload.title}*\n\n${payload.message}`;
+                await WhatsAppQueueService.enqueue({
+                    ticketId: payload.ticketId ?? '',
+                    userIds: unique,
+                    message: waMessage,
+                    mediaUrl: payload.whatsapp?.mediaUrl,
+                    mediaType: payload.whatsapp?.mediaType,
+                    eventType: payload.type,
+                });
+            }
         } catch (err) {
             console.error('[NS] sendToMany WhatsApp queue error:', err);
         }
@@ -1248,7 +1243,12 @@ export class NotificationService {
                     .eq('id', delivery.id);
             }
         } catch (error: any) {
-            console.error('[FCM] Push dispatch failed:', error);
+            // Suppress the huge stack trace if it's just a sender-id-mismatch (common when testing mobile vs web mismatch)
+            if (error?.codePrefix === 'messaging' || error?.message?.includes('SenderId mismatch')) {
+                console.warn(`[FCM] Push skipped for ${delivery?.id}: SenderId mismatch (check FIREBASE_PROJECT_ID in .env)`);
+            } else {
+                console.error('[FCM] Push dispatch failed:', error);
+            }
             if (delivery) {
                 await supabaseAdmin
                     .from('notification_delivery')
