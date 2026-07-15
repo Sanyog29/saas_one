@@ -651,14 +651,9 @@ const UserDirectory = ({ orgId, orgName, propertyId, properties = [], onUserUpda
                                                         <div className="flex items-center gap-1">
                                                             <button
                                                                 onClick={() => {
-                                                                    const currentRole = user.propertyRole || user.orgRole || '';
-                                                                    if (editingRole === currentRole) {
-                                                                        showToast('Please select a different role', 'error');
-                                                                        return;
-                                                                    }
                                                                     handleUpdateRole(user.id, editingRole);
                                                                 }}
-                                                                disabled={isUpdating || editingRole === (user.propertyRole || user.orgRole || '')}
+                                                                disabled={isUpdating}
                                                                 className="p-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
                                                             >
                                                                 <Check className="w-4 h-4" />

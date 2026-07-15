@@ -51,6 +51,8 @@ export function useFCM() {
                 } else {
                     console.log('[FCM] Token synchronized successfully');
                 }
+            } catch (err) {
+                console.error('[FCM] Initialization error:', err);
             } finally {
                 isInitializing.current = false;
             }

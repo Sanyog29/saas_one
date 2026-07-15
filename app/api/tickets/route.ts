@@ -459,7 +459,13 @@ export async function POST(request: NextRequest) {
             try {
                 const assignmentResult = await processIntelligentAssignment(
                     supabase,
-                    [{ id: finalTicket.id, property_id: propId, skill_group_code: skill_group }],
+                    [{ 
+                        id: finalTicket.id, 
+                        property_id: propId, 
+                        skill_group_code: skill_group,
+                        title: finalTicket.title,
+                        description: finalTicket.description
+                    }],
                     propId
                 );
 

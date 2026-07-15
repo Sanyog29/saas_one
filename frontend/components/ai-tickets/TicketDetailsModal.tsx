@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { X, ExternalLink, Code2, AlertTriangle, MessageSquare } from 'lucide-react';
+import { X, ExternalLink, Code2, AlertTriangle, MessageSquare, Cpu, Github } from 'lucide-react';
 import { TicketStatusBadge } from './TicketStatusBadge';
 
 interface TicketDetailsModalProps {

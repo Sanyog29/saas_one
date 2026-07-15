@@ -45,7 +45,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ prop
             .select('*')
             .in('meter_id', meterIds)
             .gte('reading_date', startDate)
-            .lt('reading_date', endDate);
+            .lt('reading_date', endDate)
+            .limit(10000);
 
         if (error) throw error;
 
@@ -54,7 +55,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ prop
             .select('*')
             .in('meter_id', meterIds)
             .lt('reading_date', startDate)
-            .order('reading_date', { ascending: false });
+            .order('reading_date', { ascending: false })
+            .limit(10000);
             
         if (prevError) throw prevError;
         
@@ -67,7 +69,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ prop
                 .select('*')
                 .in('meter_id', meterIds)
                 .gte('reading_date', startDate)
-                .lt('reading_date', endDate);
+                .lt('reading_date', endDate)
+                .limit(10000);
                 
             if (legacyReadings && legacyReadings.length > 0) {
                 const existingKeys = new Set(mergedReadings.map(r => `${r.meter_id}_${r.reading_date}`));
@@ -91,7 +94,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ prop
                 .select('*')
                 .in('meter_id', meterIds)
                 .lt('reading_date', startDate)
-                .order('reading_date', { ascending: false });
+                .order('reading_date', { ascending: false })
+                .limit(10000);
                 
             if (legacyPrev && legacyPrev.length > 0) {
                 const existingKeys = new Set(mergedPrevReadings.map(r => `${r.meter_id}_${r.reading_date}`));

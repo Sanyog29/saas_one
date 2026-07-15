@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bug, Lightbulb, Image as ImageIcon, Loader2, Send } from 'lucide-react';
 import { useAuth } from '@/frontend/context/AuthContext';
@@ -36,6 +37,12 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const supabase = createClient();
+
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
@@ -147,7 +154,9 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
         }
     };
 
-    return (
+    if (!mounted) return null;
+
+    const modalContent = (
         <AnimatePresence>
             {isOpen && (
                 <motion.div
@@ -298,4 +307,6 @@ export default function FeedbackModal({ isOpen, onClose }: FeedbackModalProps) {
             />
         </AnimatePresence>
     );
+
+    return createPortal(modalContent, document.body);
 }

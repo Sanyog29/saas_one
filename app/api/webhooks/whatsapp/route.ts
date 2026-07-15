@@ -564,7 +564,13 @@ async function processIncomingMessage(
             const { processIntelligentAssignment } = await import('@/backend/lib/ticketing/assignment');
             await processIntelligentAssignment(
                 supabaseAdmin,
-                [{ id: ticket.id, property_id: propertyId, skill_group_code: skill_group }],
+                [{ 
+                    id: ticket.id, 
+                    property_id: propertyId, 
+                    skill_group_code: skill_group,
+                    title: ticket.title,
+                    description: ticket.description
+                }],
                 propertyId
             );
 

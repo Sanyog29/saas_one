@@ -257,7 +257,7 @@ export async function POST(request: NextRequest) {
                 // MST -> technical, plumbing, vendor
                 // Staff -> soft_services
                 const VALID_MST_SKILLS = ['technical', 'plumbing', 'vendor'];
-                const VALID_STAFF_SKILLS = ['soft_services'];
+                const VALID_STAFF_SKILLS = ['soft_services', 'technical'];
 
                 const skillsForResolver = role === 'mst'
                     ? effectiveSkills.filter((s: string) => VALID_MST_SKILLS.includes(s))

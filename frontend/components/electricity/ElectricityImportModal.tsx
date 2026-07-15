@@ -66,24 +66,50 @@ function parseCSV(text: string): ParsedRow[] {
     const rows: ParsedRow[] = [];
 
     for (let i = 1; i < lines.length; i++) {
-        // Handle CSV values (with or without quotes)
-        const cols = lines[i].split(',').map(c => c.replace(/^"|"$/g, '').trim());
+        const rowText = lines[i];
+        const cols: string[] = [];
+        let inQuotes = false;
+        let currToken = '';
+        
+        for (let j = 0; j < rowText.length; j++) {
+            const char = rowText[j];
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                cols.push(currToken.trim());
+                currToken = '';
+            } else {
+                currToken += char;
+            }
+        }
+        cols.push(currToken.trim());
+        
         const rowNum = i + 1;
 
         if (cols.length < 3 || cols.every(c => !c)) continue;
 
         const dateStr = parseDate(cols[0] || '');
-        const opening = parseFloat(cols[1] || '');
-        const closing = parseFloat(cols[2] || '');
+        const openingRaw = (cols[1] || '').replace(/,/g, '');
+        const closingRaw = (cols[2] || '').replace(/,/g, '');
+        
+        const opening = parseFloat(openingRaw);
+        const closing = parseFloat(closingRaw);
         const notes = cols[3] || '';
 
         let error: string | undefined;
         if (!dateStr) error = `Invalid date format "${cols[0]}"`;
-        else if (isNaN(opening)) error = `Invalid opening reading "${cols[1]}"`;
-        else if (isNaN(closing)) error = `Invalid closing reading "${cols[2]}"`;
-        else if (closing < opening) error = `Closing (${closing}) < Opening (${opening})`;
+        else if (openingRaw !== '' && isNaN(opening)) error = `Invalid opening reading "${cols[1]}"`;
+        else if (closingRaw !== '' && isNaN(closing)) error = `Invalid closing reading "${cols[2]}"`;
+        else if (!isNaN(closing) && !isNaN(opening) && closing < opening) error = `Closing (${closing}) < Opening (${opening})`;
 
-        rows.push({ rowNum, date: dateStr || cols[0], openingReading: opening, closingReading: closing, notes, error });
+        rows.push({ 
+            rowNum, 
+            date: dateStr || cols[0], 
+            openingReading: isNaN(opening) ? 0 : opening, 
+            closingReading: isNaN(closing) ? 0 : closing, 
+            notes, 
+            error 
+        });
     }
 
     return rows;

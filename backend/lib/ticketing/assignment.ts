@@ -12,6 +12,8 @@ interface TicketData {
     id: string;
     property_id: string;
     skill_group_code: string | null;
+    title?: string;
+    description?: string;
 }
 
 interface ResolverStat {
@@ -58,17 +60,17 @@ export async function processIntelligentAssignment(
         .select('user_id, skill_code')
         .in('user_id', typedResolverStats.map((rs: any) => rs.user_id));
 
-    // 2.5 Fetch user roles from property_memberships to identify staff
-    const { data: userRoles } = await supabase
+    // 2.5 Fetch all active MST/Staff members for this property (for role checking and @mention assignment)
+    const { data: allMembersInfo } = await supabase
         .from('property_memberships')
-        .select('user_id, role')
+        .select('user_id, role, users!inner(full_name)')
         .eq('property_id', propertyId)
         .eq('is_active', true)
-        .in('user_id', typedResolverStats.map((rs: any) => rs.user_id));
+        .in('role', ['mst', 'staff']);
 
     // Create a map of user_id -> role for quick lookup
     const userRoleMap: Record<string, string> = {};
-    (userRoles || []).forEach((ur: any) => {
+    (allMembersInfo || []).forEach((ur: any) => {
         userRoleMap[ur.user_id] = ur.role;
     });
 
@@ -137,35 +139,54 @@ export async function processIntelligentAssignment(
             let assignedTo: string | null = null;
             let status = 'assigned';
 
-            if (pool.length > 0) {
-                // Persistent Round-Robin: Sort by last_assigned_at (nulls first)
-                pool.sort((a, b) => {
-                    if (!a.last_assigned_at) return -1;
-                    if (!b.last_assigned_at) return 1;
-                    return new Date(a.last_assigned_at).getTime() - new Date(b.last_assigned_at).getTime();
-                });
+            // Check for @mention in title or description FIRST
+            const fullText = `${ticket.title || ''} ${ticket.description || ''}`.toLowerCase();
+            if (fullText.includes('@') && allMembersInfo) {
+                for (const member of allMembersInfo) {
+                    const name = (member.users?.full_name || '').toLowerCase();
+                    if (name) {
+                        const firstName = name.split(' ')[0];
+                        // If mentioned by full name or first name
+                        if (fullText.includes(`@${name}`) || fullText.includes(`@${firstName}`)) {
+                            assignedTo = member.user_id;
+                            console.log(`[Assignment] @Mention found for ${name}, explicitly assigning to ${assignedTo}`);
+                            break;
+                        }
+                    }
+                }
+            }
 
-                const winner = pool[0];
-                assignedTo = winner.user_id;
+            if (!assignedTo) {
+                if (pool.length > 0) {
+                    // Persistent Round-Robin: Sort by last_assigned_at (nulls first)
+                    pool.sort((a, b) => {
+                        if (!a.last_assigned_at) return -1;
+                        if (!b.last_assigned_at) return 1;
+                        return new Date(a.last_assigned_at).getTime() - new Date(b.last_assigned_at).getTime();
+                    });
 
-                // Update the winner's local stats for the next ticket in this batch
-                winner.last_assigned_at = new Date().toISOString();
-            } else if (fallbackResolver) {
-                // No pool available, use fallback resolver
-                assignedTo = fallbackResolver;
-            } else {
-                // Last resort: find any MST/staff in the property
-                const { data: anyResolver } = await supabase
-                    .from('property_memberships')
-                    .select('user_id')
-                    .eq('property_id', propertyId)
-                    .eq('is_active', true)
-                    .in('role', ['mst', 'staff'])
-                    .limit(1)
-                    .single();
+                    const winner = pool[0];
+                    assignedTo = winner.user_id;
 
-                if (anyResolver) {
-                    assignedTo = anyResolver.user_id;
+                    // Update the winner's local stats for the next ticket in this batch
+                    winner.last_assigned_at = new Date().toISOString();
+                } else if (fallbackResolver) {
+                    // No pool available, use fallback resolver
+                    assignedTo = fallbackResolver;
+                } else {
+                    // Last resort: find any MST/staff in the property
+                    const { data: anyResolver } = await supabase
+                        .from('property_memberships')
+                        .select('user_id')
+                        .eq('property_id', propertyId)
+                        .eq('is_active', true)
+                        .in('role', ['mst', 'staff'])
+                        .limit(1)
+                        .single();
+
+                    if (anyResolver) {
+                        assignedTo = anyResolver.user_id;
+                    }
                 }
             }
 
