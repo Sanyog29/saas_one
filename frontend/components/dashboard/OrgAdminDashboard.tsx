@@ -889,14 +889,7 @@ const OrgAdminDashboard = () => {
                 overflow-hidden
             `}>
                 {/* Mobile Close Button */}
-                
-                            <button
-                                onClick={() => setShowFeedbackModal(true)}
-                                className="w-full flex flex-col items-center justify-center gap-1.5 p-2 bg-white text-text-primary rounded-xl transition-all border-2 border-primary/20 group shadow-sm ${selectedPropertyId === 'all' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-muted' } group"
-                            >
-                                <MessageSquarePlus className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                Feedback / Bug
-                            </button>
+
 
             <FeedbackModal isOpen={showFeedbackModal} onClose={() => setShowFeedbackModal(false)} />
 
@@ -1200,6 +1193,13 @@ const OrgAdminDashboard = () => {
                         </p>
                         <div className="space-y-1">
                             <button
+                                onClick={() => setShowFeedbackModal(true)}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm text-text-secondary hover:bg-muted hover:text-text-primary`}
+                            >
+                                <MessageSquarePlus className="w-4 h-4" />
+                                Feedback / Bug
+                            </button>
+                            <button
                                 onClick={() => handleTabChange('settings')}
                                 className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 font-bold text-sm ${activeTab === 'settings'
                                     ? 'bg-primary text-text-inverse shadow-sm'
@@ -1223,7 +1223,7 @@ const OrgAdminDashboard = () => {
                     </div>
                 </nav>
 
-                <div className="pt-3 border-t border-border px-4 pb-12 flex-shrink-0 bg-white">
+                <div className="pt-3 border-t border-border px-4 pb-6 flex-shrink-0 bg-white">
                     {/* User Profile Section */}
                     {user?.user_metadata?.role !== 'org_super_admin' && (
                         <div className="flex items-center gap-2 px-1 mb-2">

@@ -122,7 +122,7 @@ export class WhatsAppService {
             return false;
         }
 
-        const to = `${formattedPhone}@s.whatsapp.net`;
+        const to = formattedPhone;
         const ticketUrl = this.buildAbsoluteUrl(options.deepLink);
         const captionText = ticketUrl
             ? `${options.message}\n\n${ticketUrl}`
@@ -174,7 +174,7 @@ export class WhatsAppService {
         if (!WASENDER_API_KEY || !WASENDER_SENDER_ID) return false;
         const formattedPhone = this.formatPhone(phone);
         if (!formattedPhone || formattedPhone.length < 11) return false;
-        const to = `${formattedPhone}@s.whatsapp.net`;
+        const to = formattedPhone;
         try {
             await this.callAPI('send-message', {
                 session: WASENDER_SENDER_ID,
