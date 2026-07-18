@@ -116,6 +116,30 @@ export async function POST(request: NextRequest) {
             console.error('[Procurement API] Notification failed:', err);
         });
 
+        // 5. Send Automated Email to Assignee
+        if (assignee_uid) {
+            (async () => {
+                try {
+                    const { EmailService } = await import('@/backend/services/EmailService');
+                    const { data: assignee } = await adminSupabase.from('users').select('email').eq('id', assignee_uid).single();
+                    const { data: ticket } = await adminSupabase.from('tickets').select('*, property:properties(name)').eq('id', ticket_id).single();
+                    const { data: requester } = await adminSupabase.from('users').select('id, full_name, email').eq('id', user.id).single();
+                    
+                    if (assignee?.email && ticket) {
+                        EmailService.sendMaterialRequestEmail({
+                            emailTo: assignee.email,
+                            ticket,
+                            property: ticket.property,
+                            requestedBy: requester,
+                            items
+                        }).catch(e => console.error('SMTP Failure (Async):', e));
+                    }
+                } catch (e) {
+                    console.error('Failed to trigger email:', e);
+                }
+            })();
+        }
+
         return NextResponse.json(mRequest);
     } catch (error) {
         console.error('API Error:', error);

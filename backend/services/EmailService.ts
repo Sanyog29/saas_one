@@ -18,7 +18,7 @@ export const EmailService = {
         }
         try {
             await transporter.sendMail({
-                from: `"Autopilot CRM" <${process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER}>`,
+                from: `"Autopilot FMS" <${process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER}>`,
                 to: emailTo,
                 subject,
                 html,
@@ -72,12 +72,18 @@ export const EmailService = {
                 ${itemsHtml}
             </ul>
 
-            <p>Please check the Procurement Dashboard to fulfill this request.</p>
+            <p>Please check the Procurement Dashboard or view the ticket directly to fulfill this request.</p>
+            
+            <p style="margin-top: 20px;">
+                <a href="${process.env.NEXT_PUBLIC_SITE_URL || 'https://autopilotoffices.com'}/tickets/${ticket.id}?from=requests" style="display: inline-block; padding: 12px 24px; background-color: #000000; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 500; font-family: sans-serif;">
+                    View Ticket Details
+                </a>
+            </p>
         `;
 
         try {
             await transporter.sendMail({
-                from: `"Autopilot Support" <${process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER}>`,
+                from: `"Autopilot FMS" <${process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER}>`,
                 to: emailTo,
                 subject,
                 html,

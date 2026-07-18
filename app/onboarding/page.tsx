@@ -395,7 +395,13 @@ export default function OnboardingPage() {
             }
 
             // 3️⃣ Update user profile with phone (if filled) and onboarding status
-            const profileUpdate: any = { onboarding_completed: true };
+            const nameFromMetadata = authUser.user_metadata?.full_name || authUser.user_metadata?.name;
+            const profileUpdate: any = { 
+                onboarding_completed: true,
+                // Ensure name is ALWAYS saved to the DB, plugging the Google OAuth loophole
+                ...(nameFromMetadata ? { full_name: nameFromMetadata } : {})
+            };
+            
             const cleanPhone = phoneNumber.trim();
             if (cleanPhone.length >= 10) {
                 profileUpdate.phone = cleanPhone;

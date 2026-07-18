@@ -33,6 +33,12 @@ export async function DELETE(
             return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
         }
 
+        // Prevent deletion if the meeting has already ended
+        const bookingEnd = new Date(`${booking.booking_date}T${booking.end_time}`);
+        if (bookingEnd <= new Date()) {
+            return NextResponse.json({ error: 'Cannot delete a booking that has already ended' }, { status: 400 });
+        }
+
         const isOwner = booking.user_id === user.id;
 
         // 2. Permission Check: Master Admin
@@ -134,7 +140,6 @@ export async function DELETE(
         }
 
         // 8. Refund credits if booking is in the future
-        const bookingEnd = new Date(`${booking.booking_date}T${booking.end_time}`);
         if (bookingEnd > new Date()) {
             const [startH, startM] = booking.start_time.split(':').map(Number);
             const [endH, endM] = booking.end_time.split(':').map(Number);
