@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
                     .eq('organization_id', property.organization_id)
                     .single();
 
-                if (orgMembership?.role === 'org_admin') {
+                if (orgMembership?.role === 'org_admin' || orgMembership?.role === 'org_super_admin') {
                     // Org admin has access - proceed
                 } else {
                     return NextResponse.json({ error: 'Forbidden: Insufficient permissions' }, { status: 403 });
