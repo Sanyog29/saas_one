@@ -189,13 +189,56 @@ export async function GET(request: NextRequest) {
             .order('created_at', { ascending: false });
 
         if (organizationId) query = query.eq('organization_id', organizationId);
-        if (propertyId) query = query.eq('property_id', propertyId);
         if (ticketId) query = query.eq('ticket_id', ticketId);
         if (floorNumber && floorNumber !== 'all') {
             if (floorNumber === 'unspecified') {
                 query = query.or('floor_number.is.null,floor_number.eq.""', { foreignTable: 'tickets' });
             } else {
                 query = query.eq('tickets.floor_number', floorNumber);
+            }
+        }
+
+        // 1. Check organization-level access first (for HO users)
+        const { data: orgMemberships } = await adminSupabase
+            .from('organization_memberships')
+            .select('organization_id, role')
+            .eq('user_id', user.id);
+            
+        const isHO = orgMemberships?.some(m => ['org_super_admin', 'master_admin', 'procurement'].includes(m.role));
+
+        if (isHO) {
+            const orgIds = orgMemberships?.map(m => m.organization_id) || [];
+            if (propertyId) {
+                // HO can see any property in their org
+                query = query.eq('property_id', propertyId).in('organization_id', orgIds);
+            } else {
+                query = query.in('organization_id', orgIds);
+            }
+        } else {
+            // 2. Not an HO user, check property assignments
+            const { data: memberships } = await adminSupabase
+                .from('property_memberships')
+                .select('property_id')
+                .eq('user_id', user.id)
+                .eq('is_active', true);
+
+            const propertyIds = memberships?.map(m => m.property_id) || [];
+
+            if (propertyIds.length > 0) {
+                // User is tied to specific properties. 
+                // If they requested a specific one, check if they have access to it.
+                if (propertyId) {
+                    if (propertyIds.includes(propertyId)) {
+                        query = query.eq('property_id', propertyId);
+                    } else {
+                        // No access to requested property
+                        return NextResponse.json([]);
+                    }
+                } else {
+                    query = query.in('property_id', propertyIds);
+                }
+            } else {
+                return NextResponse.json([]);
             }
         }
 

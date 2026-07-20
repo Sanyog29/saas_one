@@ -192,6 +192,90 @@ export async function POST(request: NextRequest) {
             console.error('[Booking API] Notification trigger error:', err);
         });
 
+        // Check Email Preferences & Send Email to Property Admins
+        await (async () => {
+            try {
+                console.log('[EmailService] Starting email flow for booking...');
+                // Fetch property to get organization_id
+                const { data: property, error: propErr } = await supabaseAdmin
+                    .from('properties')
+                    .select('organization_id, name')
+                    .eq('id', propertyId)
+                    .single();
+
+                if (propErr) { console.error('[EmailService] Property fetch error:', propErr); return; }
+                if (!property?.organization_id) { console.warn('[EmailService] No org_id on property'); return; }
+                console.log('[EmailService] Org ID:', property.organization_id);
+                
+                // Fetch organization email preferences from organization_settings
+                const { data: orgData, error: orgErr } = await supabaseAdmin
+                    .from('organization_settings')
+                    .select('email_preferences, email_templates')
+                    .eq('organization_id', property.organization_id)
+                    .maybeSingle();
+
+                if (orgErr) { console.error('[EmailService] Org settings fetch error:', orgErr); }
+                console.log('[EmailService] Org settings:', JSON.stringify(orgData));
+                
+                // Default to true if not explicitly disabled
+                const emailPrefs = orgData?.email_preferences || {};
+                if (emailPrefs.meeting_rooms === false) { console.log('[EmailService] Meeting rooms email disabled for org'); return; }
+
+                // Get custom template HTML for this org + module (if saved)
+                const customHtml = (orgData as any)?.email_templates?.meeting_rooms?.html || null;
+
+                // Fetch property admins for this property
+                const { data: admins, error: adminsErr } = await supabaseAdmin
+                    .from('property_memberships')
+                    .select('user:users!user_id(email)')
+                    .eq('property_id', propertyId)
+                    .eq('role', 'property_admin')
+                    .eq('is_active', true);
+
+                if (adminsErr) { console.error('[EmailService] Admins fetch error:', adminsErr); }
+                console.log('[EmailService] Property admins found:', admins?.length ?? 0);
+
+                if (!admins || admins.length === 0) { console.warn('[EmailService] No property admins found, skipping email'); return; }
+
+                // Fetch meeting room name only (no join - no FK relationship with properties)
+                const { data: roomData, error: roomErr } = await supabaseAdmin
+                    .from('meeting_rooms')
+                    .select('name')
+                    .eq('id', meetingRoomId)
+                    .single();
+
+                if (roomErr) { console.error('[EmailService] Room fetch error:', roomErr); }
+                if (!roomData) return;
+
+                const { EmailService } = await import('@/backend/services/EmailService');
+                const requesterName = user.user_metadata?.full_name || 'Tenant User';
+                const requesterEmail = user.email || 'N/A';
+
+                for (const admin of admins) {
+                    // @ts-ignore - Supabase join typing workaround
+                    const emailTo = admin.user?.email || admin.user?.[0]?.email;
+                    console.log('[EmailService] Sending to admin:', emailTo);
+                    if (emailTo) {
+                        const result = await EmailService.sendMeetingRoomEmail({
+                            emailTo: emailTo,
+                            roomName: roomData.name,
+                            date,
+                            startTime,
+                            endTime,
+                            propertyName: property.name || 'Your Property',
+                            requesterName,
+                            requesterEmail,
+                            comment: comment || null,
+                            customHtml
+                        });
+                        console.log('[EmailService] Email send result:', result);
+                    }
+                }
+            } catch (emailErr) {
+                console.error('[Booking API] Error sending property admin email:', emailErr);
+            }
+        })();
+
         return NextResponse.json({ success: true, booking }, { status: 201 });
     } catch (error) {
         console.error('Booking POST error:', error);

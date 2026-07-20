@@ -25,7 +25,7 @@ export async function DELETE(
         // 1. Fetch booking to get property_id
         const { data: booking, error: bookingError } = await adminSupabase
             .from('meeting_room_bookings')
-            .select('property_id, user_id, company_id, booking_date, start_time, end_time')
+            .select('property_id, user_id, company_id, booking_date, start_time, end_time, meeting_room_id, meeting_rooms(name), users(full_name, email)')
             .eq('id', bookingId)
             .single();
 
@@ -33,10 +33,10 @@ export async function DELETE(
             return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
         }
 
-        // Prevent deletion if the meeting has already ended
-        const bookingEnd = new Date(`${booking.booking_date}T${booking.end_time}`);
-        if (bookingEnd <= new Date()) {
-            return NextResponse.json({ error: 'Cannot delete a booking that has already ended' }, { status: 400 });
+        // Prevent deletion if the meeting has already started
+        const bookingStart = new Date(`${booking.booking_date}T${booking.start_time}`);
+        if (bookingStart <= new Date()) {
+            return NextResponse.json({ error: 'Cannot cancel a booking after its start time' }, { status: 400 });
         }
 
         const isOwner = booking.user_id === user.id;
@@ -139,8 +139,8 @@ export async function DELETE(
             console.error('Activity log insertion failed:', err);
         }
 
-        // 8. Refund credits if booking is in the future
-        if (bookingEnd > new Date()) {
+        // 8. Refund credits if booking is in the future (which is guaranteed by the check above, but keeping the safeguard)
+        if (bookingStart > new Date()) {
             const [startH, startM] = booking.start_time.split(':').map(Number);
             const [endH, endM] = booking.end_time.split(':').map(Number);
             const durationHours = (endH * 60 + endM - startH * 60 - startM) / 60;
@@ -159,6 +159,72 @@ export async function DELETE(
                 }
             );
         }
+
+        // 9. Send cancellation email
+        await (async () => {
+            try {
+                // Fetch property details
+                const { data: propData } = await adminSupabase
+                    .from('properties')
+                    .select('name, organization_id')
+                    .eq('id', booking.property_id)
+                    .single();
+                    
+                if (!propData?.organization_id) return;
+                
+                // Fetch organization email preferences from organization_settings
+                const { data: orgData } = await adminSupabase
+                    .from('organization_settings')
+                    .select('email_preferences, email_templates')
+                    .eq('organization_id', propData.organization_id)
+                    .maybeSingle();
+                
+                const emailPrefs = orgData?.email_preferences || {};
+                if (emailPrefs.meeting_rooms === false) return; // Skip if disabled
+
+                // Get custom template HTML for this org + module (if saved)
+                const customHtml = orgData?.email_templates?.meeting_rooms?.html || null;
+
+                // Fetch property admins
+                const { data: admins } = await adminSupabase
+                    .from('property_memberships')
+                    .select('user:users!user_id(email)')
+                    .eq('property_id', booking.property_id)
+                    .eq('role', 'property_admin')
+                    .eq('is_active', true);
+
+                if (!admins || admins.length === 0) return;
+
+                const { EmailService } = await import('@/backend/services/EmailService');
+                // @ts-ignore - Supabase join typing workaround
+                const roomName = booking.meeting_rooms?.name || 'Unknown Room';
+                // @ts-ignore
+                const requesterName = booking.users?.full_name || 'Tenant User';
+                // @ts-ignore
+                const requesterEmail = booking.users?.email || 'N/A';
+
+                for (const admin of admins) {
+                    // @ts-ignore
+                    const emailTo = admin.user?.email || admin.user?.[0]?.email;
+                    if (emailTo) {
+                        await EmailService.sendMeetingRoomEmail({
+                            emailTo: emailTo,
+                            roomName: roomName,
+                            date: booking.booking_date,
+                            startTime: booking.start_time,
+                            endTime: booking.end_time,
+                            propertyName: propData.name || 'Your Property',
+                            requesterName,
+                            requesterEmail,
+                            isCancellation: true,
+                            customHtml
+                        });
+                    }
+                }
+            } catch (emailErr) {
+                console.error('[Booking API] Error sending cancellation email:', emailErr);
+            }
+        })();
 
         return NextResponse.json({ success: true, message: 'Booking deleted successfully' });
     } catch (error) {
