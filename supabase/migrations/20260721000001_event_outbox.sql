@@ -37,12 +37,38 @@ CREATE OR REPLACE FUNCTION public.create_outbox_event()
 RETURNS TRIGGER AS $$
 DECLARE
     v_event_type VARCHAR;
+    v_payload JSONB;
 BEGIN
     IF TG_TABLE_NAME = 'meeting_room_bookings' THEN
         IF TG_OP = 'INSERT' THEN
             v_event_type := 'MEETING_ROOM_BOOKED';
+            v_payload := row_to_json(NEW)::jsonb;
+            
+            INSERT INTO public.event_outbox (event_type, entity_id, payload)
+            VALUES (v_event_type, NEW.id, v_payload);
+            
+            RETURN NEW;
+            
         ELSIF TG_OP = 'UPDATE' AND NEW.status = 'cancelled' AND OLD.status != 'cancelled' THEN
             v_event_type := 'MEETING_ROOM_CANCELLED';
+            v_payload := row_to_json(NEW)::jsonb;
+            
+            INSERT INTO public.event_outbox (event_type, entity_id, payload)
+            VALUES (v_event_type, NEW.id, v_payload);
+            
+            RETURN NEW;
+            
+        ELSIF TG_OP = 'DELETE' THEN
+            v_event_type := 'MEETING_ROOM_CANCELLED';
+            v_payload := row_to_json(OLD)::jsonb;
+            
+            INSERT INTO public.event_outbox (event_type, entity_id, payload)
+            VALUES (v_event_type, OLD.id, v_payload);
+            
+            RETURN OLD;
+            
+        ELSE
+            RETURN COALESCE(NEW, OLD);
         END IF;
     ELSIF TG_TABLE_NAME = 'material_requests' THEN
         IF TG_OP = 'INSERT' THEN
@@ -50,25 +76,21 @@ BEGIN
         END IF;
     END IF;
 
-    IF v_event_type IS NOT NULL THEN
+    IF v_event_type IS NOT NULL AND TG_OP = 'INSERT' THEN
         INSERT INTO public.event_outbox (event_type, entity_id, payload)
         VALUES (v_event_type, NEW.id, row_to_json(NEW)::jsonb);
     END IF;
 
-    RETURN NEW;
+    RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Apply triggers to meeting_room_bookings
 DROP TRIGGER IF EXISTS tr_meeting_room_outbox_insert ON public.meeting_room_bookings;
-CREATE TRIGGER tr_meeting_room_outbox_insert
-    AFTER INSERT ON public.meeting_room_bookings
-    FOR EACH ROW
-    EXECUTE FUNCTION public.create_outbox_event();
+DROP TRIGGER IF EXISTS tr_meeting_room_booking_outbox_insert_update ON public.meeting_room_bookings;
 
-DROP TRIGGER IF EXISTS tr_meeting_room_outbox_update ON public.meeting_room_bookings;
-CREATE TRIGGER tr_meeting_room_outbox_update
-    AFTER UPDATE ON public.meeting_room_bookings
+CREATE TRIGGER tr_meeting_room_booking_outbox_insert_update_delete
+    AFTER INSERT OR UPDATE OR DELETE ON public.meeting_room_bookings
     FOR EACH ROW
     EXECUTE FUNCTION public.create_outbox_event();
 
