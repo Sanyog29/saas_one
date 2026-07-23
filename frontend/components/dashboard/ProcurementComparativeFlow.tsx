@@ -362,7 +362,7 @@ export default function ProcurementComparativeFlow({
                         disabled={isSubmitting || !comparativeFile || !comparativePrice}
                         className="w-full py-2.5 rounded-xl bg-blue-500 text-white hover:bg-blue-600 transition-all font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center justify-center gap-2"
                     >
-                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Upload Comparative'}
                     </button>
                 </div>
             );

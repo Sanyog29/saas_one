@@ -2656,15 +2656,10 @@ export default function TicketDetailPage() {
                               >
                                 Order #{req.id.slice(0, 8).toUpperCase()}
                               </p>
-                              {req.procurement_viewed_at ? (
+                              {req.procurement_viewed_at && (
                                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
                                   <Eye className="w-3 h-3 text-emerald-500" />
                                   <span>Seen by Procurement: {new Date(req.procurement_viewed_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-600 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
-                                  <Clock className="w-3 h-3 text-amber-500" />
-                                  <span>Not yet viewed by Procurement</span>
                                 </div>
                               )}
                             </div>
