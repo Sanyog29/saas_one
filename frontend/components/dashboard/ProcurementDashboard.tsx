@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import NotificationBell from './NotificationBell';
 import ProcurementPOProcessor from '../procurement/ProcurementPOProcessor';
 import ProcurementStatusModal from './ProcurementStatusModal';
+import ProcurementComparativeFlow from './ProcurementComparativeFlow';
 import ProcurementCatalogModal from '../procurement/ProcurementCatalogModal';
 import FeedbackModal from '@/frontend/components/ui/FeedbackModal';
 
@@ -240,6 +241,24 @@ export default function ProcurementDashboard() {
         setSelectedTicketId(ticketId);
         setStatusModalOpen(true);
     };
+
+    const isProcurementUser = useMemo(() => {
+        const role = user?.user_metadata?.role?.toLowerCase() || '';
+        return role.includes('procurement') || role === 'org_super_admin' || role === 'master_admin' || role === 'admin';
+    }, [user]);
+
+    const isAdmin = useMemo(() => {
+        const role = user?.user_metadata?.role?.toLowerCase() || '';
+        return ['org_super_admin', 'master_admin', 'property_admin', 'org_admin'].includes(role);
+    }, [user]);
+
+    const canMarkDelivered = useMemo(() => {
+        const role = user?.user_metadata?.role?.toLowerCase() || '';
+        const isSiteTeamOrAdmin = ['org_super_admin', 'master_admin', 'org_admin', 'property_admin', 'staff', 'mst'].includes(role);
+        const isPureProcurement = role.includes('procurement') && !['org_super_admin', 'master_admin', 'org_admin', 'property_admin'].includes(role);
+        return isSiteTeamOrAdmin && !isPureProcurement;
+    }, [user]);
+
     const requestProperties = useMemo(() => {
         const map = new Map<string, string>();
         requests.forEach(r => {
@@ -600,6 +619,7 @@ export default function ProcurementDashboard() {
                                 selectedRequestId={selectedRequestId}
                                 setSelectedRequestId={setSelectedRequestId}
                                 handleOpenStatusModal={handleOpenStatusModal}
+                                fetchRequests={fetchRequests}
                             />
                         )}
                                                 {activeTab === 'history' && <HistoryTab requests={requests} user={user} />}
@@ -796,9 +816,26 @@ function RequestsTab({
     tabCounts, updatingId, reassigningId, setReassigningId, onUpdateStatus, 
     onReassign, onDeleteRequest, procurementUsers, user, shouldShowPrice,
     statusModalOpen, setStatusModalOpen, selectedRequestId, setSelectedRequestId,
-    handleOpenStatusModal
+    handleOpenStatusModal, fetchRequests
 }: any) {
     const [expandedId, setExpandedId] = useState<string | null>(null);
+
+    const isProcurementUser = React.useMemo(() => {
+        const role = user?.user_metadata?.role?.toLowerCase() || '';
+        return role.includes('procurement') || role === 'org_super_admin' || role === 'master_admin' || role === 'admin';
+    }, [user]);
+
+    const isAdmin = React.useMemo(() => {
+        const role = user?.user_metadata?.role?.toLowerCase() || '';
+        return ['org_super_admin', 'master_admin', 'property_admin', 'org_admin'].includes(role);
+    }, [user]);
+
+    const canMarkDelivered = React.useMemo(() => {
+        const role = user?.user_metadata?.role?.toLowerCase() || '';
+        const isSiteTeamOrAdmin = ['org_super_admin', 'master_admin', 'org_admin', 'property_admin', 'staff', 'mst'].includes(role);
+        const isPureProcurement = role.includes('procurement') && !['org_super_admin', 'master_admin', 'org_admin', 'property_admin'].includes(role);
+        return isSiteTeamOrAdmin && !isPureProcurement;
+    }, [user]);
 
     return (
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
@@ -1026,6 +1063,12 @@ function RequestsTab({
                                             </div>
                                         ))}
                                     </div>
+                                    <ProcurementComparativeFlow
+                                        request={req}
+                                        isAdmin={isAdmin}
+                                        isProcurementUser={isProcurementUser}
+                                        onAction={fetchRequests}
+                                    />
                                     <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between gap-4">
                                         <div className="flex items-center gap-2">
                                             <a href={`/tickets/${req.ticket_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
@@ -1038,12 +1081,12 @@ function RequestsTab({
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            {req.status === 'pending_quotation' && (
+                                            {req.status === 'approved' && (
                                                 <button onClick={() => onUpdateStatus(req.id, 'ordered', req.ticket_id)} disabled={updatingId === req.id} className="flex items-center justify-center gap-2 px-8 py-3 bg-primary text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-primary/20 hover:bg-primary-dark">
                                                     {updatingId === req.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />} Buy
                                                 </button>
                                             )}
-                                            {req.status === 'ordered' && (
+                                            {req.status === 'ordered' && (canMarkDelivered || req.requested_by === user?.id) && (
                                                 <button onClick={() => onUpdateStatus(req.id, 'delivered', req.ticket_id)} disabled={updatingId === req.id} className="flex items-center justify-center gap-2 px-8 py-3 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-emerald-200 hover:bg-emerald-700">
                                                     {updatingId === req.id ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />} Delivered
                                                 </button>

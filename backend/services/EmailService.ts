@@ -31,6 +31,27 @@ export const EmailService = {
         }
     },
 
+    async sendGenericNotificationEmail({ emailTo, subject, title, htmlBody }: { emailTo: string; subject: string; title: string; htmlBody: string }) {
+        if (!process.env.SMTP_USER) return false;
+        try {
+            const html = `
+                <h2>${title}</h2>
+                <div style="margin-top:16px;">${htmlBody}</div>
+                <p style="margin-top:24px; color: #555;">Log in to Autopilot FMS to view the details.</p>
+            `;
+            await transporter.sendMail({
+                from: `"Autopilot FMS" <${process.env.SMTP_SENDER_EMAIL || process.env.SMTP_USER}>`,
+                to: emailTo,
+                subject,
+                html,
+            });
+            return true;
+        } catch (error) {
+            console.error('[EmailService] Failed to send generic notification email:', error);
+            return false;
+        }
+    },
+
     async sendMaterialRequestEmail({
         emailTo,
         ticket,
