@@ -26,7 +26,7 @@ const ADMIN_FIELDS = ['is_archived', 'deal_value'];
 async function loadLead(id: string) {
     const { data } = await supabaseAdmin
         .from('crm_leads')
-        .select('id, organization_id, created_by, assigned_to, city')
+        .select('id, organization_id, created_by, assigned_to, city, location, campaign')
         .eq('id', id)
         .maybeSingle();
     return data;

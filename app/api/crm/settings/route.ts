@@ -120,13 +120,14 @@ export async function POST(request: NextRequest) {
 
     const access = await resolveCrmAccess(request, readOrgId(request, body));
     if (isCrmAccessError(access)) return access;
-    if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
+
 
     const org = access.organizationId;
     const { action, data: d } = body;
 
     switch (action) {
         case 'create_status': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             // Reactivate a previously soft-deleted same-name status instead of colliding.
             const { data: existing } = await supabaseAdmin
                 .from('crm_lead_statuses').select('id').eq('organization_id', org).ilike('name', d.name).maybeSingle();
@@ -147,6 +148,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ status: res.data }, { status: 201 });
         }
         case 'update_status': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             // Cannot edit the shared global defaults — clone-on-write semantics are out of scope;
             // only org-owned statuses are mutable here.
             const { data: row } = await supabaseAdmin.from('crm_lead_statuses').select('organization_id').eq('id', d.id).maybeSingle();
@@ -164,6 +166,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ status: res.data });
         }
         case 'delete_status': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             const { data: row } = await supabaseAdmin.from('crm_lead_statuses').select('organization_id').eq('id', d.id).maybeSingle();
             if (!row) return NextResponse.json({ error: 'Status not found' }, { status: 404 });
             if (row.organization_id !== org) return NextResponse.json({ error: 'Cannot delete shared default statuses' }, { status: 403 });
@@ -184,7 +187,26 @@ export async function POST(request: NextRequest) {
             if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
             return NextResponse.json({ source: res.data }, { status: 201 });
         }
+        case 'create_property': {
+            // Quick property creation just with a name (defaults rest)
+            const { data: codeData } = await supabaseAdmin.rpc('generate_property_code', { p_org_id: org });
+            const { data: property, error: insertError } = await supabaseAdmin
+                .from('properties')
+                .insert({
+                    organization_id: org,
+                    name: d.name,
+                    code: codeData || 'PROP-' + Date.now(),
+                    is_active: true,
+                    status: 'active'
+                })
+                .select('id, name, code')
+                .single();
+            
+            if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+            return NextResponse.json({ property }, { status: 201 });
+        }
         case 'delete_source': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             const { data: row } = await supabaseAdmin.from('crm_lead_sources').select('organization_id').eq('id', d.id).maybeSingle();
             if (!row) return NextResponse.json({ error: 'Source not found' }, { status: 404 });
             if (row.organization_id !== org) return NextResponse.json({ error: 'Cannot delete shared default sources' }, { status: 403 });
@@ -193,6 +215,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true });
         }
         case 'update_property_mapping': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             const res = await supabaseAdmin
                 .from('crm_property_mapping')
                 .upsert({ property_id: d.property_id, crm_property_name: d.crm_property_name }, { onConflict: 'property_id' })
@@ -201,6 +224,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ mapping: res.data });
         }
         case 'save_meta_config': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             // Only overwrite secrets when a real (non-masked) value is supplied.
             const upd: Record<string, any> = {
                 organization_id: org,
@@ -226,6 +250,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ success: true });
         }
         case 'save_linkedin_config': {
+            if (!access.isAdmin) return NextResponse.json({ error: 'Forbidden: admin only' }, { status: 403 });
             const isLinkedInAdmin = isBdSuperAdmin(access.user.email) || access.roles?.includes('bd_super_admin') || access.isMasterAdmin;
             if (!isLinkedInAdmin) {
                 return NextResponse.json({ error: 'Forbidden — BD super admin only' }, { status: 403 });

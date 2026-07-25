@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/backend/lib/supabase/admin';
 import { firebaseAdmin } from '@/backend/lib/firebase';
 import { WhatsAppService } from './WhatsAppService';
 import { WhatsAppQueueService } from './WhatsAppQueueService';
+import { EmailService } from './EmailService';
 
 export interface NotificationPayload {
     userId: string;
@@ -1350,7 +1351,7 @@ static async afterSOPItemRated(
         try {
             const { data: lead, error } = await supabaseAdmin
                 .from('crm_leads')
-                .select('*, organization_id, assigned_to, company_name, contact_person, contact_number, requirement, lead_source, campaign')
+                .select('*, organization_id, assigned_to, company_name, contact_person, contact_number, requirement, lead_source, campaign, source_info:crm_lead_sources(id, name)')
                 .eq('id', leadId)
                 .single();
 
@@ -1385,7 +1386,7 @@ static async afterSOPItemRated(
                 if (u?.full_name) assigneeName = u.full_name;
             }
 
-            const sourceName = lead.lead_source || 'Manual/Other';
+            const sourceName = lead.source_info?.name || lead.lead_source || 'Manual/Other';
             const campaignName = lead.campaign || 'Direct';
             
             const waMessage = [
@@ -1403,6 +1404,43 @@ static async afterSOPItemRated(
                 message: waMessage,
                 eventType: 'CRM_NEW_LEAD',
             });
+
+            // Fetch emails for the recipient IDs
+            const { data: users } = await supabaseAdmin
+                .from('users')
+                .select('email')
+                .in('id', Array.from(recipientIds));
+
+            const emails = new Set<string>();
+            users?.forEach(u => { if (u.email) emails.add(u.email); });
+
+            // Hardcode specific emails as requested
+            emails.add('saniel@worksquare.in');
+            emails.add('rushab@worksquare.in');
+            emails.add('lohitexplores@gmail.com');
+
+            if (emails.size > 0) {
+                const html = `
+                    <h2>New Lead Received</h2>
+                    <table style="border-collapse:collapse;font-family:sans-serif;">
+                        <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Name</td><td>${lead.contact_person || lead.company_name || 'Unknown'}</td></tr>
+                        <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Phone</td><td>${lead.contact_number || 'Not provided'}</td></tr>
+                        <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Requirement</td><td>${lead.requirement || 'N/A'}</td></tr>
+                        <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Source</td><td>${sourceName}</td></tr>
+                        <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Campaign</td><td>${campaignName}</td></tr>
+                        <tr><td style="padding:4px 12px 4px 0;font-weight:bold;">Assigned To</td><td>${assigneeName}</td></tr>
+                    </table>
+                    <p style="margin-top:16px;">Log in to <b>Autopilot CRM</b> to follow up.</p>
+                `;
+
+                for (const to of emails) {
+                    await EmailService.sendNewLeadEmail({
+                        emailTo: to,
+                        subject: `New Lead: ${lead.contact_person || lead.company_name || 'Unknown'}`,
+                        html
+                    });
+                }
+            }
 
         } catch (err) {
             console.error('[NS] afterLeadCreated error:', err);

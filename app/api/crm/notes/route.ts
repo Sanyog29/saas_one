@@ -5,7 +5,7 @@ import { resolveCrmAccess, isCrmAccessError, canAccessLead } from '@/backend/lib
 async function leadGuard(request: NextRequest, leadId: string) {
     const { data: lead } = await supabaseAdmin
         .from('crm_leads')
-        .select('id, organization_id, created_by, assigned_to, city')
+        .select('id, organization_id, created_by, assigned_to, city, location, campaign')
         .eq('id', leadId)
         .maybeSingle();
     if (!lead) return { error: NextResponse.json({ error: 'Lead not found' }, { status: 404 }) };

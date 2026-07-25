@@ -88,6 +88,75 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
     const [savingStageComment, setSavingStageComment] = useState(false);
     const [editingActivity, setEditingActivity] = useState<{ id: string; description: string } | null>(null);
     const [savingActivity, setSavingActivity] = useState(false);
+    const [editingField, setEditingField] = useState<string | null>(null);
+    const [fieldDraft, setFieldDraft] = useState('');
+    const [savingField, setSavingField] = useState(false);
+
+    const saveField = async (field: keyof CRMLead) => {
+        if (!lead || fieldDraft === (lead[field] || '')) {
+            setEditingField(null);
+            return;
+        }
+        setSavingField(true);
+        try {
+            const res = await fetch(`/api/crm/leads/${lead.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [field]: fieldDraft || null }),
+            });
+            if (res.ok) {
+                const updated = { ...lead, [field]: fieldDraft || null } as CRMLead;
+                setLead(updated);
+                onLeadUpdate?.(updated);
+            }
+        } catch {}
+        setSavingField(false);
+        setEditingField(null);
+    };
+
+    const renderEditable = (label: string, field: keyof CRMLead, val: any, icon: React.ReactNode) => {
+        const isEditing = editingField === field;
+        return (
+            <div className="flex items-start gap-3 group">
+                <div className="mt-0.5 text-text-tertiary">{icon}</div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-xs text-text-tertiary">{label}</p>
+                    {isEditing ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                            <input
+                                autoFocus
+                                type="text"
+                                value={fieldDraft}
+                                onChange={(e) => setFieldDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') saveField(field);
+                                    if (e.key === 'Escape') setEditingField(null);
+                                }}
+                                disabled={savingField}
+                                className="w-full min-w-0 px-2 py-1 text-sm border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                            />
+                            <button onClick={() => saveField(field)} disabled={savingField} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded shrink-0">
+                                <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingField(null)} disabled={savingField} className="p-1 text-red-600 hover:bg-red-50 rounded shrink-0">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-sm font-medium text-text-primary break-words">{val || '–'}</p>
+                            <button
+                                onClick={() => { setFieldDraft(val || ''); setEditingField(field); }}
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded transition-opacity"
+                            >
+                                <Pencil className="w-3.5 h-3.5 text-text-tertiary" />
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
     // Reassignment (admins + reps)
     const [formResponses, setFormResponses] = useState<{ question: string; answer: string }[]>([]);
     const [reps, setReps] = useState<{ id: string; full_name?: string; email?: string }[]>([]);
@@ -511,38 +580,10 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                     </div>
                                                 </div>
                                             )}
-                                            <div className="flex items-center gap-3">
-                                                <Phone className="w-4 h-4 text-text-tertiary" />
-                                                <div>
-                                                    <p className="text-xs text-text-tertiary">Primary Contact</p>
-                                                    <p className="text-sm font-medium text-text-primary">{lead.contact_number || '–'}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <Phone className="w-4 h-4 text-text-tertiary" />
-                                                <div>
-                                                    <p className="text-xs text-text-tertiary">Secondary Contact</p>
-                                                    <p className="text-sm font-medium text-text-primary">{lead.secondary_contact_number || '–'}</p>
-                                                </div>
-                                            </div>
-                                            {lead.email && (
-                                                <div className="flex items-center gap-3">
-                                                    <Mail className="w-4 h-4 text-text-tertiary" />
-                                                    <div>
-                                                        <p className="text-xs text-text-tertiary">Email</p>
-                                                        <p className="text-sm font-medium text-text-primary">{lead.email}</p>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {lead.location && (
-                                                <div className="flex items-center gap-3">
-                                                    <MapPin className="w-4 h-4 text-text-tertiary" />
-                                                    <div>
-                                                        <p className="text-xs text-text-tertiary">Location</p>
-                                                        <p className="text-sm font-medium text-text-primary">{lead.location}</p>
-                                                    </div>
-                                                </div>
-                                            )}
+                                            {renderEditable('Primary Contact', 'contact_number', lead.contact_number, <Phone className="w-4 h-4" />)}
+                                            {renderEditable('Secondary Contact', 'secondary_contact_number', lead.secondary_contact_number, <Phone className="w-4 h-4" />)}
+                                            {renderEditable('Email', 'email', lead.email, <Mail className="w-4 h-4" />)}
+                                            {renderEditable('City/Location', 'location', lead.location, <MapPin className="w-4 h-4" />)}
                                         </div>
                                     </div>
 
@@ -655,6 +696,7 @@ export default function LeadDetailDrawer({ leadId, isOpen, onClose, onLeadUpdate
                                                     <p className="text-sm font-medium text-text-primary">{lead.property_info.name}</p>
                                                 </div>
                                             )}
+                                            {renderEditable('Move-in Timeline', 'move_in_timeline', lead.move_in_timeline, <Clock className="w-4 h-4" />)}
                                             {lead.source_info && (() => {
                                                 const sv = getSourceVisual(lead.source_info.name);
                                                 const SourceIcon = sv.icon;

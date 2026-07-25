@@ -187,7 +187,7 @@ export function scopeLeadsQuery(query: any, access: CrmAccess) {
 
 /** True when this rep may act on a specific already-fetched lead row. */
 export function canAccessLead(
-    lead: { created_by?: string; assigned_to?: string | null; city?: string | null; campaign?: string | null; organization_id?: string | null },
+    lead: { created_by?: string; assigned_to?: string | null; city?: string | null; location?: string | null; campaign?: string | null; organization_id?: string | null },
     access: CrmAccess
 ): boolean {
     if (lead.organization_id && lead.organization_id !== access.organizationId) return false;
@@ -198,8 +198,8 @@ export function canAccessLead(
     if (lead.assigned_to === access.user.id) return true;
     // Metro-aware territory match: a "Mumbai" grant covers "Lower Parel"/"Andheri"
     // (and the lead's location field too), so it agrees with scopeLeadsQuery.
-    if (lead.city || lead.campaign) {
-        const leadMetro = lead.city ? parentCity(lead.city).toLowerCase() : '';
+    if (lead.city || lead.location || lead.campaign) {
+        const leadMetro = lead.city ? parentCity(lead.city).toLowerCase() : (lead.location ? parentCity(lead.location).toLowerCase() : '');
         if (leadMetro && access.territoryCities.some((c) => parentCity(c).toLowerCase() === leadMetro)) return true;
         const leadCampaign = (lead.campaign || '').toLowerCase();
         if (leadCampaign && access.territoryCampaigns.some((c) => c.toLowerCase() === leadCampaign)) return true;

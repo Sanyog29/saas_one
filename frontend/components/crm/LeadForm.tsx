@@ -283,13 +283,44 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         </label>
                                         <select
                                             value={formData.property_interest || ''}
-                                            onChange={(e) => handleChange('property_interest', e.target.value)}
+                                            onChange={async (e) => {
+                                                const val = e.target.value;
+                                                if (val === '_ADD_NEW_') {
+                                                    const newName = window.prompt('Enter new Property name:');
+                                                    if (newName && newName.trim()) {
+                                                        try {
+                                                            const res = await fetch('/api/crm/settings', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ action: 'create_property', data: { name: newName.trim() } })
+                                                            });
+                                                            if (res.ok) {
+                                                                const data = await res.json();
+                                                                setProperties(prev => [...prev, data.property].sort((a, b) => a.name.localeCompare(b.name)));
+                                                                handleChange('property_interest', data.property.id);
+                                                            } else {
+                                                                alert('Failed to create property.');
+                                                                handleChange('property_interest', '');
+                                                            }
+                                                        } catch (err) {
+                                                            console.error('Failed to create property', err);
+                                                            alert('An error occurred.');
+                                                            handleChange('property_interest', '');
+                                                        }
+                                                    } else {
+                                                        handleChange('property_interest', '');
+                                                    }
+                                                } else {
+                                                    handleChange('property_interest', val);
+                                                }
+                                            }}
                                             className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="">Select property</option>
                                             {properties.map(p => (
                                                 <option key={p.id} value={p.id}>{p.name}</option>
                                             ))}
+                                            <option value="_ADD_NEW_" className="font-semibold text-primary">+ Add New Property</option>
                                         </select>
                                     </div>
                                     <div>
@@ -298,13 +329,44 @@ export default function LeadForm({ isOpen, onClose, onSubmit, initialData, mode 
                                         </label>
                                         <select
                                             value={formData.lead_source || ''}
-                                            onChange={(e) => handleChange('lead_source', e.target.value)}
+                                            onChange={async (e) => {
+                                                const val = e.target.value;
+                                                if (val === '_ADD_NEW_') {
+                                                    const newName = window.prompt('Enter new Lead Source name:');
+                                                    if (newName && newName.trim()) {
+                                                        try {
+                                                            const res = await fetch('/api/crm/settings', {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ action: 'create_source', data: { name: newName.trim() } })
+                                                            });
+                                                            if (res.ok) {
+                                                                const data = await res.json();
+                                                                setSources(prev => [...prev, data.source].sort((a, b) => a.name.localeCompare(b.name)));
+                                                                handleChange('lead_source', data.source.id);
+                                                            } else {
+                                                                alert('Failed to create lead source.');
+                                                                handleChange('lead_source', '');
+                                                            }
+                                                        } catch (err) {
+                                                            console.error('Failed to create source', err);
+                                                            alert('An error occurred.');
+                                                            handleChange('lead_source', '');
+                                                        }
+                                                    } else {
+                                                        handleChange('lead_source', '');
+                                                    }
+                                                } else {
+                                                    handleChange('lead_source', val);
+                                                }
+                                            }}
                                             className="w-full border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
                                         >
                                             <option value="">Select source</option>
                                             {sources.map(s => (
                                                 <option key={s.id} value={s.id}>{s.name}</option>
                                             ))}
+                                            <option value="_ADD_NEW_" className="font-semibold text-primary">+ Add New Source</option>
                                         </select>
                                     </div>
                                 </div>
